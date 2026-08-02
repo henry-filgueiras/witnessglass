@@ -2,13 +2,15 @@
 
 > WitnessGlass is a flight recorder for coding agents: declared intent, observed activity, and temporal replay.
 
-## Status: experimental kernel plus one untested Claude adapter
+## Status: experimental kernel plus a Claude adapter measured against one session
 
-There is a working recording kernel, and there is now a passive Claude Code command-hook
-adapter that can be pointed at a real session. **It has not been run against one yet.**
-Nothing in this repository has measured what a live Claude session actually produces; that
-is the next piece of work, and until it happens every coverage statement here is read off
-Claude's documentation rather than observed.
+There is a working recording kernel, and a passive Claude Code command-hook adapter that
+**has now recorded one real session** — one session, one macOS host, one Claude Code
+version, 17 minutes, 234 records, structurally complete. What that session measured is
+[section 3 of the adapter document](docs/claude-adapter.md); what it did not reach is
+section 4, and section 4 is still the longer of the two. A surface the session did not
+exercise — a tool failure, a permission denial, an interruption, a resume — is not a working
+surface, and is not described as one.
 
 What works today:
 
@@ -69,15 +71,28 @@ investigate on a shared terminal. Checking does not make a recording safe to sha
 
 Read [docs/claude-adapter.md](docs/claude-adapter.md) before drawing any conclusion from a
 recording. It states separately what Claude's documentation promises, what this adapter
-maps, and — at length — what is still unmeasured. The short version of the last part:
+maps, what one real session measured, and — at length — what is still unmeasured.
 
-- a pre-tool record is a **request**, not proof that anything executed;
-- completion records carry Claude's tool-level input and response, not descendant syscalls;
-- validation failures can escape the hooks entirely, leaving no trace;
-- `@` file references may bypass `Read` hooks;
-- agent parentage is never invented when Claude does not supply it;
+Measured against that one session:
+
+- both session boundaries were captured, including the exit and its reason;
+- 82 tool requests paired with 82 completions, with no unmatched record either way;
+- a subagent's **own** tool calls were recorded, and are attributable to it by `agent_id`;
+- `parent_agent_id` never arrived, so nothing links a subagent to what spawned it;
+- one `subagent_stopped` arrived with no matching `subagent_started`;
+- `prompt_id` arrived populated, but nothing in a recording says what it delimits;
+- `duration_ms` never arrived, in any of 82 completions;
+- a file written by a shell command left **no mutation event** — demonstrated, not asserted.
+
+Still unmeasured, and not to be read as working:
+
+- failure, denial, and interruption capture — none of the three was exercised;
+- what a pre-tool record with no completion looks like in practice; none occurred;
+- whether parallel dispatch is distinguishable from serial dispatch — it was not, here;
+- whether a resumed session appends to the same recording;
+- validation failures escaping the hooks entirely, and `@` references bypassing `Read`;
 - under parallel hooks, `sequence` is recorder order, not causal order;
-- the hooks add synchronous latency, unmeasured.
+- total hook latency; only the append transaction itself has a number.
 
 Scoped to macOS and Linux. Windows is untested and is not claimed to work.
 
@@ -155,8 +170,10 @@ pretending otherwise would poison exactly the evidentiary value the project exis
 
 Each adapter is therefore expected to document its fidelity and its blind spots
 explicitly. "We did not see this" is a supported result. The Claude adapter's are in
-[docs/claude-adapter.md](docs/claude-adapter.md), and they are currently marked provisional
-because nothing has been measured yet.
+[docs/claude-adapter.md](docs/claude-adapter.md), split between what one real session
+measured and what is still provisional. The first recording produced a worked example of why
+the split matters: the session's own account of what it did and the recording of what it did
+disagree in two places, and both accounts are kept.
 
 ## Using the kernel directly
 

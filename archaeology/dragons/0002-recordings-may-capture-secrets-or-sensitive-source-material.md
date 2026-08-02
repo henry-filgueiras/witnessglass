@@ -80,3 +80,76 @@ This dragon is resolved when:
   the residual risk stated in the same place.
 - The default behavior for an unconfigured user is the conservative one, and the
   destructive or exporting path is the one requiring an explicit act.
+
+## Findings from first contact (task:4)
+
+This dragon's context enumerated sensitive surfaces that capture was *likely* to encounter.
+One real recording now says which of them actually appeared, and in what proportion. The
+recording was read but nothing from it — no line, path, command, or fragment of output — is
+reproduced here or anywhere else in this repository.
+
+**Volume, from one 17-minute session of ordinary repository work: 580 KB across 234 records.**
+Of that, 58% is tool response bodies, 24% is tool input, and 0.3% is reported-intent text. The
+median record is 652 bytes; the 90th percentile is 6.2 KB; the largest single record is 34 KB.
+A day of agent work at this rate is tens of megabytes of unredacted material per session
+directory.
+
+### Which of the predicted surfaces actually appeared
+
+Confirmed present, by direct measurement:
+
+- **Absolute filesystem paths carrying the host's username** — in 56 of 234 records, roughly a
+  quarter of the file. A session-scoped scratch directory path appears in 16 more.
+- **Full file contents**, in both directions: every `Read` response and every `Write` input is
+  the complete text.
+- **Complete shell commands with all arguments**, 64 of them.
+- **Complete command output**, including the full text of files printed with `cat`.
+- **Agent narration**, as 65 `reported_intent` records — and, because decision:4 duplicates
+  rather than moves the description, each of those strings is in the file **twice**.
+
+Predicted and **not** present in this particular session: environment dumps, URLs with
+embedded credentials, and connection strings. That is a property of what this session
+happened to do, not of the adapter, and says nothing about the next one.
+
+### The finding that most sharpens the dragon
+
+**The recording contains at least one string deliberately shaped like a credential which is in
+fact a synthetic test marker.** The subject session was writing tests for payload silence and
+used a marker string built to look like a secret, precisely so a leak would be conspicuous.
+That marker is now sitting in a real recording.
+
+This is a concrete instance of the dragon's core argument, arrived at by accident rather than
+by construction. A regex scrubber run over this recording would flag that string and would be
+wrong; the same scrubber would have no way to recognize a real credential written in a shape
+it does not know. **The recording contains both false positives and, potentially,
+unrecognizable true negatives, and no filter can tell them apart from the bytes alone.** An
+unreliable filter described as reliable is the failure mode this dragon exists to prevent, and
+first contact produced the evidence for it in the first session recorded.
+
+A second, quieter point in the same direction: **agent narration is in the file twice by
+design.** Any future redaction contract has to handle the same sensitive string appearing in
+two records with different channels and different provenance, and removing one occurrence
+while leaving the other would be worse than removing neither, because it would look redacted.
+
+### What did not go wrong
+
+The privacy posture held mechanically. `.witnessglass/` was gitignored and untracked
+throughout; the recording was never committed, excerpted, or moved; the archivist session ran
+disarmed so it did not record itself; and `scripts/check-recording.sh` answered "did the
+recorder survive" without putting any of the 580 KB on the terminal. The one documented
+exception to payload silence — a corrupt record's parser diagnostic quoting the bytes it
+rejected — did not fire, because the recording was not corrupt. It remains the case where the
+payload-silent check is least useful, and it is still correctly documented as such.
+
+### What this changes about the resolution criteria
+
+The first criterion — enumerate sensitive surfaces against real recordings rather than
+imagined ones — is now met for **one** session shape. It should not be treated as met
+generally: a session that runs a deploy, reads a `.env`, or handles an API token would extend
+this list, and none of that has been recorded.
+
+Nothing else changes. No redaction is implemented, no export path exists, and no claim about
+safe sharing may be made. The measured volume above makes the case that the export path, when
+it exists, will need to be selective rather than exhaustive — 580 KB of unredacted material to
+convey what a 17-minute session did is not an artifact anyone will read, and "attach the
+recording" will be the tempting wrong answer.
