@@ -8,3 +8,14 @@ repository = "https://github.com/henry-filgueiras/witnessglass"
 publish = false
 
 [dependencies]
+# NDJSON records: the raw stream is JSON, one complete record per line.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# RFC 3339 timestamps. Descriptive metadata only — never used for ordering —
+# but formatting and parsing them correctly is not worth hand-rolling in a
+# record meant to be read as evidence years later.
+jiff = { version = "0.2", features = ["serde"] }
+
+[dev-dependencies]
+# Tests write recordings to throwaway directories outside the repository.
+tempfile = "3"

@@ -2,16 +2,27 @@
 
 > WitnessGlass is a flight recorder for coding agents: declared intent, observed activity, and temporal replay.
 
-## Status: bootstrap only; not yet usable
+## Status: experimental kernel; no agent adapter yet
 
-There is no recorder. There is no replay. The `witnessglass` binary compiles, prints a
-diagnostic saying recording is not implemented, and exits with failure. Nothing here can
-be pointed at an agent session today.
+There is now a working recording kernel. It can append events to a session recording and
+replay them deterministically. It cannot yet be pointed at Claude, or at any other agent,
+because **no adapter exists** — nothing hooks WitnessGlass up to a real session. Events
+come from whoever runs the CLI or calls the library.
 
-What this repository currently contains is the engineering contract, the project
-archaeology, and the check pipeline that later work has to satisfy. Everything below
-describes the shape of the intended system and the constraints it must honor — not
-features that exist.
+What works today:
+
+- an append-only UTF-8 NDJSON recording, one complete record per line, one file per session
+- five event kinds: session start and end, reported intent, observed tool start, observed
+  tool finish
+- tool lifecycle correlation through a stable tool-call ID
+- deterministic replay in canonical append order
+- concurrent appends from independent short-lived processes, without a daemon or database
+- explicit, tested behavior for unsupported schema versions, corrupt records, truncated
+  tails, and ambiguous sequences
+
+What does not exist: any Claude integration, redaction, projections, spans, timelines,
+summaries, or a UI. The full contract is written up in
+[decision 3](archaeology/decisions/0003-define-raw-stream-v1-and-canonical-replay-order.md).
 
 ## The name
 
@@ -87,12 +98,61 @@ pretending otherwise would poison exactly the evidentiary value the project exis
 Each adapter is therefore expected to document its fidelity and its blind spots
 explicitly. "We did not see this" is a supported result.
 
+## Using the kernel
+
+Every event below is synthetic. There is no adapter, so nothing produces these
+automatically yet — you are the emitter.
+
+```sh
+REC=/tmp/synthetic-session.ndjson
+
+# The recorder's own boundary.
+echo '{"session_id":"sess-synthetic-demo",
+       "provenance":{"channel":"recorder","adapter":"manual","mechanism":"cli-stdin"},
+       "event":{"kind":"session_started"}}' | witnessglass append --recording "$REC"
+
+# What the agent says. A claim, recorded as a claim.
+echo '{"session_id":"sess-synthetic-demo",
+       "provenance":{"channel":"reported","adapter":"manual","mechanism":"cli-stdin"},
+       "event":{"kind":"reported_intent","text":"Run the synthetic check.",
+                "tool_call_id":"toolu_synthetic_demo"}}' | witnessglass append --recording "$REC"
+
+# What the machinery saw. Same correlation id, different kind of claim.
+echo '{"session_id":"sess-synthetic-demo",
+       "provenance":{"channel":"observed","adapter":"manual","mechanism":"cli-stdin"},
+       "event":{"kind":"observed_tool_finished","tool_call_id":"toolu_synthetic_demo",
+                "outcome":"failed","result":{"exit_status":1}}}' | witnessglass append --recording "$REC"
+
+witnessglass replay --recording "$REC"
+```
+
+That recording now holds a claim of intent next to an observed failure, correlated by
+`toolu_synthetic_demo` and *not* reconciled into a single verdict. Preserving that
+disagreement is the point.
+
+A record looks like this:
+
+```json
+{"schema_version":1,"session_id":"sess-synthetic-demo","sequence":3,
+ "recorded_at":"2026-08-02T18:23:26.051104Z",
+ "provenance":{"channel":"observed","adapter":"manual","mechanism":"cli-stdin"},
+ "event":{"kind":"observed_tool_started","tool_call_id":"toolu_synthetic_demo",
+          "tool_name":"SyntheticTool","arguments":{"target":"/synthetic/example"}}}
+```
+
+Replay order is physical append order, carried by `sequence`. Timestamps are descriptive
+metadata and are never sorted on, so a clock that jumps backwards mid-session cannot
+reorder a recording. `replay` exits 0 when the recording is complete, 2 when it ends in a
+truncated tail — the valid prefix is still printed, and the fragment is never presented as
+an event — and 1 on corruption, an unsupported schema version, or an ambiguous sequence.
+
 ## Privacy
 
 Session recordings can contain source code, prompts, commands, absolute paths, command
-output, and credentials. Nothing in this repository currently redacts anything, and
-recordings will not be described as safe to share until a concrete capture and redaction
-contract exists, is implemented, and is tested. Real recordings are not committed here.
+output, and credentials. **The kernel stores whatever the emitter hands it, verbatim. It
+redacts nothing.** Recordings will not be described as safe to share until a concrete
+capture and redaction contract exists, is implemented, and is tested. Real recordings are
+not committed here, and every example and test fixture in this repository is synthetic.
 
 ## Relationship to SignalScope
 
@@ -135,6 +195,9 @@ Not in scope at this stage, and not to be inferred from the framing above:
 - attaching to arbitrary PIDs or OS-wide tracing
 - multi-agent coordination
 - publishing a crate
+- derived projections — spans, timelines, landmarks, findings
+- redaction, export, or any notion of a shareable recording
+- rotation, compaction, indexing, or streaming reads of large recordings
 
 ## Development
 
