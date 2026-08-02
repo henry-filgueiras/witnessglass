@@ -165,3 +165,24 @@ settled.** The other standing constraint is `CLAUDE.md` §6, which lists a dashb
 among the bootstrap non-goals; whether first contact's result is enough to lift that is a
 decision for whoever opens the next sprint, and it should be made explicitly rather than
 assumed by starting to build one.
+
+### Follow-up: a precision correction to the parallelism finding
+
+Appended during task:8. The Outcome above says the recording "contains no interleaving
+whatsoever". That is too broad, and this narrows it to what task:4 measured. The finding it
+supports — that this integration's recording does not distinguish parallel dispatch from
+serialized dispatch — is unchanged, and no new evidence is introduced here.
+
+What task:4 measured is that no **sibling** tool request/outcome intervals overlapped. There was
+one overlap in the whole recording: the single `Agent` call's request/outcome interval contained
+the subagent-attributed records, at sequences 76–158 between request 74 and completion 159.
+
+That containment is containment in the append chain and nothing more. It does not establish that
+the `Agent` call was those records' causal parent, does not establish any parent agent, and does
+not license a nested span; `parent_agent_id` never arrived on any of the three subagent records.
+Whether the parent's own work was dispatched in parallel or serially remains unobservable either
+way.
+
+So: no overlapping sibling intervals, one containing interval whose meaning the evidence does not
+settle, and parallel-versus-serial dispatch still indistinguishable. Read the Outcome's sentence
+that way.

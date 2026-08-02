@@ -149,3 +149,26 @@ not. dragon:2 stands unchanged, and this decision does not weaken it by a word.
   Decide it explicitly if the sprint wants it, rather than arriving there by convenience.
 - **Rendering of recordings large enough to matter.** Replay reads the whole file into memory
   (decision:3), and nothing here changes that.
+
+### Follow-up: a precision correction to the subagent evidence cited above
+
+Appended during task:8, which had to encode this decision's constraints as types and found one
+phrase in the Context looser than task:4's actual evidence. The decision itself is unchanged;
+this narrows a supporting sentence, and nothing here is new measurement.
+
+The Context describes the subagent's 27 tool calls as "nested inside the parent's single `Agent`
+call". What task:4 measured is that the subagent-attributed records fell **between** the `Agent`
+call's request and outcome records in append sequence — request at 74, completion at 159,
+subagent records at 76–158.
+
+Containment in the append chain is not parentage. It does not establish that the `Agent` call was
+those records' causal parent, does not establish any parent agent, and does not license a nested
+span. `parent_agent_id` and `parent_agent_type` were absent on all three subagent records, so
+nothing in the recording links the child to the `Agent` call at all. The attribution that does
+exist is `context.agent_id`, and it is an attribution of records to an agent, not of an agent to
+a parent.
+
+Read "nested inside" as "contained within, in append sequence" wherever it appears above. This
+decision's third condition already forbids inferring parentage from adjacency or containment; the
+correction keeps the evidence cited for the lift at the same strength as the constraint imposed
+by it.

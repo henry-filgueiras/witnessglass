@@ -37,6 +37,14 @@
 //! observation is left to whoever reads the stream, and correlation is not
 //! fusion.
 //!
+//! # Deriving a view
+//!
+//! [`inspection`] projects a replayed recording into a derived, disposable
+//! inspection model in which every derived claim carries the raw sequence
+//! numbers supporting it. It is the only correlation layer in this crate, and it
+//! borrows the raw records rather than owning them, so it cannot rewrite what it
+//! derives from.
+//!
 //! # Order under concurrency
 //!
 //! `sequence` is the recorder's acquisition order and the canonical storage
@@ -57,11 +65,15 @@
 pub mod append;
 pub mod claude;
 pub mod error;
+pub mod inspection;
 pub mod record;
 pub mod replay;
 
 pub use append::append;
 pub use error::{Error, Result};
+// The inspection projection is derived and disposable. Its types are internal
+// and unstable; nothing outside this repository may depend on their shape.
+pub use inspection::{Inspection, inspect};
 // The current schema's vocabulary is re-exported unqualified. `Record` here is
 // always a v2 record; a v1 record is reachable only as `record::v1::Record`, so
 // no caller can pick one up believing it is the other.
