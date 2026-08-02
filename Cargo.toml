@@ -1,0 +1,10 @@
+[package]
+name = "witnessglass"
+version = "0.1.0"
+edition = "2024"
+description = "A flight recorder for coding agents: declared intent, observed activity, and temporal replay."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/henry-filgueiras/witnessglass"
+publish = false
+
+[dependencies]
