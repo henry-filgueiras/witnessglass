@@ -12,6 +12,17 @@ use std::process::{Command, Stdio};
 use common::*;
 use witnessglass::{Event, ReportedIntent, Tail, append, replay_file};
 
+/// Text of every reported-intent record in a replayed recording.
+fn intent_texts(records: &[witnessglass::AnyRecord]) -> BTreeSet<String> {
+    records
+        .iter()
+        .map(|record| match v2_event(record) {
+            Event::ReportedIntent(ReportedIntent { text, .. }) => text.clone(),
+            other => panic!("expected reported intent, got {}", other.kind()),
+        })
+        .collect()
+}
+
 const THREADS: usize = 16;
 const PER_THREAD: usize = 4;
 
@@ -44,9 +55,8 @@ fn concurrent_in_process_appenders_produce_intact_uniquely_ordered_records() {
     // Sequence numbers are exactly 1..=n with no duplicates and no gaps. That
     // is already enforced by replay, so reaching this point proves the append
     // transaction never handed the same number to two racing writers.
-    let sequences: Vec<u64> = replay.records.iter().map(|r| r.sequence).collect();
     let expected: Vec<u64> = (1..=(THREADS * PER_THREAD) as u64).collect();
-    assert_eq!(sequences, expected);
+    assert_eq!(sequences(&replay.records), expected);
 
     // Every emission landed exactly once, and no record was lost or doubled.
     let mut expected_texts = BTreeSet::new();
@@ -55,15 +65,7 @@ fn concurrent_in_process_appenders_produce_intact_uniquely_ordered_records() {
             expected_texts.insert(format!("emitter-{thread:02}-{index:02}"));
         }
     }
-    let seen: BTreeSet<String> = replay
-        .records
-        .iter()
-        .map(|record| match &record.event {
-            Event::ReportedIntent(ReportedIntent { text, .. }) => text.clone(),
-            other => panic!("expected reported intent, got {}", other.kind()),
-        })
-        .collect();
-    assert_eq!(seen, expected_texts);
+    assert_eq!(intent_texts(&replay.records), expected_texts);
 }
 
 #[test]
@@ -114,22 +116,10 @@ fn concurrent_short_lived_processes_do_not_interleave_records() {
     assert_eq!(replay.tail, Tail::Complete);
     assert_eq!(replay.records.len(), PROCESSES);
     assert_eq!(
-        replay
-            .records
-            .iter()
-            .map(|r| r.sequence)
-            .collect::<Vec<_>>(),
+        sequences(&replay.records),
         (1..=PROCESSES as u64).collect::<Vec<_>>()
     );
 
-    let seen: BTreeSet<String> = replay
-        .records
-        .iter()
-        .map(|record| match &record.event {
-            Event::ReportedIntent(ReportedIntent { text, .. }) => text.clone(),
-            other => panic!("expected reported intent, got {}", other.kind()),
-        })
-        .collect();
     let expected: BTreeSet<String> = (0..PROCESSES).map(|i| format!("process-{i:02}")).collect();
-    assert_eq!(seen, expected);
+    assert_eq!(intent_texts(&replay.records), expected);
 }

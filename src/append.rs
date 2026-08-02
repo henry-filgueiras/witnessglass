@@ -31,12 +31,17 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::record::{Emission, Record, SCHEMA_VERSION};
+use crate::record::v2::{Emission, Record, SCHEMA_VERSION};
+use crate::record::{AnyRecord, parse_line};
 
 /// Size of the backward-scan window used to locate the final record.
 const TAIL_CHUNK: u64 = 8192;
 
-/// Append one emission to `recording`, creating it if absent.
+/// Append one schema v2 emission to `recording`, creating it if absent.
+///
+/// Only the current schema version is writable. A recording written under an
+/// earlier version stays replayable and is refused here, because one recording
+/// uses one vocabulary throughout.
 ///
 /// `recorded_at` is stamped into the record as descriptive metadata. It is
 /// injected rather than read from the clock inside so that tests can exercise
@@ -66,9 +71,15 @@ pub fn append(
 
     let sequence = match &previous {
         Some(record) => {
-            if record.session_id != emission.session_id {
+            if record.schema_version() != SCHEMA_VERSION {
+                return Err(Error::AppendVersionMismatch {
+                    recording: record.schema_version(),
+                    writing: SCHEMA_VERSION,
+                });
+            }
+            if record.session_id() != emission.session_id {
                 return Err(Error::EmissionSessionMismatch {
-                    recording: record.session_id.clone(),
+                    recording: record.session_id().to_owned(),
                     emission: emission.session_id.clone(),
                 });
             }
@@ -76,10 +87,10 @@ pub fn append(
             // ordering contract cannot survive: it would silently restart the
             // canonical chain at zero rather than fail.
             record
-                .sequence
+                .sequence()
                 .checked_add(1)
                 .ok_or(Error::SequenceExhausted {
-                    last: record.sequence,
+                    last: record.sequence(),
                 })?
         }
         None => 1,
@@ -90,6 +101,7 @@ pub fn append(
         session_id: emission.session_id.clone(),
         sequence,
         recorded_at,
+        context: emission.context.clone(),
         provenance: emission.provenance.clone(),
         event: emission.event.clone(),
     };
@@ -110,7 +122,7 @@ pub fn append(
 /// Returns `None` for an empty recording. Refuses outright if the recording
 /// ends with an unterminated fragment: appending would splice a new record onto
 /// a partial one and manufacture a corrupt line out of two honest halves.
-fn read_final_record(file: &mut File, len: u64) -> Result<Option<Record>> {
+fn read_final_record(file: &mut File, len: u64) -> Result<Option<AnyRecord>> {
     if len == 0 {
         return Ok(None);
     }
@@ -133,13 +145,7 @@ fn read_final_record(file: &mut File, len: u64) -> Result<Option<Record>> {
         reason: format!("final record is not valid UTF-8: {err}"),
     })?;
 
-    let record: Record = serde_json::from_str(line).map_err(|err| Error::Corruption {
-        line: 0,
-        reason: format!("final record could not be parsed: {err}"),
-    })?;
-    record.validate_self(0)?;
-
-    Ok(Some(record))
+    Ok(Some(parse_line(line, 0)?))
 }
 
 /// Byte offset just past the newline that ends the second-to-last record, i.e.

@@ -1,0 +1,168 @@
+{
+  "_comment": [
+    "EXAMPLE ONLY — THIS FILE IS NOT ACTIVE.",
+    "Claude Code reads .claude/settings.json and .claude/settings.local.json.",
+    "It does not read this file, so cloning the repository records nothing.",
+    "",
+    "To arm recording, copy this file to .claude/settings.local.json, which is",
+    "gitignored. Run `cargo build` first: this invokes the already-built debug",
+    "binary rather than `cargo run`, so that a hook is a process spawn and not a",
+    "build. To disarm, delete .claude/settings.local.json.",
+    "",
+    "Recordings land in .witnessglass/recordings/<session-id>.ndjson, which is",
+    "gitignored. They are NOT redacted and are NOT safe to share.",
+    "",
+    "Scoped to macOS and Linux. The command path uses forward slashes and no",
+    "extension; Windows is untested and is not claimed to work.",
+    "",
+    "These hooks are synchronous by design. `async: true` would shave hook",
+    "latency at the cost of losing failures and racing session shutdown, and",
+    "during first contact a complete recording matters more than a fast one."
+  ],
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording session start"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording tool request"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording tool success"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording tool failure"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording permission denial"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording subagent start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording subagent stop"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/target/debug/witnessglass",
+            "args": [
+              "claude-hook",
+              "--recordings-dir",
+              "${CLAUDE_PROJECT_DIR}/.witnessglass/recordings"
+            ],
+            "timeout": 10,
+            "statusMessage": "witnessglass: recording session end"
+          }
+        ]
+      }
+    ]
+  }
+}

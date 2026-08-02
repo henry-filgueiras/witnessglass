@@ -42,8 +42,9 @@ change is wrong, however convenient it looks.
 
 ## 3. Canonical and derived state
 
-- Raw append-only session recordings are the canonical product data. Append-oriented,
-  immutable once written, likely JSONL/NDJSON.
+- Raw append-only session recordings are the canonical product data: UTF-8 NDJSON, one
+  complete record per newline-terminated line, one file per session, immutable once
+  written. Settled by decision:3 and refined by decision:4.
 - Spans, timelines, landmarks, findings, summaries, and any dashboard are **derived
   projections**. They must be rebuildable from the raw stream and must be treated as
   disposable.

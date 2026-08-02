@@ -35,8 +35,29 @@ pub enum Error {
         line: usize,
         /// Version found in the record.
         found: u64,
-        /// Version this build supports.
-        supported: u32,
+        /// Versions this build can replay.
+        supported: &'static str,
+    },
+
+    /// A recording mixes schema versions. One recording uses one vocabulary
+    /// throughout; a stream whose records mean different things at different
+    /// lines is not a canonical history of anything.
+    MixedSchemaVersions {
+        /// 1-based line number of the offending record.
+        line: usize,
+        /// Version established by the recording's first record.
+        expected: u64,
+        /// Version found in this record.
+        found: u64,
+    },
+
+    /// An emission was offered to a recording written under a different schema
+    /// version. Appending would mix versions within one recording.
+    AppendVersionMismatch {
+        /// Schema version the recording already uses.
+        recording: u32,
+        /// Schema version this build writes.
+        writing: u32,
     },
 
     /// A complete, newline-terminated record could not be understood.
@@ -113,8 +134,23 @@ impl fmt::Display for Error {
                 supported,
             } => write!(
                 f,
-                "line {line}: unsupported schema version {found}; this build implements \
-                 schema version {supported}"
+                "line {line}: unsupported schema version {found}; this build can replay \
+                 schema version(s) {supported}"
+            ),
+            Error::MixedSchemaVersions {
+                line,
+                expected,
+                found,
+            } => write!(
+                f,
+                "line {line}: schema version {found} in a schema version {expected} recording; \
+                 one recording uses one schema version throughout"
+            ),
+            Error::AppendVersionMismatch { recording, writing } => write!(
+                f,
+                "refusing to append: the recording uses schema version {recording} and this \
+                 build writes schema version {writing}; one recording uses one schema version \
+                 throughout"
             ),
             Error::Corruption { line, reason } => {
                 write!(f, "line {line}: corrupt record: {reason}")

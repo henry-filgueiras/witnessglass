@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use witnessglass::{Channel, Event, Tail, ToolOutcome, append, replay_file};
+use witnessglass::{Channel, Event, Tail, append, replay_file};
 
 #[test]
 fn session_intent_and_tool_lifecycle_survive_a_round_trip() {
@@ -18,38 +18,127 @@ fn session_intent_and_tool_lifecycle_survive_a_round_trip() {
         ts("2026-08-02T18:00:01Z"),
     )
     .expect("intent");
-    append(&path, &tool_started(TOOL_CALL), ts("2026-08-02T18:00:02Z")).expect("start");
     append(
         &path,
-        &tool_finished(TOOL_CALL, ToolOutcome::Succeeded),
+        &tool_requested(TOOL_CALL),
+        ts("2026-08-02T18:00:02Z"),
+    )
+    .expect("request");
+    append(
+        &path,
+        &tool_succeeded(TOOL_CALL),
         ts("2026-08-02T18:00:03Z"),
     )
-    .expect("finish");
+    .expect("success");
     append(&path, &session_ended(), ts("2026-08-02T18:00:04Z")).expect("boundary");
 
     let replay = replay_file(&path).expect("replay");
     assert_eq!(replay.tail, Tail::Complete);
     assert_eq!(replay.records.len(), 5);
+    assert_eq!(replay.schema_version, Some(2));
 
-    let kinds: Vec<&str> = replay.records.iter().map(|r| r.event.kind()).collect();
     assert_eq!(
-        kinds,
+        kinds(&replay.records),
         vec![
             "session_started",
             "reported_intent",
-            "observed_tool_started",
-            "observed_tool_finished",
+            "tool_requested",
+            "tool_succeeded",
             "session_ended",
         ]
     );
-
-    let sequences: Vec<u64> = replay.records.iter().map(|r| r.sequence).collect();
-    assert_eq!(sequences, vec![1, 2, 3, 4, 5]);
+    assert_eq!(sequences(&replay.records), vec![1, 2, 3, 4, 5]);
 
     for record in &replay.records {
-        assert_eq!(record.schema_version, witnessglass::SCHEMA_VERSION);
-        assert_eq!(record.session_id, SESSION);
+        assert_eq!(record.schema_version(), witnessglass::SCHEMA_VERSION);
+        assert_eq!(record.session_id(), SESSION);
     }
+}
+
+#[test]
+fn a_request_is_not_recorded_as_an_execution() {
+    // The whole reason v2 exists. A pre-execution hook proves a request was
+    // constructed; it proves nothing about whether the call ran, and the record
+    // must not be readable as though it did.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("session.ndjson");
+
+    append(
+        &path,
+        &tool_requested(TOOL_CALL),
+        ts("2026-08-02T18:00:00Z"),
+    )
+    .expect("request");
+
+    let replay = replay_file(&path).expect("replay");
+    assert_eq!(kinds(&replay.records), vec!["tool_requested"]);
+
+    // Nothing in the record claims a start, an outcome, or a response.
+    let line = serde_json::to_string(&replay.records[0]).expect("serialize");
+    assert!(!line.contains("started"), "request implies a start: {line}");
+    assert!(
+        !line.contains("outcome"),
+        "request implies an outcome: {line}"
+    );
+    assert!(
+        !line.contains("response"),
+        "request implies a response: {line}"
+    );
+    assert!(line.contains("requested_input"));
+}
+
+#[test]
+fn requested_input_and_effective_input_stay_distinct() {
+    // Claude documents that a tool request may be modified before it executes.
+    // If both inputs collapsed into one field, a recording could not show that
+    // what ran was not what was asked for — which is precisely the kind of
+    // divergence the project exists to preserve.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("session.ndjson");
+
+    let requested = emission(
+        SESSION,
+        Channel::Observed,
+        Event::ToolRequested(witnessglass::ToolRequested {
+            tool_use_id: TOOL_CALL.to_owned(),
+            tool_name: "SyntheticTool".to_owned(),
+            requested_input: serde_json::json!({ "target": "/synthetic/asked-for" }),
+        }),
+    );
+    let succeeded = emission(
+        SESSION,
+        Channel::Observed,
+        Event::ToolSucceeded(witnessglass::ToolSucceeded {
+            tool_use_id: TOOL_CALL.to_owned(),
+            tool_name: "SyntheticTool".to_owned(),
+            effective_input: serde_json::json!({ "target": "/synthetic/actually-run" }),
+            response: serde_json::json!({ "status": "synthetic" }),
+            duration_ms: Some(1234),
+        }),
+    );
+
+    append(&path, &requested, ts("2026-08-02T18:00:00Z")).expect("request");
+    append(&path, &succeeded, ts("2026-08-02T18:00:01Z")).expect("success");
+
+    let replay = replay_file(&path).expect("replay");
+
+    let Event::ToolRequested(requested) = v2_event(&replay.records[0]) else {
+        panic!("expected a request");
+    };
+    let Event::ToolSucceeded(succeeded) = v2_event(&replay.records[1]) else {
+        panic!("expected a success");
+    };
+
+    assert_eq!(requested.requested_input["target"], "/synthetic/asked-for");
+    assert_eq!(
+        succeeded.effective_input["target"],
+        "/synthetic/actually-run"
+    );
+    assert_ne!(requested.requested_input, succeeded.effective_input);
+
+    // Correlated by id, and still two records with two inputs.
+    assert_eq!(requested.tool_use_id, succeeded.tool_use_id);
+    assert_eq!(succeeded.duration_ms, Some(1234));
 }
 
 #[test]
@@ -60,7 +149,12 @@ fn one_record_per_line_and_nothing_is_rewritten() {
     append(&path, &session_started(), ts("2026-08-02T18:00:00Z")).expect("boundary");
     let after_first = std::fs::read(&path).expect("read");
 
-    append(&path, &tool_started(TOOL_CALL), ts("2026-08-02T18:00:01Z")).expect("start");
+    append(
+        &path,
+        &tool_requested(TOOL_CALL),
+        ts("2026-08-02T18:00:01Z"),
+    )
+    .expect("request");
     let after_second = std::fs::read(&path).expect("read");
 
     // The second append extended the file; it did not touch the first record.
@@ -86,32 +180,27 @@ fn reported_and_observed_provenance_stay_distinguishable() {
         ts("2026-08-02T18:00:00Z"),
     )
     .expect("intent");
-    append(
-        &path,
-        &tool_finished(TOOL_CALL, ToolOutcome::Failed),
-        ts("2026-08-02T18:00:01Z"),
-    )
-    .expect("finish");
+    append(&path, &tool_failed(TOOL_CALL), ts("2026-08-02T18:00:01Z")).expect("failure");
 
     let replay = replay_file(&path).expect("replay");
 
-    assert_eq!(replay.records[0].provenance.channel, Channel::Reported);
-    assert_eq!(replay.records[1].provenance.channel, Channel::Observed);
+    assert_eq!(replay.records[0].provenance().channel, Channel::Reported);
+    assert_eq!(replay.records[1].provenance().channel, Channel::Observed);
     for record in &replay.records {
-        assert_eq!(record.provenance.adapter, ADAPTER);
-        assert_eq!(record.provenance.mechanism, MECHANISM);
+        assert_eq!(record.provenance().adapter, ADAPTER);
+        assert_eq!(record.provenance().mechanism, MECHANISM);
     }
 
     // The recording preserves a claim of success alongside an observed failure
     // without reconciling them. Disagreement is evidence, not a defect.
-    let Event::ReportedIntent(intent) = &replay.records[0].event else {
+    let Event::ReportedIntent(intent) = v2_event(&replay.records[0]) else {
         panic!("expected reported intent");
     };
     assert!(intent.text.contains("passed"));
-    let Event::ObservedToolFinished(finished) = &replay.records[1].event else {
-        panic!("expected observed finish");
+    let Event::ToolFailed(failed) = v2_event(&replay.records[1]) else {
+        panic!("expected observed failure");
     };
-    assert_eq!(finished.outcome, ToolOutcome::Failed);
+    assert_eq!(failed.error, "synthetic failure");
 }
 
 #[test]
@@ -128,13 +217,18 @@ fn tool_lifecycle_correlates_by_id_without_being_collapsed() {
         ts("2026-08-02T18:00:00Z"),
     )
     .expect("intent");
-    append(&path, &tool_started(TOOL_CALL), ts("2026-08-02T18:00:01Z")).expect("start");
     append(
         &path,
-        &tool_finished(TOOL_CALL, ToolOutcome::Succeeded),
+        &tool_requested(TOOL_CALL),
+        ts("2026-08-02T18:00:01Z"),
+    )
+    .expect("request");
+    append(
+        &path,
+        &tool_succeeded(TOOL_CALL),
         ts("2026-08-02T18:00:02Z"),
     )
-    .expect("finish");
+    .expect("success");
 
     let replay = replay_file(&path).expect("replay");
     assert_eq!(replay.records.len(), 3);
@@ -142,12 +236,7 @@ fn tool_lifecycle_correlates_by_id_without_being_collapsed() {
     let ids: Vec<Option<&str>> = replay
         .records
         .iter()
-        .map(|record| match &record.event {
-            Event::ReportedIntent(intent) => intent.tool_call_id.as_deref(),
-            Event::ObservedToolStarted(started) => Some(started.tool_call_id.as_str()),
-            Event::ObservedToolFinished(finished) => Some(finished.tool_call_id.as_str()),
-            _ => None,
-        })
+        .map(|record| v2_event(record).tool_use_id())
         .collect();
     assert_eq!(ids, vec![Some(TOOL_CALL); 3]);
 
@@ -156,7 +245,7 @@ fn tool_lifecycle_correlates_by_id_without_being_collapsed() {
     let channels: Vec<Channel> = replay
         .records
         .iter()
-        .map(|r| r.provenance.channel)
+        .map(|r| r.provenance().channel)
         .collect();
     assert_eq!(
         channels,
@@ -169,24 +258,24 @@ fn tool_lifecycle_correlates_by_id_without_being_collapsed() {
 }
 
 #[test]
-fn a_finish_without_an_observed_start_is_recorded_as_it_arrived() {
-    // A capture mechanism that missed the start of a call has a blind spot.
-    // Refusing the finish would delete the only evidence that the call existed,
-    // so the raw stream takes it exactly as delivered and leaves the pairing to
-    // whoever reads it.
+fn a_completion_without_a_recorded_request_is_recorded_as_it_arrived() {
+    // A capture mechanism that missed the pre-execution hook has a blind spot.
+    // Refusing the completion would delete the only evidence that the call
+    // existed, so the raw stream takes it exactly as delivered and leaves the
+    // pairing to whoever reads it.
     let dir = tempfile::tempdir().expect("temp dir");
     let path = dir.path().join("session.ndjson");
 
     append(
         &path,
-        &tool_finished("toolu_synthetic_orphan", ToolOutcome::Succeeded),
+        &tool_succeeded("toolu_synthetic_orphan"),
         ts("2026-08-02T18:00:00Z"),
     )
-    .expect("orphan finish is accepted");
+    .expect("orphan completion is accepted");
 
     let replay = replay_file(&path).expect("replay");
     assert_eq!(replay.records.len(), 1);
-    assert_eq!(replay.records[0].event.kind(), "observed_tool_finished");
+    assert_eq!(replay.records[0].event_kind(), "tool_succeeded");
 }
 
 #[test]
@@ -197,5 +286,6 @@ fn replay_of_an_empty_recording_is_empty_and_complete() {
 
     let replay = replay_file(&path).expect("replay");
     assert!(replay.records.is_empty());
+    assert_eq!(replay.schema_version, None);
     assert_eq!(replay.tail, Tail::Complete);
 }

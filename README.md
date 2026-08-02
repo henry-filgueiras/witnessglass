@@ -2,27 +2,63 @@
 
 > WitnessGlass is a flight recorder for coding agents: declared intent, observed activity, and temporal replay.
 
-## Status: experimental kernel; no agent adapter yet
+## Status: experimental kernel plus one untested Claude adapter
 
-There is now a working recording kernel. It can append events to a session recording and
-replay them deterministically. It cannot yet be pointed at Claude, or at any other agent,
-because **no adapter exists** — nothing hooks WitnessGlass up to a real session. Events
-come from whoever runs the CLI or calls the library.
+There is a working recording kernel, and there is now a passive Claude Code command-hook
+adapter that can be pointed at a real session. **It has not been run against one yet.**
+Nothing in this repository has measured what a live Claude session actually produces; that
+is the next piece of work, and until it happens every coverage statement here is read off
+Claude's documentation rather than observed.
 
 What works today:
 
 - an append-only UTF-8 NDJSON recording, one complete record per line, one file per session
-- five event kinds: session start and end, reported intent, observed tool start, observed
-  tool finish
-- tool lifecycle correlation through a stable tool-call ID
-- deterministic replay in canonical append order
+- nine event kinds: session start and end, reported intent, tool requested, tool succeeded,
+  tool failed, tool denied, subagent started, subagent stopped
+- a passive `witnessglass claude-hook` adapter over eight Claude Code hook surfaces, which
+  records and cannot influence the session it records
+- tool lifecycle correlation through a stable `tool_use_id`
+- deterministic replay in canonical append order, for both schema v1 and v2 recordings
 - concurrent appends from independent short-lived processes, without a daemon or database
-- explicit, tested behavior for unsupported schema versions, corrupt records, truncated
-  tails, and ambiguous sequences
+- explicit, tested behavior for unsupported and mixed schema versions, corrupt records,
+  truncated tails, and ambiguous sequences
 
-What does not exist: any Claude integration, redaction, projections, spans, timelines,
-summaries, or a UI. The full contract is written up in
-[decision 3](archaeology/decisions/0003-define-raw-stream-v1-and-canonical-replay-order.md).
+What does not exist: redaction, projections, spans, timelines, summaries, a UI, or any
+second adapter.
+
+The raw-stream contract is
+[decision 3](archaeology/decisions/0003-define-raw-stream-v1-and-canonical-replay-order.md),
+refined by
+[decision 4](archaeology/decisions/0004-represent-requested-and-effective-claude-tool-evidence-separately.md).
+
+## Recording a Claude session
+
+**Recording is opt-in and a clone records nothing.** Claude reads `.claude/settings.json`
+and `.claude/settings.local.json`; both are gitignored. Only the inert example
+`.claude/settings.witnessglass.example.json` is committed.
+
+```sh
+cargo build                                                    # the hooks run the built binary
+cp .claude/settings.witnessglass.example.json .claude/settings.local.json
+```
+
+Then start a **fresh** Claude session — arming mid-session produces a partial recording with
+no session start. Recordings land in `.witnessglass/recordings/<session-id>.ndjson`, which is
+gitignored and **is not safe to share**. Disarm with `rm .claude/settings.local.json`.
+
+Read [docs/claude-adapter.md](docs/claude-adapter.md) before drawing any conclusion from a
+recording. It states separately what Claude's documentation promises, what this adapter
+maps, and — at length — what is still unmeasured. The short version of the last part:
+
+- a pre-tool record is a **request**, not proof that anything executed;
+- completion records carry Claude's tool-level input and response, not descendant syscalls;
+- validation failures can escape the hooks entirely, leaving no trace;
+- `@` file references may bypass `Read` hooks;
+- agent parentage is never invented when Claude does not supply it;
+- under parallel hooks, `sequence` is recorder order, not causal order;
+- the hooks add synchronous latency, unmeasured.
+
+Scoped to macOS and Linux. Windows is untested and is not claimed to work.
 
 ## The name
 
@@ -97,12 +133,13 @@ agent process and observe every descendant process — that promise is not porta
 pretending otherwise would poison exactly the evidentiary value the project exists for.
 
 Each adapter is therefore expected to document its fidelity and its blind spots
-explicitly. "We did not see this" is a supported result.
+explicitly. "We did not see this" is a supported result. The Claude adapter's are in
+[docs/claude-adapter.md](docs/claude-adapter.md), and they are currently marked provisional
+because nothing has been measured yet.
 
-## Using the kernel
+## Using the kernel directly
 
-Every event below is synthetic. There is no adapter, so nothing produces these
-automatically yet — you are the emitter.
+Every event below is synthetic, and here you are the emitter rather than the Claude adapter.
 
 ```sh
 REC=/tmp/synthetic-session.ndjson
@@ -116,20 +153,23 @@ echo '{"session_id":"sess-synthetic-demo",
 echo '{"session_id":"sess-synthetic-demo",
        "provenance":{"channel":"reported","adapter":"manual","mechanism":"cli-stdin"},
        "event":{"kind":"reported_intent","text":"Run the synthetic check.",
-                "tool_call_id":"toolu_synthetic_demo"}}' | witnessglass append --recording "$REC"
+                "tool_use_id":"toolu_synthetic_demo"}}' | witnessglass append --recording "$REC"
 
-# What the machinery saw. Same correlation id, different kind of claim.
+# A request the machinery saw constructed. Same correlation id, different kind of
+# claim — and note that this says nothing about whether the call ever ran.
 echo '{"session_id":"sess-synthetic-demo",
        "provenance":{"channel":"observed","adapter":"manual","mechanism":"cli-stdin"},
-       "event":{"kind":"observed_tool_started","tool_call_id":"toolu_synthetic_demo",
+       "event":{"kind":"tool_requested","tool_use_id":"toolu_synthetic_demo",
                 "tool_name":"SyntheticTool",
-                "arguments":{"target":"/synthetic/example"}}}' | witnessglass append --recording "$REC"
+                "requested_input":{"target":"/synthetic/example"}}}' | witnessglass append --recording "$REC"
 
-# How it ended. The claim above said nothing about this, and vice versa.
+# How it actually ended. The claim above said nothing about this, and vice versa.
 echo '{"session_id":"sess-synthetic-demo",
        "provenance":{"channel":"observed","adapter":"manual","mechanism":"cli-stdin"},
-       "event":{"kind":"observed_tool_finished","tool_call_id":"toolu_synthetic_demo",
-                "outcome":"failed","result":{"exit_status":1}}}' | witnessglass append --recording "$REC"
+       "event":{"kind":"tool_failed","tool_use_id":"toolu_synthetic_demo",
+                "tool_name":"SyntheticTool",
+                "effective_input":{"target":"/synthetic/example"},
+                "error":"exit status 1"}}' | witnessglass append --recording "$REC"
 
 witnessglass replay --recording "$REC"
 ```
@@ -138,21 +178,26 @@ That recording now holds a claim of intent next to an observed failure, correlat
 `toolu_synthetic_demo` and *not* reconciled into a single verdict. Preserving that
 disagreement is the point.
 
-That is four records. The third of them — the observed start — looks like this:
+That is four records. The third of them — the observed request — looks like this:
 
 ```json
-{"schema_version":1,"session_id":"sess-synthetic-demo","sequence":3,
+{"schema_version":2,"session_id":"sess-synthetic-demo","sequence":3,
  "recorded_at":"2026-08-02T18:23:26.051104Z",
  "provenance":{"channel":"observed","adapter":"manual","mechanism":"cli-stdin"},
- "event":{"kind":"observed_tool_started","tool_call_id":"toolu_synthetic_demo",
-          "tool_name":"SyntheticTool","arguments":{"target":"/synthetic/example"}}}
+ "event":{"kind":"tool_requested","tool_use_id":"toolu_synthetic_demo",
+          "tool_name":"SyntheticTool","requested_input":{"target":"/synthetic/example"}}}
 ```
 
 Replay order is physical append order, carried by `sequence`. Timestamps are descriptive
 metadata and are never sorted on, so a clock that jumps backwards mid-session cannot
 reorder a recording. `replay` exits 0 when the recording is complete, 2 when it ends in a
 truncated tail — the valid prefix is still printed, and the fragment is never presented as
-an event — and 1 on corruption, an unsupported schema version, or an ambiguous sequence.
+an event — and 1 on corruption, an unsupported or mixed schema version, or an ambiguous
+sequence.
+
+A recording uses one schema version throughout. v1 recordings, written before the Claude
+adapter existed, still replay; only v2 is written; appending across versions is refused at
+both ends.
 
 ## Privacy
 
@@ -168,7 +213,9 @@ nothing is scrubbed. A credential handed to the recorder is a credential in the 
 
 Recordings will not be described as safe to share until a concrete capture and redaction
 contract exists, is implemented, and is tested. Real recordings are not committed here, and
-every example and test fixture in this repository is synthetic.
+every example and test fixture in this repository is synthetic. `.witnessglass/` is
+gitignored so that a recording cannot be committed by accident, but that is a guard against
+mistakes and not a safety property of the recording itself.
 
 ## Relationship to SignalScope
 

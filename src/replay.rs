@@ -11,6 +11,15 @@
 //! produces a recording with descending timestamps and a perfectly intact
 //! order.
 //!
+//! # Schema versions
+//!
+//! A recording written under any schema version this build knows is replayable,
+//! so an existing v1 recording stays readable after v2 arrives. What is refused
+//! is a recording that *mixes* versions: the first record establishes the
+//! version and every later record must agree. Records come back as [`AnyRecord`]
+//! rather than one flattened type, so a reader cannot pick up a v1 record
+//! believing it holds v2 evidence.
+//!
 //! # Damage
 //!
 //! Two different kinds of damage are distinguished, because they license
@@ -33,7 +42,7 @@
 use std::path::Path;
 
 use crate::error::{Error, Result};
-use crate::record::{Record, SCHEMA_VERSION};
+use crate::record::{AnyRecord, parse_line, probe_schema_version};
 
 /// Whether a recording ended cleanly.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +70,10 @@ impl Tail {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Replay {
     /// Records in canonical append order.
-    pub records: Vec<Record>,
+    pub records: Vec<AnyRecord>,
+    /// Schema version the recording is written in, established by its first
+    /// record. `None` for a recording holding no complete records.
+    pub schema_version: Option<u64>,
     /// Whether anything is known to be missing from the end.
     pub tail: Tail,
 }
@@ -110,6 +122,7 @@ pub fn replay_bytes(bytes: &[u8]) -> Result<Replay> {
 
     let mut records = Vec::new();
     let mut session_id: Option<String> = None;
+    let mut schema_version: Option<u64> = None;
 
     for (index, line) in text.lines().enumerate() {
         let line_number = index + 1;
@@ -121,13 +134,23 @@ pub fn replay_bytes(bytes: &[u8]) -> Result<Replay> {
             });
         }
 
-        check_schema_version(line, line_number)?;
+        // The first record establishes the recording's vocabulary. A later
+        // record declaring a different one is refused rather than read against
+        // a schema it does not claim to use.
+        let version = probe_schema_version(line, line_number)?;
+        match schema_version {
+            None => schema_version = Some(version),
+            Some(expected) if expected != version => {
+                return Err(Error::MixedSchemaVersions {
+                    line: line_number,
+                    expected,
+                    found: version,
+                });
+            }
+            Some(_) => {}
+        }
 
-        let record: Record = serde_json::from_str(line).map_err(|err| Error::Corruption {
-            line: line_number,
-            reason: err.to_string(),
-        })?;
-        record.validate_self(line_number)?;
+        let record = parse_line(line, line_number)?;
 
         // Sequence is the canonical order, so it must be unambiguous: it starts
         // at 1 and advances by exactly 1. A duplicate, a decrease, or a gap all
@@ -135,21 +158,21 @@ pub fn replay_bytes(bytes: &[u8]) -> Result<Replay> {
         // particular cannot be distinguished from a deletion — so all three are
         // rejected rather than repaired.
         let expected = line_number as u64;
-        if record.sequence != expected {
+        if record.sequence() != expected {
             return Err(Error::SequenceViolation {
                 line: line_number,
                 expected,
-                found: record.sequence,
+                found: record.sequence(),
             });
         }
 
         match &session_id {
-            None => session_id = Some(record.session_id.clone()),
-            Some(expected) if *expected != record.session_id => {
+            None => session_id = Some(record.session_id().to_owned()),
+            Some(expected) if expected != record.session_id() => {
                 return Err(Error::SessionMismatch {
                     line: line_number,
                     expected: expected.clone(),
-                    found: record.session_id.clone(),
+                    found: record.session_id().to_owned(),
                 });
             }
             Some(_) => {}
@@ -158,28 +181,9 @@ pub fn replay_bytes(bytes: &[u8]) -> Result<Replay> {
         records.push(record);
     }
 
-    Ok(Replay { records, tail })
-}
-
-/// Read only the schema version, so an unsupported version is reported as such
-/// instead of surfacing as a confusing parse failure against the v1 shape.
-fn check_schema_version(line: &str, line_number: usize) -> Result<()> {
-    #[derive(serde::Deserialize)]
-    struct VersionProbe {
-        schema_version: u64,
-    }
-
-    let probe: VersionProbe = serde_json::from_str(line).map_err(|err| Error::Corruption {
-        line: line_number,
-        reason: format!("could not read schema_version: {err}"),
-    })?;
-
-    if probe.schema_version != u64::from(SCHEMA_VERSION) {
-        return Err(Error::UnsupportedSchemaVersion {
-            line: line_number,
-            found: probe.schema_version,
-            supported: SCHEMA_VERSION,
-        });
-    }
-    Ok(())
+    Ok(Replay {
+        records,
+        schema_version,
+        tail,
+    })
 }

@@ -1,1 +1,11 @@
 /target
+
+# Recordings. Product runtime data, potentially containing prompts, source,
+# commands, output, paths, and credentials. Never committed.
+/.witnessglass/
+
+# A locally armed hook configuration. A clone must not silently begin executing
+# hooks or recording sessions, so the active configuration stays untracked and
+# only the inert example is committed.
+/.claude/settings.local.json
+/.claude/settings.json
