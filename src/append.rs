@@ -72,7 +72,15 @@ pub fn append(
                     emission: emission.session_id.clone(),
                 });
             }
-            record.sequence + 1
+            // Checked, because a wrapped sequence is the one failure the
+            // ordering contract cannot survive: it would silently restart the
+            // canonical chain at zero rather than fail.
+            record
+                .sequence
+                .checked_add(1)
+                .ok_or(Error::SequenceExhausted {
+                    last: record.sequence,
+                })?
         }
         None => 1,
     };

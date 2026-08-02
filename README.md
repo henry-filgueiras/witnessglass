@@ -72,7 +72,8 @@ are meant to be rebuilt freely, and they are never the record itself.
 
 The invariants that follow:
 
-- Raw session events are immutable and append-oriented (likely JSONL/NDJSON).
+- Raw session events are immutable and append-oriented: UTF-8 NDJSON, one complete record
+  per newline-terminated line, one file per session.
 - Reported intent is not promoted to ground truth because it sounds confident.
 - Observed process facts are not promoted to intent because they are adjacent in time.
 - Every event retains its source and fidelity, so a later reader can tell which channel a
@@ -120,6 +121,13 @@ echo '{"session_id":"sess-synthetic-demo",
 # What the machinery saw. Same correlation id, different kind of claim.
 echo '{"session_id":"sess-synthetic-demo",
        "provenance":{"channel":"observed","adapter":"manual","mechanism":"cli-stdin"},
+       "event":{"kind":"observed_tool_started","tool_call_id":"toolu_synthetic_demo",
+                "tool_name":"SyntheticTool",
+                "arguments":{"target":"/synthetic/example"}}}' | witnessglass append --recording "$REC"
+
+# How it ended. The claim above said nothing about this, and vice versa.
+echo '{"session_id":"sess-synthetic-demo",
+       "provenance":{"channel":"observed","adapter":"manual","mechanism":"cli-stdin"},
        "event":{"kind":"observed_tool_finished","tool_call_id":"toolu_synthetic_demo",
                 "outcome":"failed","result":{"exit_status":1}}}' | witnessglass append --recording "$REC"
 
@@ -130,7 +138,7 @@ That recording now holds a claim of intent next to an observed failure, correlat
 `toolu_synthetic_demo` and *not* reconciled into a single verdict. Preserving that
 disagreement is the point.
 
-A record looks like this:
+That is four records. The third of them — the observed start — looks like this:
 
 ```json
 {"schema_version":1,"session_id":"sess-synthetic-demo","sequence":3,
@@ -149,10 +157,18 @@ an event — and 1 on corruption, an unsupported schema version, or an ambiguous
 ## Privacy
 
 Session recordings can contain source code, prompts, commands, absolute paths, command
-output, and credentials. **The kernel stores whatever the emitter hands it, verbatim. It
-redacts nothing.** Recordings will not be described as safe to share until a concrete
-capture and redaction contract exists, is implemented, and is tested. Real recordings are
-not committed here, and every example and test fixture in this repository is synthetic.
+output, and credentials. **The kernel redacts, filters, and omits nothing.** Everything an
+emitter hands it goes into the recording.
+
+Precisely: JSON values survive semantically — a string keeps its characters, a number its
+value, an object its keys — but the stored record is not byte-identical to the emitter's
+input. Whitespace, string escaping, numeric rendering, and object-key order may all be
+normalized on the way in, before the bytes become recorded evidence. Nothing is dropped;
+nothing is scrubbed. A credential handed to the recorder is a credential in the recording.
+
+Recordings will not be described as safe to share until a concrete capture and redaction
+contract exists, is implemented, and is tested. Real recordings are not committed here, and
+every example and test fixture in this repository is synthetic.
 
 ## Relationship to SignalScope
 

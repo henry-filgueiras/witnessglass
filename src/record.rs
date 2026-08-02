@@ -86,7 +86,9 @@ pub struct ObservedToolStarted {
     pub tool_call_id: String,
     /// Tool name as delivered by the capture mechanism.
     pub tool_name: String,
-    /// Arguments as delivered, stored verbatim and uninterpreted.
+    /// Arguments as delivered, stored uninterpreted. Nothing is dropped, but
+    /// JSON normalization applies: the value survives semantically, not
+    /// byte-for-byte.
     pub arguments: serde_json::Value,
 }
 
@@ -108,7 +110,9 @@ pub struct ObservedToolFinished {
     pub tool_call_id: String,
     /// Completion or failure.
     pub outcome: ToolOutcome,
-    /// Result as delivered, stored verbatim and uninterpreted.
+    /// Result as delivered, stored uninterpreted. Nothing is dropped, but JSON
+    /// normalization applies: the value survives semantically, not
+    /// byte-for-byte.
     pub result: serde_json::Value,
 }
 

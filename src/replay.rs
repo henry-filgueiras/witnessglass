@@ -23,6 +23,12 @@
 //!   copy was cut short. The valid prefix is still evidence, so replay returns
 //!   it and reports the recording as incomplete. The fragment is never parsed
 //!   and never presented as an event.
+//!
+//! The fragment is treated as opaque bytes, not text. A write cut short inside
+//! a multibyte character leaves invalid UTF-8 behind, and that says nothing
+//! about the complete records preceding it. So the input is split at its final
+//! newline *before* anything is decoded, and only the newline-terminated prefix
+//! is required to be valid UTF-8.
 
 use std::path::Path;
 
@@ -72,18 +78,14 @@ pub fn replay_file(recording: &Path) -> Result<Replay> {
 /// files this kernel produces and is a deliberate deferral, not a claim about
 /// arbitrarily large recordings.
 pub fn replay_bytes(bytes: &[u8]) -> Result<Replay> {
-    let text = std::str::from_utf8(bytes).map_err(|err| {
-        let valid = err.valid_up_to();
-        Error::Corruption {
-            line: bytes[..valid].iter().filter(|&&b| b == b'\n').count() + 1,
-            reason: format!("recording is not valid UTF-8 at byte {valid}"),
-        }
-    })?;
-
-    // Split the complete, newline-terminated prefix from any trailing fragment.
-    let (complete, fragment) = match text.rfind('\n') {
-        Some(index) => (&text[..=index], &text[index + 1..]),
-        None => ("", text),
+    // Split as bytes, before any decoding. The fragment is the part nothing is
+    // known about, so it must also be the part nothing is attempted on: a write
+    // interrupted mid-record can stop inside a multibyte character, producing
+    // invalid UTF-8 by construction. Validating the whole input first would let
+    // those bytes condemn every complete record in front of them.
+    let (complete, fragment): (&[u8], &[u8]) = match bytes.iter().rposition(|&b| b == b'\n') {
+        Some(index) => bytes.split_at(index + 1),
+        None => (&[], bytes),
     };
 
     let tail = if fragment.is_empty() {
@@ -95,10 +97,21 @@ pub fn replay_bytes(bytes: &[u8]) -> Result<Replay> {
         }
     };
 
+    // Only the newline-terminated prefix is required to be valid UTF-8. Inside
+    // a complete record, invalid UTF-8 is still corruption: that record was
+    // written whole and is wrong.
+    let text = std::str::from_utf8(complete).map_err(|err| {
+        let valid = err.valid_up_to();
+        Error::Corruption {
+            line: complete[..valid].iter().filter(|&&b| b == b'\n').count() + 1,
+            reason: format!("recording is not valid UTF-8 at byte {valid}"),
+        }
+    })?;
+
     let mut records = Vec::new();
     let mut session_id: Option<String> = None;
 
-    for (index, line) in complete.lines().enumerate() {
+    for (index, line) in text.lines().enumerate() {
         let line_number = index + 1;
 
         if line.trim().is_empty() {

@@ -58,6 +58,14 @@ pub enum Error {
         found: u64,
     },
 
+    /// The recording's final record already carries the largest sequence a v1
+    /// record can hold, so no further record can be appended without wrapping
+    /// the append chain back to zero and restarting the canonical history.
+    SequenceExhausted {
+        /// Sequence number the final record carries.
+        last: u64,
+    },
+
     /// One recording is one session; a record disagreed with its recording.
     SessionMismatch {
         /// 1-based line number.
@@ -111,6 +119,12 @@ impl fmt::Display for Error {
             Error::Corruption { line, reason } => {
                 write!(f, "line {line}: corrupt record: {reason}")
             }
+            Error::SequenceExhausted { last } => write!(
+                f,
+                "refusing to append: the recording's final record carries sequence {last}, the \
+                 largest a schema v1 record can hold; appending would wrap the append chain \
+                 and restart the canonical history"
+            ),
             Error::SequenceViolation {
                 line,
                 expected,

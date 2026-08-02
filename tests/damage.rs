@@ -244,10 +244,140 @@ fn appending_onto_a_truncated_tail_is_refused() {
 }
 
 #[test]
-fn invalid_utf8_is_corruption() {
+fn invalid_utf8_inside_a_complete_record_is_corruption() {
+    // Newline-terminated: this record was written whole, and it is wrong.
     let err = replay_bytes(b"{\"schema_version\":1,\xff\xfe}\n").expect_err("corruption");
     assert!(
-        matches!(err, Error::Corruption { .. }),
+        matches!(err, Error::Corruption { line: 1, .. }),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn invalid_utf8_in_a_later_complete_record_is_still_corruption() {
+    let mut recording = ndjson(&[raw_record(
+        1,
+        "2026-08-02T18:00:00Z",
+        SESSION,
+        Event::SessionStarted,
+    )])
+    .into_bytes();
+    recording.extend_from_slice(b"{\"schema_version\":1,\xff\xfe}\n");
+
+    let err = replay_bytes(&recording).expect_err("corruption");
+    assert!(
+        matches!(err, Error::Corruption { line: 2, .. }),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn an_unterminated_invalid_utf8_fragment_does_not_condemn_the_prefix() {
+    // An emitter killed mid-write can stop inside a multibyte character, so the
+    // fragment is invalid UTF-8 by construction. It says nothing whatsoever
+    // about the complete records in front of it.
+    let mut recording = ndjson(&[
+        raw_record(1, "2026-08-02T18:00:00Z", SESSION, Event::SessionStarted),
+        raw_record(2, "2026-08-02T18:00:01Z", SESSION, Event::SessionEnded),
+    ])
+    .into_bytes();
+    let complete_len = recording.len();
+    recording.extend_from_slice(b"{\"schema_version\":1,\"session_id\":\"\xf0\x9f");
+
+    let replay = replay_bytes(&recording).expect("prefix survives an undecodable fragment");
+    assert_eq!(replay.records.len(), 2);
+    assert_eq!(
+        replay.tail,
+        Tail::Truncated {
+            byte_offset: complete_len as u64,
+            bytes: 36
+        }
+    );
+}
+
+#[test]
+fn a_recording_of_only_invalid_unterminated_bytes_replays_as_no_events() {
+    // Nothing decodable, no newline anywhere: zero records, and the whole file
+    // reported as an incomplete fragment rather than as a decoding failure.
+    let recording: &[u8] = b"\xff\xfe\x00\x80not a record\xf0\x9f";
+
+    let replay = replay_bytes(recording).expect("readable");
+    assert!(replay.records.is_empty());
+    assert_eq!(
+        replay.tail,
+        Tail::Truncated {
+            byte_offset: 0,
+            bytes: recording.len()
+        }
+    );
+}
+
+#[test]
+fn a_record_torn_midway_through_a_multibyte_character_keeps_its_prefix() {
+    let full = ndjson(&[
+        raw_record(1, "2026-08-02T18:00:00Z", SESSION, Event::SessionStarted),
+        raw_record(
+            2,
+            "2026-08-02T18:00:01Z",
+            SESSION,
+            Event::ReportedIntent(ReportedIntent {
+                // Synthetic text chosen to put multibyte characters in the
+                // second record so the cut can land inside one.
+                text: "señal sintética 🔭".to_owned(),
+                tool_call_id: None,
+            }),
+        ),
+    ]);
+
+    // Cut two bytes into the four-byte telescope, mid-character.
+    let telescope = full.find('🔭').expect("multibyte character present");
+    let cut = telescope + 2;
+    let torn = &full.as_bytes()[..cut];
+    assert!(
+        std::str::from_utf8(torn).is_err(),
+        "the cut should genuinely tear a character"
+    );
+
+    let replay = replay_bytes(torn).expect("prefix survives a torn character");
+    assert_eq!(replay.records.len(), 1);
+    assert_eq!(replay.records[0].event.kind(), "session_started");
+    assert!(replay.tail.is_truncated());
+
+    // The fragment is accounted for as bytes, not decoded.
+    let first_line_len = full.find('\n').expect("newline") + 1;
+    assert_eq!(
+        replay.tail,
+        Tail::Truncated {
+            byte_offset: first_line_len as u64,
+            bytes: cut - first_line_len
+        }
+    );
+}
+
+#[test]
+fn a_recording_at_the_maximum_sequence_refuses_further_appends() {
+    // Hand-built: the appender can never produce this, and replay would reject
+    // the recording for starting at the wrong sequence. The append path reads
+    // only the final record, which is exactly the path under test.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let path = dir.path().join("session.ndjson");
+
+    let mut record = raw_record(1, "2026-08-02T18:00:00Z", SESSION, Event::SessionStarted);
+    record.sequence = u64::MAX;
+    let recording = ndjson(&[record]);
+    std::fs::write(&path, &recording).expect("write");
+
+    let err = append(
+        &path,
+        &reported_intent("should not land", None),
+        ts("2026-08-02T18:00:01Z"),
+    )
+    .expect_err("sequence exhausted");
+    assert!(
+        matches!(err, Error::SequenceExhausted { last: u64::MAX }),
+        "unexpected error: {err}"
+    );
+
+    // Byte-for-byte unchanged by the refusal.
+    assert_eq!(std::fs::read(&path).expect("read"), recording.into_bytes());
 }
