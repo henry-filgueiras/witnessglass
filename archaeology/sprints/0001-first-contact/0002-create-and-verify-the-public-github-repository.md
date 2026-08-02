@@ -2,9 +2,10 @@
 id: tsk_01KZ1SR0ZRQ9FMW7FGXPG81HZK
 sequence: 2
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZ1SQTZ730K3VJMH127NMXNS
 created: 2026-08-02
+closed: 2026-08-02
 ---
 
 # Create and verify the public GitHub repository
@@ -37,3 +38,78 @@ before creation rather than relying on the earlier preflight.
   secrets, deployments, or external services are added.
 - The archaeology recording this inauguration is itself committed and pushed, and the final
   worktree is clean.
+
+## Result
+
+The public repository exists, the bootstrap commit is on `origin/main`, and the inaugural
+CI run passed on its first attempt with no repair required.
+
+### Repository
+
+<https://github.com/henry-filgueiras/witnessglass>
+
+Verified public, default branch `main`, description set to the positioning line, topics
+`ai-agents`, `developer-tools`, `flight-recorder`, `observability`, `rust`. `origin` points
+at `git@github.com:henry-filgueiras/witnessglass.git` and local `main` tracks
+`origin/main`.
+
+Availability was reconfirmed immediately before creation: `gh repo view
+henry-filgueiras/witnessglass` returned a genuine GraphQL "could not resolve to a
+Repository" rather than an authentication or network error.
+
+### Commands
+
+```sh
+gh repo create henry-filgueiras/witnessglass \
+  --public \
+  --source=. \
+  --remote=origin \
+  --push \
+  --description "A flight recorder for coding agents: declared intent, observed activity, and temporal replay."
+```
+
+```sh
+gh repo edit henry-filgueiras/witnessglass \
+  --add-topic rust \
+  --add-topic ai-agents \
+  --add-topic observability \
+  --add-topic developer-tools \
+  --add-topic flight-recorder
+```
+
+Both succeeded on the first attempt.
+
+### Pushed commit
+
+`f8254ca4d63258321ecf6ce99730a93bc80373bb` — `bootstrap: establish witnessglass foundation`
+
+Confirmed present as the remote `main` head via the GitHub API, not only locally.
+
+### CI
+
+<https://github.com/henry-filgueiras/witnessglass/actions/runs/30759955661> — conclusion
+`success`, job `check` in 29s, against `f8254ca`.
+
+The run confirmed that the shared-gate arrangement works: CI installed `rustfmt`, `clippy`,
+and `scarp 0.2.0` with `--locked`, then invoked `./scripts/check.sh`, so the same four
+checks ran remotely as locally. The runner reported `rustc 1.97.1 (8bab26f4f 2026-07-14)`
+and `scarp 0.2.0`, matching the local toolchain.
+
+No bootstrap failures occurred, so no repair commit was needed.
+
+### Scope confirmations
+
+No crate was published, no tag was created, and no release was cut. No branch protection,
+secrets, deployments, dependency bots, or external services were added. Nothing outside
+this repository was modified, and no issues or pull requests were opened anywhere.
+
+### Scarp desire paths observed
+
+The result-recording friction noted in task:1 recurred exactly as predicted: this section
+was written to a temporary file and appended to the artifact with a shell redirect before
+`scarp close task:2`, because Scarp offers no command that records a task outcome. Second
+occurrence in the project's first session — the recurrence is itself the evidence, and it
+is already captured in idea:1.
+
+No new friction surfaced during repository creation; the GitHub work was outside Scarp's
+surface entirely.
