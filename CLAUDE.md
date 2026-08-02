@@ -72,11 +72,11 @@ change is wrong, however convenient it looks.
   capture and redaction contract exists, is implemented, and is tested. No magical or
   best-effort redaction claims.
 
-## 6. Bootstrap non-goals
+## 6. Standing non-goals, and the one item lifted from them
 
 Do not build, and do not lay speculative groundwork for:
 
-- a daemon or background service
+- a daemon, background service, or anything that outlives the command that started it
 - an MCP server
 - a distributed collector
 - a generalized plugin/adapter framework (no framework before two real adapters exist)
@@ -84,6 +84,11 @@ Do not build, and do not lay speculative groundwork for:
 - arbitrary PID attachment or OS-wide tracing
 - crate publication
 - multi-agent coordination
+- hosted access, remote binding, upload, or export of a recording in any form
+- a redaction or safe-sharing implementation, or any claim that a recording — or a rendering
+  of one — is safe to share
+- a speculative causal hierarchy: inferred parentage, root agents, concurrency, execution
+  duration, or filesystem effects the evidence does not establish
 
 Foundation-level direction in the README is context, not a license to design a speculative
 framework ahead of a working kernel.
@@ -92,6 +97,19 @@ framework ahead of a working kernel.
 on the evidence that a working kernel and one real recording now exist to project from. The
 remaining items stand at full strength and none is weakened by that precedent; each would need
 its own decision.
+
+**What that lift currently authorizes is one thing.** sprint:2 spends it on a foreground,
+loopback-only, read-only local viewer — `witnessglass view --recording <PATH>` — which
+validates and projects one explicitly supplied recording, serves that immutable snapshot to a
+browser on an OS-selected loopback port behind an unguessable per-launch capability, and exits
+with the process that started it. Any other form decision:5 would also permit — a TUI in
+particular — is not authorized work and needs its own sprint. A lift is not a standing budget.
+
+**The browser is downstream of Rust.** Replay, validation, schema interpretation, damage
+handling, correlation, and projection belong to Rust. A rendering layer renders: it does not
+parse raw NDJSON, redefine lifecycle semantics, or invent a correlation the projection did not
+license. Two implementations of what a recording says are two opinions about what a recording
+says, and this project has room for exactly one.
 
 A projection built under decision:5 carries five conditions, and they are load-bearing:
 
@@ -109,7 +127,8 @@ A projection built under decision:5 carries five conditions, and they are load-b
   rendered output is safer than the recording behind it. Rendering is not redacting (§5).
 
 A presentation layer must not smuggle in a daemon. A local, on-demand renderer over a
-recording on disk is permitted; a background process that watches, collects, or serves is not.
+recording on disk is permitted; a background process that watches, collects, or serves beyond
+its own invocation is not.
 
 ## 7. Scarp workflow
 

@@ -28,6 +28,17 @@ What works today:
 What does not exist: redaction, projections, spans, timelines, summaries, a UI, or any
 second adapter.
 
+**First contact is complete.** The first sprint closed with all seven of its success criteria
+met against evidence, and its outcome — including where the recording and the recorded
+session's own account of itself disagree — is in
+[the sprint's archaeology](archaeology/sprints/0001-first-contact/sprint.md).
+
+The next planned slice is a **local-first browser trace explorer**: a foreground
+`witnessglass view` command that validates and projects one recording, then serves that
+snapshot read-only to a browser on loopback and exits. **It does not exist yet.** The plan is
+[sprint 2](archaeology/sprints/0002-first-light/sprint.md); nothing in this repository
+implements it, and no command in the CLI accepts `view`.
+
 The raw-stream contract is
 [decision 3](archaeology/decisions/0003-define-raw-stream-v1-and-canonical-replay-order.md),
 refined by
@@ -311,6 +322,24 @@ just in the data; must render absences as absences rather than filling them with
 values; must not group work by `prompt_id` while dragon:3 is open; and must stay local, with
 no export and no implication that a rendered view is safer to share than the recording behind
 it. Rendering is not redacting.
+
+The lift is being spent on exactly one form: a foreground, loopback-only, read-only local
+viewer over one explicitly supplied recording. The standing non-goals above are unchanged and
+apply to it too — in particular the daemon, the AI summarizer, and redaction or export in any
+form. The viewer adds its own, and they are not negotiable inside it:
+
+- hosted access, remote binding, collaboration, accounts, or uploads
+- download or shareable HTML
+- live capture, file watching, tailing, or automatic refresh
+- editing, annotation, bookmarks, or any mutation of a recording
+- cross-session comparison or indexing
+- a TUI, or a generalized frontend framework
+- prompt or turn grouping, per
+  [dragon 3](archaeology/dragons/0003-recorded-prompt-id-may-not-delimit-any-unit-of-work-a-projection-can-rely-on.md)
+- inferred root agents, parentage, causality, concurrency, execution duration, or filesystem
+  effects
+- a flame graph or span hierarchy whose structure the evidence does not establish
+- performance work for arbitrarily large recordings
 
 ## Development
 
