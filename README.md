@@ -53,6 +53,20 @@ Then start a **fresh** Claude session — arming mid-session produces a partial 
 no session start. Recordings land in `.witnessglass/recordings/<session-id>.ndjson`, which is
 gitignored and **is not safe to share**.
 
+Afterwards, confirm the recording survived the session without putting it on screen:
+
+```sh
+./scripts/check-recording.sh .witnessglass/recordings/<session-id>.ndjson
+```
+
+That runs the recording through the same `replay`, discards every record, and keeps only the
+verdict — exit 0 complete, 2 truncated tail, 1 corrupt or unreadable — with replay's one-line
+summary left on stderr. Use it whenever the question is whether the flight recorder survived
+the flight, since `replay` answers that by printing the whole flight. Payload silence has one
+documented limit, described in the adapter document: a *corrupt* record's parser diagnostic
+can quote the bytes it rejected, so a recording that checks as corrupt is the one not to
+investigate on a shared terminal. Checking does not make a recording safe to share.
+
 Read [docs/claude-adapter.md](docs/claude-adapter.md) before drawing any conclusion from a
 recording. It states separately what Claude's documentation promises, what this adapter
 maps, and — at length — what is still unmeasured. The short version of the last part:

@@ -242,6 +242,35 @@ with:
 witnessglass replay --recording .witnessglass/recordings/<session-id>.ndjson
 ```
 
+### Checking a recording without reading it
+
+`replay` prints every record, which makes it the wrong tool for the first question anyone has
+about a fresh recording: did the recorder survive the session? `scripts/check-recording.sh`
+asks exactly that and throws the answer's body away.
+
+```sh
+./scripts/check-recording.sh .witnessglass/recordings/<session-id>.ndjson
+```
+
+It runs the same `replay`, so there is still exactly one implementation of what a recording
+says, and it preserves replay's exit status: **0** complete, **2** a valid prefix with a
+truncated tail, **1** corruption, an unreadable or missing recording, an invalid invocation, a
+missing binary, or replay reaching no verdict at all. Replay's NDJSON stdout is discarded
+whole; its payload-free summary stays on stderr.
+
+Payload-silent means event bodies reach neither stream, and it has **one measured exception**.
+Ordinary diagnostics — line numbers, byte offsets, schema versions, sequence numbers, session
+ids — are not payloads and are not hidden. But a *corrupt* record's diagnostic comes from the
+parser itself and can quote the bytes it rejected, and those bytes may be part of a payload: a
+record whose `sequence` holds a string produces `invalid type: string "…"` with the string in
+full. A recording that checks as corrupt is therefore the one not to check on a shared
+terminal. `tests/check_recording.rs` pins that limit with a test asserting the leak, so it
+cannot widen unnoticed; suppressing the diagnostic in the script instead would make the check a
+second opinion about what a recording says, which is the one thing it must not become.
+
+Checking never alters the recording, and never arms, disarms, or builds anything. It does not
+make a recording safe to share — nothing is redacted, and the warnings above stand unchanged.
+
 To disarm:
 
 ```sh
