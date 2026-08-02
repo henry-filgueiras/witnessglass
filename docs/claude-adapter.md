@@ -219,7 +219,10 @@ tool call attributable to it. Subagent boundary events are not guaranteed to pai
 **`prompt_id` arrived populated** on every record except `session_started`, which carried no
 `context` at all — matching the documented "absent until the first input". It is populated but
 **unanchored**: `UserPromptSubmit` is not captured, so nothing in a recording says what a
-`prompt_id` delimits.
+`prompt_id` delimits. Only two distinct values appeared in the whole session — one covering
+232 records including every tool call by both the parent agent and the subagent, and one on
+`session_ended` alone. Do not segment a recording by it, and do not describe a recording as
+containing N turns. See dragon:3.
 
 **`duration_ms` never arrived.** Documented as optional on `PostToolUse`; supplied zero times
 in 82 completions. Any derived view intending to use tool duration has no input from this

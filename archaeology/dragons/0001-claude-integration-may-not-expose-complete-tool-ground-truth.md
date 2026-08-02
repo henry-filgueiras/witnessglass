@@ -113,7 +113,11 @@ materially less than "everything the session did".
   `agent_type`; the subagent's 27 tool calls produced 81 records carrying `context.agent_id`
   and `context.agent_type` naming the child. A subagent is **not** an opaque pair of boundary
   events on this path. This was the largest single unknown and it resolved favourably.
-- **`prompt_id`,** populated on every record except `session_started`.
+- **`prompt_id`,** populated on every record except `session_started`. Populated is not the
+  same as meaningful: only two distinct values appeared across the whole session, and with
+  `UserPromptSubmit` uncaptured there is no record for the identifier to refer to. What it
+  delimits is now dragon:3, which is a question about the *meaning* of a delivered
+  identifier rather than about its availability, and therefore sits outside this dragon.
 
 ### What was not observable, measured rather than assumed
 

@@ -373,3 +373,35 @@ same workaround is the one the recording proves is invisible to tool-event captu
 without displaying it, which is a WitnessGlass problem and not a Scarp one. `scarp doctor`,
 `scarp show`, and `scarp close` did what was needed without incident, and appending a
 findings section to an open dragon needed no affordance that did not exist.
+
+### Follow-up: dragon:3 filed for what `prompt_id` delimits
+
+Added after this task closed, at Henry's request. The conclusions above are unchanged; this
+records where the new dragon came from, because a dragon with no provenance is a dragon
+nobody can retire.
+
+Section 3 reported `prompt_id` as arriving populated on 233 of 234 records, and filed that
+under measured coverage — correctly, as a statement about availability. The distribution is
+the part that does not fit under coverage at all: **two** distinct values across the entire
+session, one spanning 232 records including every tool call by both the parent agent and the
+subagent, and one appearing on `session_ended` alone. With `UserPromptSubmit` deliberately
+uncaptured, there is no record anywhere in a WitnessGlass recording for that identifier to
+refer to. It is populated and unanchored.
+
+That is not a coverage gap and it is not a privacy question, so neither open dragon was the
+right home for it. dragon:1 asks what is observable; the field *is* observable. dragon:2 asks
+what is safe to share. Neither asks what a delivered identifier **means**, and that meaning is
+a precondition for every derived projection this project intends to build: grouping tool calls
+by prompt, counting turns, segmenting a timeline. Attaching a unit of work to `prompt_id` on
+the strength of it being populated would be decision:2's silent promotion committed from a new
+direction — not by fabricating a value, but by attaching a meaning to a real one.
+
+dragon:3 records that, notes that `tool_use_id` is the only identifier whose semantics this
+project has actually tested (82 correlated pairs), and proposes the cheap experiment — a
+recorded multi-turn session — before the expensive one. Capturing `UserPromptSubmit` would
+give the identifier an anchor and would also put user prompt text into the raw stream, which
+is a dragon:2 decision and is explicitly not the first move.
+
+No projection may segment by `prompt_id` until that dragon is settled, and this task's own
+result is written to comply: it reports counts of records and tool calls, and never a count of
+turns.
