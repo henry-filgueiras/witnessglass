@@ -6,6 +6,7 @@
 
 # A locally armed hook configuration. A clone must not silently begin executing
 # hooks or recording sessions, so the active configuration stays untracked and
-# only the inert example is committed.
-/.claude/settings.local.json
+# only the inert example is committed. The glob also covers the copies
+# scripts/arm.sh and scripts/disarm.sh move aside rather than delete.
+/.claude/settings.local.json*
 /.claude/settings.json

@@ -38,13 +38,20 @@ and `.claude/settings.local.json`; both are gitignored. Only the inert example
 `.claude/settings.witnessglass.example.json` is committed.
 
 ```sh
-cargo build                                                    # the hooks run the built binary
-cp .claude/settings.witnessglass.example.json .claude/settings.local.json
+./scripts/arm.sh        # build, self-test the adapter, install the hooks
+./scripts/disarm.sh     # remove them again
 ```
+
+`arm.sh` rebuilds first, because the hooks invoke the built binary directly and a stale one
+would quietly record a real session using old code. It then runs the adapter against a
+synthetic payload and refuses to arm if that fails or if the adapter writes anything to
+stdout. Re-running it while already armed re-arms from scratch. If you already have your own
+`.claude/settings.local.json`, it is moved aside and `disarm.sh` puts it back; disarm never
+deletes a file it did not write byte-for-byte, and never touches recordings.
 
 Then start a **fresh** Claude session — arming mid-session produces a partial recording with
 no session start. Recordings land in `.witnessglass/recordings/<session-id>.ndjson`, which is
-gitignored and **is not safe to share**. Disarm with `rm .claude/settings.local.json`.
+gitignored and **is not safe to share**.
 
 Read [docs/claude-adapter.md](docs/claude-adapter.md) before drawing any conclusion from a
 recording. It states separately what Claude's documentation promises, what this adapter
@@ -271,6 +278,7 @@ Not in scope at this stage, and not to be inferred from the framing above:
 That script is the gate, and CI runs the same script so local and CI semantics do not
 drift. It runs:
 
+- `bash -n` over `scripts/*.sh`
 - `cargo fmt --all -- --check`
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo test --workspace --all-targets --all-features`

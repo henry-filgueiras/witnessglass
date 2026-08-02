@@ -223,12 +223,14 @@ and `.claude/settings.local.json`; both are gitignored here. Only the inert exam
 `.claude/settings.witnessglass.example.json` is committed.
 
 ```sh
-# 1. Build first. The hooks invoke the built binary, not `cargo run`.
-cargo build
-
-# 2. Arm recording.
-cp .claude/settings.witnessglass.example.json .claude/settings.local.json
+./scripts/arm.sh
 ```
+
+That rebuilds the binary — the hooks invoke it directly rather than through `cargo run`, so a
+stale build would quietly record a real session using old code — then runs the adapter
+against a synthetic payload in a throwaway directory and **refuses to arm** if it fails, or
+if it writes anything to stdout. Only then does it copy the example into
+`.claude/settings.local.json`.
 
 Then start a **fresh** Claude session. Arming mid-session produces a partial recording with
 no `SessionStart`, which is worse than no recording for a first-contact experiment.
@@ -243,8 +245,35 @@ witnessglass replay --recording .witnessglass/recordings/<session-id>.ndjson
 To disarm:
 
 ```sh
-rm .claude/settings.local.json
+./scripts/disarm.sh
 ```
+
+### What the scripts guarantee
+
+Re-running `arm.sh` while already armed disarms first and re-arms from scratch, so "armed"
+always means armed with the current build and the current example. A deleted sentinel does
+not strand an armed configuration: `arm.sh` recognises its own settings file and cleans up
+regardless.
+
+`arm.sh` writes a sentinel at `.witnessglass/armed`. It is deliberately **not** a second copy
+of "am I armed" — `.claude/settings.local.json` is already that, and a duplicate flag would
+only drift from it. It is a record of what arming *did*: the binary and its SHA-256, the hash
+of the settings file as written, and whether a pre-existing settings file was displaced. That
+is what lets disarming undo exactly what arming did.
+
+Two rules cover the destructive edges:
+
+- **`disarm.sh` never deletes a file it did not write byte-for-byte.** It removes the settings
+  file only when it matches either the sentinel's recorded hash or the committed example. An
+  edited configuration is moved to `.claude/settings.local.json.disarmed.<timestamp>` instead,
+  and a settings file that is not a WitnessGlass configuration at all is left exactly where it
+  is.
+- **Recordings survive a disarm.** Disarming stops recording; it does not discard evidence
+  already captured. `disarm.sh` reports how many recordings are being kept, and that they are
+  not safe to share.
+
+Both scripts are covered by `tests/arm_disarm.rs`, which exercises them against a throwaway
+directory shaped like the repository. The test suite never arms the real repository.
 
 Scoped to macOS and Linux. The configured command path uses forward slashes and no
 extension; **Windows is untested and is not claimed to work.**

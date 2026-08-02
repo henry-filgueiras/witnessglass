@@ -335,3 +335,35 @@ idea:2 describes is specifically a *first-use* gap per collection, and it closes
 once a project has one of everything. That narrows the idea rather than strengthening it: the
 affordance would be most valuable to a new Scarp repository and progressively less valuable
 to an established one.
+
+### Follow-up: arming and disarming are scripted
+
+Added after this task closed, at Henry's request, and recorded here because it changes the
+activation procedure the result above documents. The conclusions above are unchanged;
+`cp .claude/settings.witnessglass.example.json .claude/settings.local.json` still works and
+is still what the scripts do.
+
+`scripts/arm.sh` and `scripts/disarm.sh` codify it. Arming rebuilds first — the hooks invoke
+the built binary directly, so a stale build would quietly record a real session using old
+code — then runs the adapter against a synthetic payload in a throwaway directory and
+refuses to arm if it fails or if it writes anything to stdout. Re-arming while already armed
+disarms first, so "armed" always means armed with the current build and the current example.
+
+The sentinel at `.witnessglass/armed` is deliberately not a second copy of "am I armed":
+`.claude/settings.local.json` is already that, and a duplicate flag would only drift from it.
+It records what arming *did* — binary and its hash, the settings hash as written, and whether
+a pre-existing settings file was displaced — which is what lets disarming undo exactly that.
+Two destructive edges are closed by rule: disarm never deletes a file it did not write
+byte-for-byte (an edited configuration is moved aside, a foreign one is left alone), and
+recordings survive a disarm.
+
+Two defects were found by writing the tests rather than by reading the scripts. A deleted
+sentinel made disarm unable to prove the configuration was ours, so it moved it aside and
+left debris on every recovery; the fix compares against the committed example as well as the
+sentinel hash, which makes the sentinel less load-bearing rather than more. The second was a
+case-sensitive assertion in the test itself.
+
+`scripts/check.sh` now runs `bash -n` over `scripts/*.sh`, so a syntactically broken script
+cannot be committed. `tests/arm_disarm.rs` (11 tests) exercises both scripts against a
+throwaway directory shaped like the repository; the suite never arms the real repository, and
+the real repository was not armed while this was written. Suite total 82, up from 71.

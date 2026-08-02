@@ -7,6 +7,11 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+echo "==> shell syntax"
+for script in scripts/*.sh; do
+    bash -n "$script"
+done
+
 echo "==> cargo fmt"
 cargo fmt --all -- --check
 
