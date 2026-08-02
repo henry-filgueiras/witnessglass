@@ -78,7 +78,6 @@ Do not build, and do not lay speculative groundwork for:
 
 - a daemon or background service
 - an MCP server
-- a TUI or web UI or dashboard
 - a distributed collector
 - a generalized plugin/adapter framework (no framework before two real adapters exist)
 - an AI summarizer of recordings
@@ -88,6 +87,29 @@ Do not build, and do not lay speculative groundwork for:
 
 Foundation-level direction in the README is context, not a license to design a speculative
 framework ahead of a working kernel.
+
+**One item has been lifted from this list: a TUI, web UI, or dashboard.** decision:5 lifts it,
+on the evidence that a working kernel and one real recording now exist to project from. The
+remaining items stand at full strength and none is weakened by that precedent; each would need
+its own decision.
+
+A projection built under decision:5 carries five conditions, and they are load-bearing:
+
+- **Derived and disposable** — rebuildable from raw, never rewriting raw, safe to delete (§3).
+- **The channel distinction survives into the rendering.** Reported and observed must stay
+  visibly distinct in the view, and a disagreement between them is shown, not resolved. A
+  merged "step" promotes a claim into a fact by presentation alone (§2).
+- **Absences are rendered as absences.** No gap filled with a plausible value; no parentage
+  inferred from adjacency or containment; no unexercised surface rendered as a working one;
+  no tool-derived list of changed files presented as a complete account of what changed. This
+  is the condition most likely to be broken by accident.
+- **No segmentation by `prompt_id`,** and no describing a recording as containing N turns,
+  while dragon:3 is open. `tool_use_id` and `agent_id` are the identifiers evidence licenses.
+- **Local only.** No export, no share affordance, no hosted mode, and no wording implying
+  rendered output is safer than the recording behind it. Rendering is not redacting (§5).
+
+A presentation layer must not smuggle in a daemon. A local, on-demand renderer over a
+recording on disk is permitted; a background process that watches, collects, or serves is not.
 
 ## 7. Scarp workflow
 

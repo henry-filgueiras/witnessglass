@@ -290,15 +290,27 @@ near `archaeology/`, which holds durable project knowledge.
 Not in scope at this stage, and not to be inferred from the framing above:
 
 - a daemon, background collector, or distributed collection tier
-- an MCP server, TUI, web UI, or dashboard
+- an MCP server
 - a generalized plugin or adapter framework built before there are two real adapters
 - AI-generated summarization of recordings
 - attaching to arbitrary PIDs or OS-wide tracing
 - multi-agent coordination
 - publishing a crate
-- derived projections — spans, timelines, landmarks, findings
 - redaction, export, or any notion of a shareable recording
 - rotation, compaction, indexing, or streaming reads of large recordings
+
+**Recently moved into scope:** derived projections — spans, timelines, landmarks, correlated
+views — and a local presentation layer over them. Lifted by
+[decision 5](archaeology/decisions/0005-lift-the-user-interface-non-goal-and-constrain-derived-projections.md)
+once a working kernel and one real recording existed to project from. None of it is built.
+
+That lift carries conditions, because a view is the surface where partial coverage is most
+easily mistaken for complete observation. A projection must be rebuildable from the raw stream
+and safe to delete; must keep reported and observed visibly distinct in the *rendering*, not
+just in the data; must render absences as absences rather than filling them with plausible
+values; must not group work by `prompt_id` while dragon:3 is open; and must stay local, with
+no export and no implication that a rendered view is safer to share than the recording behind
+it. Rendering is not redacting.
 
 ## Development
 
