@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use witnessglass::claude::UnmodelledFields;
 use witnessglass::view::{Snapshot, Viewer, open_in_browser};
 use witnessglass::{Emission, Tail, append, replay_file};
 
@@ -18,7 +19,7 @@ witnessglass — a flight recorder for coding agents (experimental kernel)
 USAGE:
     witnessglass append      --recording <PATH>
     witnessglass replay      --recording <PATH>
-    witnessglass claude-hook --recordings-dir <DIR>
+    witnessglass claude-hook --recordings-dir <DIR> [--strict-json-validation]
     witnessglass view        --recording <PATH> [--no-open]
 
     append        Read one JSON emission object from stdin and append it to the
@@ -30,6 +31,15 @@ USAGE:
                   Prints nothing on success. Passive: it returns no decision,
                   no updated input or output, and no additional context, so it
                   cannot influence the session it records.
+
+                  --strict-json-validation refuses any payload carrying a field
+                  the adapter neither models nor deliberately drops, naming the
+                  fields. A drift canary for one session, not a setting to leave
+                  on: a refused payload is a record that was never written, and
+                  the whole point of ignoring unknown fields is that an upstream
+                  addition must not stop a recording mid-session. Also enabled by
+                  WITNESSGLASS_STRICT_JSON=1, which is how you reach a hook that
+                  Claude spawns from a settings file.
     view          Validate and project one recording, then serve that snapshot
                   read-only to a browser on a loopback port behind a per-launch
                   capability, and open it. Foreground and short-lived: it holds
@@ -76,13 +86,64 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
         }
         "append" => run_append(&flag_value(&args[1..], "--recording")?),
         "replay" => run_replay(&flag_value(&args[1..], "--recording")?),
-        "claude-hook" => run_claude_hook(&flag_value(&args[1..], "--recordings-dir")?),
+        "claude-hook" => {
+            let options = parse_claude_hook_args(&args[1..])?;
+            run_claude_hook(&options.recordings_dir, options.unmodelled)
+        }
         "view" => {
             let options = parse_view_args(&args[1..])?;
             run_view(&options)
         }
         other => Err(format!("unknown command {other:?}\n\n{USAGE}")),
     }
+}
+
+/// Environment equivalent of `--strict-json-validation`.
+///
+/// A flag would be the whole story if a human ran this command, but a hook is
+/// spawned by Claude from a settings file, and `arm.sh` writes that file from a
+/// fixed example. Without an environment path, arming a canary session means
+/// hand-editing JSON that a script owns. `WITNESSGLASS_STRICT_JSON=1 claude`
+/// reaches every hook the session spawns and reaches nothing else.
+const STRICT_ENV: &str = "WITNESSGLASS_STRICT_JSON";
+
+/// What `claude-hook` was asked to do.
+struct ClaudeHookOptions {
+    /// Directory the session's recording lives in.
+    recordings_dir: PathBuf,
+    /// What to do about payload fields the adapter has no model for.
+    unmodelled: UnmodelledFields,
+}
+
+fn parse_claude_hook_args(args: &[String]) -> Result<ClaudeHookOptions, String> {
+    let mut recordings_dir = None;
+    // The flag wins when present; otherwise the environment decides. Any value
+    // but the empty string enables it, so `=0` disabling it would be a trap —
+    // unset it instead.
+    let mut unmodelled = match std::env::var(STRICT_ENV) {
+        Ok(value) if !value.is_empty() => UnmodelledFields::Reject,
+        _ => UnmodelledFields::Ignore,
+    };
+
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "--recordings-dir" => {
+                let value = rest
+                    .next()
+                    .ok_or_else(|| "--recordings-dir requires a path".to_owned())?;
+                recordings_dir = Some(PathBuf::from(value));
+            }
+            "--strict-json-validation" => unmodelled = UnmodelledFields::Reject,
+            other => return Err(format!("unexpected argument {other:?}\n\n{USAGE}")),
+        }
+    }
+
+    Ok(ClaudeHookOptions {
+        recordings_dir: recordings_dir
+            .ok_or_else(|| format!("--recordings-dir <DIR> is required\n\n{USAGE}"))?,
+        unmodelled,
+    })
 }
 
 /// What `view` was asked to do.
@@ -214,10 +275,13 @@ fn run_append(recording: &Path) -> Result<ExitCode, String> {
 /// is what makes this adapter incapable of influencing the session. Failures go
 /// to stderr with exit 1, which Claude documents as non-blocking for every hook
 /// configured here — the recording stops, the session does not.
-fn run_claude_hook(recordings_dir: &Path) -> Result<ExitCode, String> {
+fn run_claude_hook(
+    recordings_dir: &Path,
+    unmodelled: UnmodelledFields,
+) -> Result<ExitCode, String> {
     let input = read_stdin()?;
 
-    let translation = witnessglass::claude::translate(&input)
+    let translation = witnessglass::claude::translate_with(&input, unmodelled)
         .map_err(|err| format!("could not translate Claude hook: {err}"))?;
 
     std::fs::create_dir_all(recordings_dir).map_err(|err| {

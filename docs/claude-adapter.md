@@ -163,6 +163,41 @@ rejecting an unrecognized one would mean a harmless upstream addition silently s
 recording for every session on the host. The strictness lives on the record written out,
 which does reject unknown fields.
 
+That leniency has a cost, and this project paid it: the delivered `duration_ms` was dropped
+unread for two sprints because the adapter modelled `duration`. Silence is the correct default
+and a bad permanent posture, so the adapter now names what it drops.
+
+**Every top-level payload field is accounted for in one of two places**, both compile-time:
+
+- the `HookPayload` struct, for fields that reach a record;
+- a `DELIBERATELY_UNRECORDED` list, for fields seen and dropped on purpose — `cwd`,
+  `transcript_path`, `permission_mode`, `effort`, `model`, `last_assistant_message`,
+  `stop_reason`. Each entry carries its reason. Most are privacy (CLAUDE.md §5); `permission_mode`
+  is a gap dragon:1 argues should be closed by a schema decision.
+
+`--strict-json-validation` refuses any payload carrying a field in neither list, naming the
+fields. `WITNESSGLASS_STRICT_JSON=1` does the same and is the usable form, because a hook is
+spawned by Claude from a settings file rather than by a human with a command line.
+
+**It is a canary for one session, not a setting to leave on.** A refused payload is a record
+that was never written, which is exactly the failure the lenient default exists to prevent. Run
+it deliberately to ask "has the wire moved since anybody looked", read the answer, turn it off.
+
+Strict mode would have caught the `duration_ms` mismatch on day one — the adapter modelled
+`duration`, so the delivered `duration_ms` was in neither list, and there is a test asserting
+exactly that. What actually caught it was `scripts/probe.sh`, two sprints later. The two are
+complements rather than substitutes:
+
+| | strict mode | the probe |
+| --- | --- | --- |
+| asks | has the wire moved past *this adapter's model*? | what is on the wire? |
+| reports | the names of fields the adapter cannot account for | every key, per hook, with counts |
+| costs | the records it refuses | a capture file as sensitive as a recording |
+| fails when | the adapter is stale | never; it has no model to be wrong |
+
+Strict mode is cheap enough to run on a whole session and tells you *that* something moved. The
+probe tells you *what*. Neither is a substitute for reading a recording.
+
 An unknown `hook_event_name` is **refused**, not guessed at. Inventing a meaning for an
 unrecognized lifecycle point would put evidence in a recording that nothing generated.
 

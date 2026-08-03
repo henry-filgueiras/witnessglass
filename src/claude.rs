@@ -72,6 +72,58 @@ const SUPPORTED_HOOKS: &[&str] = &[
     "SessionEnd",
 ];
 
+/// Payload fields this adapter has seen, understands, and deliberately does not
+/// record. Compile-time, and the second half of a complete statement: a field is
+/// accounted for if it is either a [`HookPayload`] field or named here.
+///
+/// This list exists so that "we drop this on purpose" and "we have never heard
+/// of this" are different facts. Without it, strict mode would reject every real
+/// payload on `cwd` alone and be useless. Each entry needs a reason, and a field
+/// whose reason has expired should be promoted into the struct rather than left
+/// here.
+const DELIBERATELY_UNRECORDED: &[&str] = &[
+    // Absolute working directory. Privacy: it names the operator's filesystem on
+    // every record (CLAUDE.md §5, dragon:2). Note that dragon:2 also found it
+    // arriving *inside* error strings, where dropping the field cannot help.
+    "cwd",
+    // Absolute path to the session's full transcript, usually under $HOME. A
+    // pointer to far more than a recording holds, and to material this project
+    // has made no claims about.
+    "transcript_path",
+    // The permission mode in force. Not modelled, and dragon:1 argues it should
+    // be: this session's entire denial result is explained by it, and the
+    // recording cannot state it. Promoting it is a schema change and wants a
+    // decision, not a quiet addition here.
+    "permission_mode",
+    // Reasoning-effort descriptor for the agent. Bears on how the agent thought,
+    // not on what the machinery observed it do.
+    "effort",
+    // Documented on SessionStart; never observed on this host. Unmodelled rather
+    // than assumed absent.
+    "model",
+    // Assistant prose on SubagentStop. This is the reported channel and would
+    // need decision:2's treatment rather than a field slot, and it is a large
+    // privacy surface for the value it adds.
+    "last_assistant_message",
+    // Why a subagent stopped. Unmodelled; nothing derives from it yet.
+    "stop_reason",
+];
+
+/// What to do about payload fields that are in neither [`HookPayload`] nor
+/// [`DELIBERATELY_UNRECORDED`].
+///
+/// Ignoring is the default and the only safe production posture: rejecting means
+/// a recording stops the day Claude adds a field, which is a worse outcome than
+/// a recording that misses one. Rejecting is a canary you run deliberately.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UnmodelledFields {
+    /// Drop them, as this adapter always has.
+    #[default]
+    Ignore,
+    /// Refuse the payload and name them.
+    Reject,
+}
+
 /// Why a hook payload could not be translated.
 ///
 /// Every variant means nothing was appended. The adapter either records a hook
@@ -94,6 +146,15 @@ pub enum HookError {
     },
     /// The `session_id` could not be used as a filename safely.
     UnsafeSessionId(String),
+    /// Strict mode was asked for and the payload carried fields this adapter has
+    /// no model for. Not a defect in the session — evidence that the wire has
+    /// moved and this adapter has not.
+    UnmodelledFields {
+        /// Hook event name.
+        hook_event_name: String,
+        /// The unaccounted-for field names, sorted.
+        fields: Vec<String>,
+    },
 }
 
 impl std::fmt::Display for HookError {
@@ -117,6 +178,19 @@ impl std::fmt::Display for HookError {
             HookError::UnsafeSessionId(reason) => {
                 write!(f, "refusing to use session_id as a filename: {reason}")
             }
+            HookError::UnmodelledFields {
+                hook_event_name,
+                fields,
+            } => write!(
+                f,
+                "{hook_event_name} payload carried {} field(s) this adapter has no model for: {}. \
+                 Strict mode refused it and appended nothing. Without --strict-json-validation \
+                 these are dropped silently, which is how the delivered duration went unrecorded \
+                 for two sprints. Either model them, or add them to DELIBERATELY_UNRECORDED with \
+                 a reason",
+                fields.len(),
+                fields.join(", ")
+            ),
         }
     }
 }
@@ -183,6 +257,30 @@ struct HookPayload {
     parent_agent_id: Option<String>,
     #[serde(default)]
     parent_agent_type: Option<String>,
+
+    /// Everything above did not claim. Captured rather than discarded so the
+    /// adapter can say *which* fields it is dropping instead of only that it
+    /// drops some.
+    ///
+    /// `flatten` is what keeps this honest: the set of modelled fields is the
+    /// struct itself, so adding a field above removes it from here automatically
+    /// and no second list can fall out of step with the first. A hand-maintained
+    /// roster of known keys would have needed updating in the same commit that
+    /// introduced the `duration` bug, by the same person who introduced it.
+    #[serde(flatten)]
+    unmodelled: std::collections::BTreeMap<String, serde_json::Value>,
+}
+
+impl HookPayload {
+    /// Field names present on the wire that neither the struct nor
+    /// [`DELIBERATELY_UNRECORDED`] accounts for. Sorted, because `BTreeMap`.
+    fn unaccounted_fields(&self) -> Vec<String> {
+        self.unmodelled
+            .keys()
+            .filter(|key| !DELIBERATELY_UNRECORDED.contains(&key.as_str()))
+            .cloned()
+            .collect()
+    }
 }
 
 /// The result of translating one hook payload.
@@ -198,18 +296,50 @@ pub struct Translation {
     pub emissions: Vec<Emission>,
 }
 
-/// Translate exactly one Claude Code command-hook payload.
+/// Translate exactly one Claude Code command-hook payload, dropping fields this
+/// adapter has no model for.
 ///
 /// Returns every emission the payload supports, in the order they should be
 /// appended. Returns an error without producing any emission if the payload is
 /// malformed, names an unsupported hook, is missing a field its translation
 /// needs, or carries a `session_id` that cannot safely become a filename.
 pub fn translate(payload_json: &str) -> Result<Translation, HookError> {
+    translate_with(payload_json, UnmodelledFields::Ignore)
+}
+
+/// Translate one payload, choosing what happens to fields this adapter has no
+/// model for.
+///
+/// [`UnmodelledFields::Reject`] is a drift canary, not a hardening measure. It
+/// answers "has the wire moved since anybody looked", which is a question this
+/// project learned to ask the expensive way: the delivered `duration_ms` was
+/// discarded unread from the day the adapter was written, and every check that
+/// went looking for it inspected the adapter's own output. A payload field the
+/// adapter cannot name is the general shape of that failure.
+///
+/// It is deliberately not the default. Rejecting means no record is written, so
+/// leaving it on turns a harmless upstream addition into a recording that stops
+/// mid-session — the exact outcome [`HookPayload`]'s leniency exists to prevent.
+/// Arm with it for one session, read what it says, and turn it off.
+pub fn translate_with(
+    payload_json: &str,
+    unmodelled: UnmodelledFields,
+) -> Result<Translation, HookError> {
     let payload: HookPayload = serde_json::from_str(payload_json.trim())
         .map_err(|err| HookError::Malformed(err.to_string()))?;
 
     if !SUPPORTED_HOOKS.contains(&payload.hook_event_name.as_str()) {
         return Err(HookError::UnsupportedHookEvent(payload.hook_event_name));
+    }
+
+    if unmodelled == UnmodelledFields::Reject {
+        let fields = payload.unaccounted_fields();
+        if !fields.is_empty() {
+            return Err(HookError::UnmodelledFields {
+                hook_event_name: payload.hook_event_name,
+                fields,
+            });
+        }
     }
 
     let file_name = recording_file_name(&payload.session_id)?;

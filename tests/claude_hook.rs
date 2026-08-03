@@ -21,10 +21,24 @@ const HOOK_SESSION: &str = "e7c1a0f2-0000-4000-8000-synthetic0001";
 /// Run the adapter as Claude would: a short-lived process, one payload on
 /// stdin, nothing else.
 fn run_hook(dir: &Path, payload: &str) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_witnessglass"))
+    run_hook_with(dir, payload, &[], &[])
+}
+
+/// As above, with extra arguments and environment. Claude spawns a hook from a
+/// settings file, so both are ways a real deployment configures one.
+fn run_hook_with(dir: &Path, payload: &str, args: &[&str], env: &[(&str, &str)]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_witnessglass"));
+    command
         .arg("claude-hook")
         .arg("--recordings-dir")
         .arg(dir)
+        .args(args);
+    // Cleared so an operator's own setting cannot decide a test's outcome.
+    command.env_remove("WITNESSGLASS_STRICT_JSON");
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -964,4 +978,193 @@ fn the_example_settings_file_parses_as_json() {
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Strict mode: a drift canary for fields the adapter cannot name.
+// ---------------------------------------------------------------------------
+
+/// Translate with unmodelled fields refused rather than dropped.
+fn translate_strict(payload: serde_json::Value) -> Result<claude::Translation, HookError> {
+    claude::translate_with(&payload.to_string(), claude::UnmodelledFields::Reject)
+}
+
+/// The exact top-level key set Claude Code 2.1.220 sent on `PostToolUse`,
+/// taken from raw payloads captured by the probe rather than from the docs.
+fn observed_post_tool_use_payload() -> serde_json::Value {
+    serde_json::json!({
+        "hook_event_name": "PostToolUse",
+        "session_id": HOOK_SESSION,
+        "cwd": "/synthetic/workdir",
+        "transcript_path": "/synthetic/transcript.jsonl",
+        "permission_mode": "default",
+        "effort": { "level": "synthetic" },
+        "prompt_id": "prompt-synthetic-0001",
+        "tool_use_id": "toolu_synthetic_0001",
+        "tool_name": "Bash",
+        "tool_input": { "command": "echo synthetic" },
+        "tool_response": { "content": [] },
+        "duration_ms": 7,
+    })
+}
+
+#[test]
+fn strict_mode_accepts_the_field_set_the_integration_actually_sends() {
+    // This is the canary's calibration. Every key here was observed on the wire;
+    // each is either modelled or listed as deliberately unrecorded, so a correct
+    // adapter must accept the whole payload with nothing left over.
+    //
+    // When this fails, one of two things happened: someone narrowed the adapter,
+    // or the field set moved. Both are worth a person looking.
+    translate_strict(observed_post_tool_use_payload())
+        .expect("every field 2.1.220 sends should be accounted for");
+
+    let mut failure = observed_post_tool_use_payload();
+    let object = failure.as_object_mut().expect("object");
+    object.insert("hook_event_name".into(), "PostToolUseFailure".into());
+    object.remove("tool_response");
+    object.insert("error".into(), "synthetic failure".into());
+    object.insert("is_interrupt".into(), false.into());
+    translate_strict(failure).expect("the failure hook's field set too");
+}
+
+#[test]
+fn strict_mode_refuses_a_field_the_adapter_can_neither_model_nor_name() {
+    let mut payload = observed_post_tool_use_payload();
+    payload.as_object_mut().expect("object").insert(
+        "synthetic_future_field".into(),
+        serde_json::Value::from(1234),
+    );
+
+    let error = translate_strict(payload).expect_err("strict mode should refuse it");
+    let HookError::UnmodelledFields {
+        hook_event_name,
+        fields,
+    } = &error
+    else {
+        panic!("expected UnmodelledFields, got {error:?}");
+    };
+    assert_eq!(hook_event_name, "PostToolUse");
+    assert_eq!(fields, &["synthetic_future_field".to_owned()]);
+
+    // The message has to name the field, or the canary reports only that
+    // something changed and leaves the reader to diff the payload by hand.
+    assert!(
+        error.to_string().contains("synthetic_future_field"),
+        "{error}"
+    );
+}
+
+#[test]
+fn strict_mode_would_have_caught_the_key_that_went_unread_for_two_sprints() {
+    // The historical failure, from the direction it would now be detected. The
+    // adapter modelled `duration`; the wire sent `duration_ms`. Whichever of the
+    // two the adapter is wrong about, the other one shows up as a field it
+    // cannot name — so strict mode reports the mismatch rather than producing a
+    // recording that quietly lacks timing.
+    let mut payload = observed_post_tool_use_payload();
+    payload
+        .as_object_mut()
+        .expect("object")
+        .insert("duration".into(), serde_json::Value::from(5000));
+
+    let error = translate_strict(payload).expect_err("the documented spelling is not modelled");
+    assert!(error.to_string().contains("duration"), "{error}");
+}
+
+#[test]
+fn deliberately_unrecorded_fields_do_not_trip_the_canary() {
+    // `cwd` arrives on every payload and is dropped on purpose, for privacy. If
+    // it tripped strict mode the canary would fire on every hook of every
+    // session and be worth nothing. "Dropped on purpose" and "never heard of"
+    // must stay different facts.
+    let payload = observed_post_tool_use_payload();
+    assert!(
+        payload.get("cwd").is_some(),
+        "the fixture must actually carry one"
+    );
+    translate_strict(payload).expect("a deliberately unrecorded field is accounted for");
+}
+
+#[test]
+fn capturing_unmodelled_fields_did_not_change_the_lenient_default() {
+    // `unknown_payload_fields_are_ignored_so_recording_survives_a_claude_update`
+    // states the policy. This states that collecting those fields into a map,
+    // instead of letting serde discard them, left the policy and the parse
+    // intact: the payload still translates, the modelled value still lands, and
+    // the captured field reaches no record.
+    let mut payload = observed_post_tool_use_payload();
+    payload
+        .as_object_mut()
+        .expect("object")
+        .insert("synthetic_future_field".into(), 1234.into());
+
+    let translation = translate(payload);
+    assert_eq!(translation.emissions.len(), 1);
+    let Event::ToolSucceeded(succeeded) = &translation.emissions[0].event else {
+        panic!("expected tool_succeeded");
+    };
+    assert_eq!(succeeded.duration_ms, Some(7));
+
+    // And the dropped field reaches no record, in any spelling.
+    let line = serde_json::to_string(&translation.emissions[0]).expect("serialize");
+    assert!(!line.contains("synthetic_future_field"), "{line}");
+}
+
+#[test]
+fn strict_mode_refuses_before_writing_anything() {
+    // A refused payload must leave no partial record behind. The adapter either
+    // records a hook completely or records none of it, and strict mode is not an
+    // exception to that.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut payload = observed_post_tool_use_payload();
+    payload
+        .as_object_mut()
+        .expect("object")
+        .insert("synthetic_future_field".into(), 1234.into());
+
+    let output = run_hook_with(
+        dir.path(),
+        &payload.to_string(),
+        &["--strict-json-validation"],
+        &[],
+    );
+    assert_eq!(output.status.code(), Some(1), "exit 1 is non-blocking");
+    assert!(output.stdout.is_empty(), "stdout is read as a decision");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("synthetic_future_field"), "{stderr}");
+    assert!(
+        !dir.path().join(format!("{HOOK_SESSION}.ndjson")).exists(),
+        "a refused payload must not create a recording"
+    );
+}
+
+#[test]
+fn the_environment_variable_enables_strict_mode_for_hooks_claude_spawns() {
+    // A hook is launched by Claude from a settings file this project's arm.sh
+    // writes, so there is no command line to add a flag to. The environment is
+    // the only path that reaches it.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let mut payload = observed_post_tool_use_payload();
+    payload
+        .as_object_mut()
+        .expect("object")
+        .insert("synthetic_future_field".into(), 1234.into());
+
+    let output = run_hook_with(
+        dir.path(),
+        &payload.to_string(),
+        &[],
+        &[("WITNESSGLASS_STRICT_JSON", "1")],
+    );
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("synthetic_future_field"),
+        "the environment variable should refuse the same payload the flag does"
+    );
+
+    // Unset, the same payload records.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let output = run_hook(dir.path(), &payload.to_string());
+    assert_eq!(output.status.code(), Some(0));
 }
