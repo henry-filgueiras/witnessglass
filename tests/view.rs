@@ -155,12 +155,18 @@ fn the_capability_unlocks_the_page_the_stylesheet_and_the_projection() {
     let (head, body) = get(served.addr, &format!("/?c={c}"));
     assert!(head.starts_with("HTTP/1.1 200 OK"));
     assert!(head.contains("Content-Type: text/html; charset=utf-8"));
-    assert!(body.contains("<h1>WitnessGlass</h1>"));
+    assert!(body.contains("WitnessGlass"));
+    assert!(body.contains("Evidence HUD"));
 
     let (head, body) = get(served.addr, &format!("/viewer.css?c={c}"));
     assert!(head.starts_with("HTTP/1.1 200 OK"));
     assert!(head.contains("Content-Type: text/css; charset=utf-8"));
     assert!(body.contains("--paper"));
+
+    let (head, body) = get(served.addr, &format!("/viewer.js?c={c}"));
+    assert!(head.starts_with("HTTP/1.1 200 OK"));
+    assert!(head.contains("Content-Type: text/javascript; charset=utf-8"));
+    assert!(body.contains("projection.json"));
 
     let (head, body) = get(served.addr, &format!("/projection.json?c={c}"));
     assert!(head.starts_with("HTTP/1.1 200 OK"));
@@ -274,8 +280,17 @@ fn every_response_carries_the_restrictive_headers() {
         }
 
         assert!(head.contains("Content-Security-Policy: default-src 'none'"));
-        assert!(head.contains("script-src 'none'"));
+        // `'self'` and no more: the workbench script is served from this origin
+        // and there is no inline script and no `eval`, so nothing weaker is
+        // needed.
+        assert!(head.contains("script-src 'self'"));
+        assert!(head.contains("style-src 'self'"));
         assert!(head.contains("frame-ancestors 'none'"));
+        assert!(
+            !head.contains("unsafe-inline"),
+            "{target} admits inline script or style"
+        );
+        assert!(!head.contains("unsafe-eval"));
 
         // No disclosure for nothing.
         assert!(
@@ -306,9 +321,11 @@ fn hostile_payload_strings_survive_as_text_and_never_as_markup() {
     let served = serve(snapshot_of(&recording));
     let c = &served.capability;
 
-    // The page carries no recording data at all, hostile or otherwise. That is
-    // the guarantee: there is no path on which a payload becomes markup, because
-    // no payload reaches a markup route.
+    // The served page carries no recording data at all, hostile or otherwise.
+    // That is the guarantee at this layer: no payload reaches a markup route,
+    // because the page is a fixed document and the projection is JSON. What the
+    // browser then does with it is guarded in `tests/workbench.rs` and verified
+    // by hand against `docs/viewer.md`.
     let (_, page) = get(served.addr, &format!("/?c={c}"));
     assert!(!page.contains("onerror"));
     assert!(!page.contains("toolu_a"));
@@ -479,8 +496,13 @@ fn the_bundled_assets_require_no_network_access() {
     let c = &served.capability;
     let (_, page) = get(served.addr, &format!("/?c={c}"));
     let (_, stylesheet) = get(served.addr, &format!("/viewer.css?c={c}"));
+    let (_, script) = get(served.addr, &format!("/viewer.js?c={c}"));
 
-    for (name, asset) in [("page", &page), ("stylesheet", &stylesheet)] {
+    for (name, asset) in [
+        ("page", &page),
+        ("stylesheet", &stylesheet),
+        ("script", &script),
+    ] {
         for remote in [
             "http://",
             "https://",
@@ -495,25 +517,33 @@ fn the_bundled_assets_require_no_network_access() {
         }
     }
 
-    // No script, no worker, no storage, no analytics. The page is inert.
+    // Exactly one script element, external and same-origin. No inline script,
+    // no worker, no storage, no analytics, no inline handler.
+    assert_eq!(page.matches("<script").count(), 1);
+    assert!(page.contains(&format!(
+        "<script type=\"module\" src=\"/viewer.js?c={c}\"></script>"
+    )));
     for forbidden in [
-        "<script",
         "serviceWorker",
         "localStorage",
         "sessionStorage",
         "indexedDB",
         "onerror=",
         "onload=",
+        "onclick=",
     ] {
         assert!(!page.contains(forbidden), "the page contains {forbidden:?}");
+        assert!(
+            !script.contains(forbidden),
+            "the script contains {forbidden:?}"
+        );
     }
 
-    // The page's only links are same-origin and carry the capability.
+    // The page's only stylesheet is same-origin and carries the capability.
     assert!(page.contains(&format!("href=\"/viewer.css?c={c}\"")));
-    assert!(page.contains(&format!("href=\"/projection.json?c={c}\"")));
 
     // It says what it is, including what it is not.
-    assert!(page.contains("not redacted"));
+    assert!(page.contains("Not redacted"));
     assert!(page.contains("Rendering is not redacting"));
 }
 

@@ -1,23 +1,51 @@
-/* Bundled with the binary. No external font, no remote asset, no network
-   access of any kind — the process serves this file and nothing fetches
-   anything else. */
+/* The WitnessGlass evidence workbench.
+   Bundled with the binary. No external font, no remote asset, no network access
+   of any kind.
+
+   The visual direction is a flight-recorder workbench: hairline rules, dense
+   monospace evidence, a restrained palette, and nothing that reads as a product
+   dashboard. Colour is decoration everywhere; every distinction that matters is
+   also carried by a glyph and a word, because a reader who cannot see the
+   colour must still be able to tell a claim from an observation. */
 
 :root {
-    color-scheme: light dark;
-    --ink: #14181d;
-    --paper: #f6f7f8;
-    --rule: #c8ccd2;
-    --quiet: #5b636d;
-    --warn: #7a3b00;
+    color-scheme: dark light;
+
+    --paper: #0f1216;
+    --panel: #151a20;
+    --raised: #1c232b;
+    --ink: #e8edf2;
+    --quiet: #98a4b0;
+    --rule: #2c353f;
+    --rule-strong: #3d4956;
+
+    --reported: #c9a227;
+    --observed: #5aa9e6;
+    --recorder: #9d8df1;
+    --derived: #6fd3b0;
+    --alarm: #f0866b;
+    --focus: #ffd479;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
+@media (prefers-color-scheme: light) {
     :root {
-        --ink: #e6e9ec;
-        --paper: #16191d;
-        --rule: #3a4148;
-        --quiet: #9aa3ad;
-        --warn: #f0b26b;
+        --paper: #f4f6f8;
+        --panel: #ffffff;
+        --raised: #eef1f4;
+        --ink: #11161b;
+        --quiet: #4d5761;
+        --rule: #d3d9df;
+        --rule-strong: #b3bcc5;
+
+        --reported: #7a5c00;
+        --observed: #10527f;
+        --recorder: #4b3ba8;
+        --derived: #056b52;
+        --alarm: #9a3412;
+        --focus: #7a4b00;
     }
 }
 
@@ -27,65 +55,749 @@
 
 body {
     margin: 0;
-    padding: 2rem 1.25rem 4rem;
     background: var(--paper);
     color: var(--ink);
-    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 14px/1.55 var(--sans);
 }
 
-main {
-    max-width: 42rem;
-    margin: 0 auto;
-}
-
-h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.5rem;
-    letter-spacing: -0.01em;
+h2,
+h3,
+h4,
+h5 {
+    margin: 0;
+    font-weight: 600;
 }
 
 h2 {
-    margin: 2rem 0 0.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--rule);
-    font-size: 1rem;
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
     color: var(--quiet);
 }
 
-.lede {
-    margin: 0 0 1.5rem;
+h3 {
+    font-size: 0.85rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+h4 {
+    font-size: 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+h5 {
+    margin-top: 0.75rem;
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--quiet);
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.mono {
+    font-family: var(--mono);
+    font-size: 0.85em;
+}
+
+.small {
+    font-size: 0.85em;
+}
+
+.strong {
+    font-weight: 600;
+}
+
+.muted {
     color: var(--quiet);
 }
 
-code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.alarm {
+    color: var(--alarm);
+    font-weight: 600;
+}
+
+.note {
+    margin: 0.4rem 0 0;
+    font-size: 0.8rem;
+    color: var(--quiet);
+    max-width: 78ch;
+}
+
+.warn-note {
+    margin: 0.5rem 0 0;
+    padding: 0.4rem 0.6rem;
+    border-left: 3px solid var(--alarm);
+    background: var(--raised);
+    font-size: 0.8rem;
+    max-width: 78ch;
+}
+
+.alarm-note {
+    margin: 0.5rem 0 0;
+    color: var(--alarm);
+    font-size: 0.8rem;
+    max-width: 78ch;
+}
+
+/* --- focus and motion ---------------------------------------------------- */
+
+:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+.skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    padding: 0.6rem 1rem;
+    background: var(--panel);
+    color: var(--ink);
+    z-index: 10;
+}
+
+.skip:focus {
+    left: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+        animation: none !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* --- masthead ------------------------------------------------------------ */
+
+.masthead {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--rule-strong);
+    background: var(--panel);
+}
+
+.masthead-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.wordmark {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.subtitle {
+    color: var(--quiet);
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.sensitive {
+    margin: 0.75rem 0 0;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--alarm);
+    border-left-width: 4px;
+    background: var(--raised);
+    font-size: 0.82rem;
+    max-width: 100ch;
+}
+
+.failure {
+    margin: 1.25rem;
+    padding: 0.9rem;
+    border: 1px solid var(--alarm);
+    background: var(--raised);
+    max-width: 90ch;
+}
+
+/* --- layout -------------------------------------------------------------- */
+
+main {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--rule);
+}
+
+main > section,
+.split > section {
+    background: var(--paper);
+    padding: 1rem 1.25rem;
+}
+
+.section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.5rem;
+}
+
+.split {
+    display: grid;
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+    gap: 1px;
+    background: var(--rule);
+}
+
+/* Below this the ledger cannot hold seven columns beside an inspector, so the
+   inspector moves under it rather than squeezing both. */
+@media (max-width: 1200px) {
+    .split {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+.scroller {
+    max-height: 62vh;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+/* --- panels -------------------------------------------------------------- */
+
+.panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.panel {
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--rule);
+    background: var(--panel);
+}
+
+.panel + .panel {
+    margin-top: 0.75rem;
+}
+
+.panel-gaps {
+    border-color: var(--alarm);
+    border-left-width: 3px;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
+    gap: 0.25rem 0.75rem;
+    margin: 0.6rem 0 0;
+}
+
+.facts dt {
+    color: var(--quiet);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+/* --- counts and receipts ------------------------------------------------- */
+
+.counts {
+    margin-top: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.count-row,
+.gap-row,
+.anomaly-row,
+.subagent-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+    padding: 0.18rem 0;
+    border-bottom: 1px solid var(--rule);
+}
+
+.count-label,
+.gap-label {
+    font-family: var(--mono);
+    font-size: 0.82em;
+    min-width: 12rem;
+}
+
+.count-value {
+    font-family: var(--mono);
+    font-weight: 700;
+    min-width: 2.5rem;
+    text-align: right;
+}
+
+.count-absent {
+    color: var(--alarm);
+    font-size: 0.82em;
+}
+
+.count-scope {
+    color: var(--quiet);
+    font-size: 0.76em;
+    font-style: italic;
+}
+
+.receipts {
+    display: inline-flex;
+    gap: 0.2rem;
+    flex-wrap: wrap;
+}
+
+.receipt {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    padding: 0.05rem 0.3rem;
+    border: 1px solid var(--rule-strong);
+    background: var(--raised);
+    color: var(--ink);
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+.receipt:hover {
+    border-color: var(--focus);
+}
+
+.pair {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    font-size: 0.82em;
+}
+
+.anomaly-name {
+    color: var(--alarm);
+    font-size: 0.85em;
+}
+
+/* --- tags ---------------------------------------------------------------- */
+
+.tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    padding: 0.05rem 0.35rem;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    white-space: nowrap;
+}
+
+.tag .glyph {
     font-size: 0.9em;
 }
 
-a {
-    color: inherit;
-    text-underline-offset: 0.2em;
+.tag-reported {
+    color: var(--reported);
 }
 
-a:focus-visible {
-    outline: 2px solid currentColor;
-    outline-offset: 3px;
+.tag-observed {
+    color: var(--observed);
 }
 
-ul {
-    padding-left: 1.2rem;
+.tag-recorder {
+    color: var(--recorder);
 }
 
-li {
-    margin-bottom: 0.4rem;
+.tag-derived {
+    color: var(--derived);
 }
 
-.warning {
-    margin: 1.5rem 0;
-    padding: 0.85rem 1rem;
+.tag-anomalous {
+    color: var(--alarm);
+}
+
+.chip {
+    display: inline-block;
+    font-size: 0.72rem;
+    padding: 0.05rem 0.35rem;
+    margin: 0.1rem 0.2rem 0.1rem 0;
+    border: 1px solid var(--rule-strong);
+    background: var(--raised);
+    border-radius: 2px;
+}
+
+.chip-anomalous {
+    border-color: var(--alarm);
+    color: var(--alarm);
+}
+
+/* --- event map ----------------------------------------------------------- */
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    flex-wrap: wrap;
+}
+
+.controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.lane {
+    display: grid;
+    grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--rule);
+    padding: 0.15rem 0;
+}
+
+.lane-label {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.lane-unattributed {
+    color: var(--quiet);
+    font-style: italic;
+}
+
+.lane-track {
+    position: relative;
+    height: 1.6rem;
+    background: linear-gradient(to bottom, transparent 48%, var(--rule) 48%, var(--rule) 52%, transparent 52%);
+}
+
+.mark {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 1.15rem;
+    height: 1.15rem;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--paper);
+    border: 1px solid currentColor;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 0.6rem;
+    line-height: 1;
+}
+
+.mark-reported {
+    color: var(--reported);
+}
+
+.mark-observed {
+    color: var(--observed);
+}
+
+.mark-recorder {
+    color: var(--recorder);
+}
+
+.mark-anomalous {
+    box-shadow: 0 0 0 2px var(--alarm);
+}
+
+.mark-filtered {
+    opacity: 0.28;
+}
+
+.mark-selected {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+    z-index: 2;
+}
+
+.legend {
+    display: flex;
+    gap: 0.6rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 0.7rem;
+    font-size: 0.78rem;
+}
+
+/* --- filters and search -------------------------------------------------- */
+
+.filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.6rem;
+}
+
+.filter-group {
+    margin: 0;
+    padding: 0.4rem 0.6rem 0.5rem;
     border: 1px solid var(--rule);
-    border-left: 4px solid var(--warn);
+    background: var(--panel);
+    max-height: 11rem;
+    overflow: auto;
+}
+
+.filter-group legend {
+    padding: 0 0.3rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--quiet);
+}
+
+.filter-option {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    padding: 0.05rem 0;
+    overflow-wrap: anywhere;
+}
+
+.search {
+    margin-bottom: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.search label {
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--quiet);
+}
+
+.search input[type="search"] {
+    flex: 1 1 18rem;
+    min-width: 0;
+    padding: 0.35rem 0.5rem;
+    background: var(--panel);
     color: var(--ink);
+    border: 1px solid var(--rule-strong);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+}
+
+.payload-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.8rem;
+    color: var(--ink);
+}
+
+.search .note,
+.search .warn-note {
+    flex: 1 1 100%;
+}
+
+/* --- ledger -------------------------------------------------------------- */
+
+.ledger-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+}
+
+.ledger-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--panel);
+    text-align: left;
+    padding: 0.35rem 0.5rem;
+    border-bottom: 1px solid var(--rule-strong);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--quiet);
+}
+
+.ledger-table td {
+    padding: 0.3rem 0.5rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    overflow-wrap: break-word;
+}
+
+/* Identifiers and kinds are read as whole tokens. Breaking `session_started`
+   across two lines makes a ledger harder to scan than a wide one. */
+.ledger-table td.mono {
+    white-space: nowrap;
+}
+
+#ledger-body {
+    overflow-x: auto;
+}
+
+.ledger-table tbody tr {
+    cursor: pointer;
+}
+
+.ledger-table tbody tr:hover {
+    background: var(--raised);
+}
+
+.row-selected {
+    background: var(--raised);
+    box-shadow: inset 3px 0 0 var(--focus);
+}
+
+.row-anomalous .cell-seq::after {
+    content: " ✱";
+    color: var(--alarm);
+}
+
+.cell-seq {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.cell-notes {
+    white-space: normal;
+    /* `break-word`, never `anywhere`: a note may wrap between words and must
+       not be shredded one character per line. */
+    overflow-wrap: break-word;
+}
+
+.cell-notes .chip {
+    white-space: normal;
+}
+
+/* --- inspector ----------------------------------------------------------- */
+
+.inspector-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.6rem;
+}
+
+.evidence {
+    margin-top: 0.5rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--rule);
+    border-left-width: 3px;
+    background: var(--raised);
+}
+
+.evidence-reported {
+    border-left-color: var(--reported);
+}
+
+.evidence-observed {
+    border-left-color: var(--observed);
+}
+
+.evidence-recorder {
+    border-left-color: var(--recorder);
+}
+
+.evidence-head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.claim {
+    margin: 0.45rem 0 0;
+    padding: 0.35rem 0.6rem;
+    border-left: 2px solid var(--reported);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.payload {
+    margin-top: 0.5rem;
+    border: 1px solid var(--rule);
+    background: var(--panel);
+}
+
+.payload > summary {
+    padding: 0.4rem 0.6rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--quiet);
+}
+
+.payload > summary:hover {
+    color: var(--ink);
+}
+
+.payload > *:not(summary) {
+    padding: 0 0.6rem 0.6rem;
+}
+
+.json-object {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.json-row {
+    display: grid;
+    grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+    gap: 0.5rem;
+    padding: 0.1rem 0;
+    border-bottom: 1px solid var(--rule);
+}
+
+.json-key {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--quiet);
+}
+
+.json-string,
+.json-number,
+.json-bool,
+.json-null {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    min-width: 0;
+}
+
+.json-null,
+.json-bool {
+    color: var(--quiet);
+}
+
+.json-list {
+    margin: 0;
+    padding-left: 1.1rem;
 }

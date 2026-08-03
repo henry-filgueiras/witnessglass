@@ -60,6 +60,10 @@ use crate::replay::{Replay, replay_file};
 const VIEWER_HTML: &str = include_str!("assets/viewer.html");
 /// The page's stylesheet, likewise compiled in.
 const VIEWER_CSS: &str = include_str!("assets/viewer.css");
+/// The workbench script, likewise compiled in. Served from its own route rather
+/// than inlined, so the content security policy can be `script-src 'self'`
+/// rather than admitting inline script.
+const VIEWER_JS: &str = include_str!("assets/viewer.js");
 /// Replaced with the per-launch capability when the viewer binds.
 const CAPABILITY_PLACEHOLDER: &str = "{{CAPABILITY}}";
 
@@ -224,6 +228,7 @@ pub struct Viewer {
     snapshot: Snapshot,
     index: String,
     stylesheet: String,
+    script: String,
     in_flight: AtomicUsize,
 }
 
@@ -251,6 +256,7 @@ impl Viewer {
 
         let index = VIEWER_HTML.replace(CAPABILITY_PLACEHOLDER, capability.as_str());
         let stylesheet = VIEWER_CSS.replace(CAPABILITY_PLACEHOLDER, capability.as_str());
+        let script = VIEWER_JS.replace(CAPABILITY_PLACEHOLDER, capability.as_str());
 
         Ok(Viewer {
             listener,
@@ -258,6 +264,7 @@ impl Viewer {
             snapshot,
             index,
             stylesheet,
+            script,
             in_flight: AtomicUsize::new(0),
         })
     }
@@ -369,6 +376,13 @@ impl Viewer {
                 Status::Ok,
                 Some(CSS),
                 self.stylesheet.as_bytes(),
+                head_only,
+            ),
+            "/viewer.js" => respond(
+                &mut stream,
+                Status::Ok,
+                Some(JAVASCRIPT),
+                self.script.as_bytes(),
                 head_only,
             ),
             "/projection.json" => respond(
@@ -505,6 +519,7 @@ impl Status {
 
 const HTML: &str = "text/html; charset=utf-8";
 const CSS: &str = "text/css; charset=utf-8";
+const JAVASCRIPT: &str = "text/javascript; charset=utf-8";
 const JSON: &str = "application/json; charset=utf-8";
 const TEXT: &str = "text/plain; charset=utf-8";
 
@@ -515,11 +530,11 @@ const NOT_FOUND: &[u8] = b"not found\n";
 
 /// Headers sent on every response, whatever the status.
 ///
-/// `default-src 'none'` with `script-src 'none'` is accurate for what this build
-/// serves: the bundled page has no script and needs none. A later slice that
-/// renders the projection in the browser has to widen this deliberately, which
-/// is the intent — a policy that was already wide enough would have been a
-/// policy that never described anything.
+/// `script-src 'self'` and no more: the workbench script is served from this
+/// origin, and there is no inline script, no `eval`, and no nonce, so nothing
+/// weaker is needed. `default-src 'none'` means every fetch destination that is
+/// not named below is refused outright, which includes any attempt to reach off
+/// this machine.
 ///
 /// There is no `Server` header and no `Date` header. Neither is needed by a
 /// browser on the same machine, and both are disclosure for nothing.
@@ -529,7 +544,7 @@ const SECURITY_HEADERS: &[&str] = &[
     "X-Content-Type-Options: nosniff",
     "X-Frame-Options: DENY",
     "Referrer-Policy: no-referrer",
-    "Content-Security-Policy: default-src 'none'; script-src 'none'; style-src 'self'; \
+    "Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; \
      connect-src 'self'; img-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; \
      form-action 'none'; frame-ancestors 'none'",
     "Cross-Origin-Opener-Policy: same-origin",

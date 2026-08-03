@@ -8,38 +8,80 @@
 <link rel="stylesheet" href="/viewer.css?c={{CAPABILITY}}">
 </head>
 <body>
-<main>
-<h1>WitnessGlass</h1>
-<p class="lede">A flight recorder for coding agents: declared intent, observed activity, and temporal replay.</p>
+<a class="skip" href="#ledger">Skip to the event ledger</a>
 
-<p>A foreground <code>witnessglass view</code> process on this machine is serving one recording
-snapshot to this browser over loopback. It is not a daemon: it dies with the command that
-started it, it does not watch the file it read, and it will not still be here afterwards.</p>
+<header class="masthead">
+  <div class="masthead-title">
+    <span class="wordmark">WitnessGlass</span>
+    <span class="subtitle">local recording snapshot</span>
+  </div>
+  <p class="sensitive" role="note">
+    <strong>Not redacted.</strong> This recording holds whatever the session put into it —
+    prompts, commands, absolute paths, file contents, tool output, and any credential that
+    passed through any of them. Rendering is not redacting. This page is not safer to share,
+    screenshot, or paste than the raw file behind it.
+  </p>
+</header>
 
-<div class="warning">
-<strong>This snapshot is not redacted.</strong> A recording holds whatever the session put into
-it — prompts, commands, absolute paths, file contents, tool output, and any credential that
-passed through any of them. Rendering is not redacting. Nothing here is safe to share, screenshot,
-or paste, and this page being tidier than the raw file does not make it safer.
-</div>
+<noscript>
+  <p class="failure">
+    This workbench needs JavaScript. The projection itself is served, unrendered, at
+    <code>/projection.json</code> with the same capability this page was opened with.
+  </p>
+</noscript>
 
-<h2>What is being served</h2>
-<p><a href="/projection.json?c={{CAPABILITY}}">projection.json</a> — the receipt-bearing
-inspection projection of the recording this process was pointed at. Every derived claim in it
-carries the raw sequence numbers that support it, and every count of zero carries the scope it
-was counted in.</p>
+<main id="workbench" hidden>
+  <section id="hud" aria-labelledby="hud-heading">
+    <h2 id="hud-heading">Evidence HUD</h2>
+    <div id="hud-body" class="panels"></div>
+  </section>
 
-<p>That representation is internal and unstable. It is not an interchange format and nothing
-outside this repository should depend on its shape.</p>
+  <section id="map" aria-labelledby="map-heading">
+    <div class="section-head">
+      <h2 id="map-heading">Event map</h2>
+      <div class="controls" role="group" aria-label="Event map axis">
+        <label><input type="radio" name="axis" value="sequence" checked> Recorder order</label>
+        <label><input type="radio" name="axis" value="time"> Recorder time <span class="tag tag-derived">derived</span></label>
+      </div>
+    </div>
+    <p class="note" id="map-note"></p>
+    <div id="map-body"></div>
+  </section>
 
-<h2>What this page is not</h2>
-<ul>
-<li>Not the evidence workbench. That is a later slice; this page renders no recording data at all.</li>
-<li>Not a complete account of the session. A recording shows what its capture path could see, and
-tool events do not reveal every file a command changed.</li>
-<li>Not shareable, exportable, or safe. There is no download path and no share affordance, by
-design.</li>
-</ul>
+  <div class="split">
+    <section id="ledger" aria-labelledby="ledger-heading">
+      <div class="section-head">
+        <h2 id="ledger-heading">Event ledger</h2>
+        <p class="note" id="ledger-count"></p>
+      </div>
+      <div id="filters" class="filters"></div>
+      <div class="search">
+        <label for="search-input">Search</label>
+        <input type="search" id="search-input" autocomplete="off" spellcheck="false"
+               placeholder="kind, tool, mechanism, agent, correlation id, sequence">
+        <label class="payload-opt">
+          <input type="checkbox" id="search-payloads">
+          Also search payloads
+        </label>
+        <p class="note" id="search-note">
+          Searching metadata only. Payload search reads commands, file contents, and tool
+          output — the most sensitive part of the recording — and is off until you turn it on.
+        </p>
+      </div>
+      <div id="ledger-body" class="scroller"></div>
+    </section>
+
+    <section id="inspector" aria-labelledby="inspector-heading" tabindex="-1">
+      <div class="section-head">
+        <h2 id="inspector-heading">Evidence inspector</h2>
+      </div>
+      <div id="inspector-body" class="scroller"></div>
+    </section>
+  </div>
 </main>
+
+<p id="failure" class="failure" hidden></p>
+
+<script type="module" src="/viewer.js?c={{CAPABILITY}}"></script>
 </body>
 </html>
