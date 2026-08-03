@@ -123,3 +123,53 @@ This dragon is resolved when:
   measurement and of dragon:2, rather than as a side effect of wanting a nicer projection.
 - No projection in the codebase segments work by `prompt_id` unless this dragon licensed it,
   and the same question has been asked of every other identifier a projection wants to lean on.
+
+## Observation: two real turns, two `prompt_id` values, and that is still not a licence to segment
+
+Appended 2026-08-03 from the hostile session recorded to `docs/hostile-recording.md`.
+**Scope: Claude Code 2.1.220, macOS arm64, one session, two turns submitted as two separate
+prompts, 40 records.**
+
+This is the first-order observation the dragon asked for, and it is clean:
+
+| records | `prompt_id` | what was submitted |
+| --- | --- | --- |
+| 2–29 | `faf9b390…` | turn 1 (`/hostile-1`) |
+| 30–40 | `ec6c59fa…` | turn 2 (`/hostile-2`) |
+
+One value per turn, no overlap, the boundary exactly where the human pressed enter the second
+time. Record 1 (`session_started`) carries no `prompt_id` at all, matching the documented "absent
+until the first input". The subagent's own tool calls carry turn 1's value, so a `prompt_id` spans
+the parent and its subagent rather than distinguishing them.
+
+**What this licenses: `prompt_id` changes at a turn boundary.** That is a real result and it is
+worth having.
+
+**What it does not license: segmenting a recording by `prompt_id`.** The first-contact session
+produced two distinct values across what its operator understood to be a single turn — one on 232
+records, one on `session_ended` alone. Both observations are consistent with a rule like "a new
+prompt gets a new id, and some other events get their own", and that rule permits N values for one
+turn. Changing at a turn boundary is **necessary** for a turn identifier and not **sufficient**,
+and nothing observed so far distinguishes `prompt_id` from an identifier that changes more often
+than turns do.
+
+So the second resolution criterion can now be written honestly, and it is a negative:
+
+> A reader may conclude that two records with **different** `prompt_id` values were not produced
+> by the same submission. A reader may **not** conclude that two records sharing one belong to the
+> same turn, that a recording contains as many turns as it has distinct `prompt_id` values, or
+> that any span between changes is a unit of work. Observed on Claude Code 2.1.220, macOS arm64,
+> across two sessions: one where two values appeared inside a single turn, and one where each of
+> two turns had exactly one.
+
+That is enough to keep the CLAUDE.md §6 condition (no segmentation by `prompt_id`) standing on
+evidence rather than on caution, and enough for the adapter's fidelity section to say something
+useful. It is not enough to resolve the dragon: the criteria also require the statement to reach
+the adapter documentation, and require the `UserPromptSubmit` question to be decided explicitly.
+
+**A candidate anchor appeared, and it should be treated with suspicion.** `SubagentStop` fired
+once near the end of each turn, with an `agent_id` seen nowhere else and an empty `agent_type` —
+see the corresponding note in dragon:1. It is tempting as a turn delimiter precisely because it
+sits where a turn ends. Two occurrences, no documentation, no stated semantics, and adopting it
+would mean inferring a unit of work from an event that does not claim to mark one. That is the
+same mistake as segmenting by `prompt_id`, wearing a different hat.

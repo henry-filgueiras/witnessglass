@@ -153,3 +153,59 @@ safe sharing may be made. The measured volume above makes the case that the expo
 it exists, will need to be selective rather than exhaustive — 580 KB of unredacted material to
 convey what a 17-minute session did is not an artifact anyone will read, and "attach the
 recording" will be the tempting wrong answer.
+
+## The "attachable session" experiment, and the two ways it did not hold
+
+Appended 2026-08-03. `docs/hostile-recording.md` designed a session intended to be safe to attach
+to an upstream bug report: the agent was confined to `/tmp/wg-probe`, forbidden the repository,
+`git`, `$HOME`, and the environment, and every file it wrote was labelled synthetic. The runbook
+was careful to say "should is not does" and to insist a human read the recording before attaching
+it. That caution was warranted. Two things leaked anyway, and neither came from the agent
+disobeying — it complied throughout.
+
+**Scope: Claude Code 2.1.220, macOS arm64, one 40-record session, plus its 14 raw probe payloads.**
+
+### The sandbox does not bound the payload
+
+The runbook's rationale was that "the adapter does not capture `cwd`, prompts, or transcript
+paths". That is true of the *fields* and false of the *content*.
+
+- **An error string carried the working directory.** The deliberate `Read` failure returned
+  `File does not exist. Note: your current working directory is /Users/henry/witnessglass.` The
+  adapter drops the `cwd` field faithfully, and the integration put the same value inside `error`,
+  where it is stored as delivered because storing an error as delivered is the whole point.
+- **A tool input carried a prompt.** The `Agent` call's `tool_input` contains the full subagent
+  prompt, which quoted the repository path three times — because the sandbox instruction itself
+  named the directory the agent was forbidden to touch. The instruction that made the session
+  safe is the thing that put the path in the recording.
+
+Neither is a defect. Both are the adapter doing exactly what §2 requires: store what arrived,
+uninterpreted. The lesson is about the *claim*, not the code — **confining what an agent may do
+does not confine what its payloads contain**, because the payloads are written by the harness and
+by tool authors, not by the agent. Any future "this session is attachable" argument has to be made
+by reading the artifact, never by reasoning about the sandbox.
+
+### The payload-quiet alternative is not the quiet one
+
+The runbook advised that for a bug report about timing, "you probably do not want the recording at
+all — you want the probe output, which is a handful of raw payloads rather than a few hundred KB."
+Smaller, yes. Less exposing, no. **Every probe payload carries `cwd` and `transcript_path`
+verbatim** — including a `$HOME`-rooted path to the session's own transcript — which are precisely
+the two fields the adapter deliberately drops. On this axis the raw capture is a strict superset of
+the recording it was installed to audit.
+
+Size is not the privacy axis. 26 KB of raw payloads that name the operator's home directory on
+every line is a worse thing to attach than a larger file that does not, and the runbook currently
+recommends the worse one. That advice needs correcting; `scripts/probe.sh` already says a raw
+payload is as sensitive as a recording, and the runbook contradicted it.
+
+### What this changes about the resolution criteria
+
+The first criterion — enumerate sensitive surfaces against real recordings — gains a second
+session shape, and a category the first pass could not have found: **surfaces that arrive inside
+payload values rather than as payload fields**. A field-level inventory of what an adapter captures
+will systematically miss them, in the same way a scan of adapter output missed a dropped field in
+dragon:1. Both errors have the same shape: auditing a structure instead of its contents.
+
+Nothing else changes. No redaction is implemented, no export path exists, and no claim about safe
+sharing may be made. This session was designed to be the exception and it is not one.

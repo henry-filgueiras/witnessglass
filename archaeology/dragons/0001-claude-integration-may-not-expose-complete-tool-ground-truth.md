@@ -284,3 +284,101 @@ durable lesson is the cheap one — **record the integration version at arm time
 time**. `scripts/arm.sh` already writes a sentinel recording the WitnessGlass version, the binary
 path, and its checksum; it records nothing about the agent being recorded, which is the more
 consequential of the two.
+
+## Correction: the duration was arriving all along, and this dragon was reading the adapter's own output
+
+Appended 2026-08-03 after a deliberately hostile session recorded to the protocol in
+`docs/hostile-recording.md`, with the raw-hook probe installed alongside the adapter.
+**Scope: Claude Code 2.1.220, macOS arm64, one session, 40 records, 14 completions.**
+
+The follow-up above is wrong, and it is worth being precise about how.
+
+**The integration sends `duration_ms`. The adapter read `duration`.** Every one of the 12
+`PostToolUse` payloads and both `PostToolUseFailure` payloads carried a populated top-level
+`duration_ms` — 2 ms for a `Skill`, 291 ms for the first `Bash`, 5051 ms for the `Agent` call.
+`HookPayload` ignores unknown fields, deliberately and for good reasons, so the field was
+discarded before it could reach a record. The same mismatch exists for interruption:
+`PostToolUseFailure` carries `is_interrupt`, the adapter read `interrupted`. Both are fixed in
+`1b655ac`, and re-translating the captured payloads through the fixed adapter produces 14 records
+with timing on all of them.
+
+**The three checks that "ruled out an adapter that reads the wrong key" could not have.**
+
+- The first check trusted the hooks reference on the key name. That is the claim under test, cited
+  as evidence for itself.
+- The second ruled out a *type* mismatch on `duration`. A name mismatch produces exactly the
+  observation the check predicted for a correct adapter: 82 completions for 82 requests, nothing
+  failing, the field simply absent.
+- The third scanned "every captured payload" — but what was scanned was the **recording**, which
+  is the adapter's output. No scan of an adapter's output can find a field that adapter discards.
+  This is the load-bearing error, and it is a variant of the rule in CLAUDE.md §3 arriving from an
+  unexpected direction: a projection was used to audit the thing it was projected from.
+
+The probe (`9fae929`) was built precisely to break that circularity, and it did so on its first
+run, in one session, within minutes. The general lesson is cheap and worth stating plainly:
+**an adapter cannot be audited by its own output, and any finding of the form "the integration
+never sent X" is only as good as an observation taken upstream of the adapter.** Every remaining
+never-arrived finding in this dragon — `parent_agent_id` above all — was established the same
+circular way and is now *unconfirmed* rather than false. The probe captures only `PostToolUse`,
+`PostToolUseFailure`, and `PermissionDenied`, so it has not yet observed the subagent hooks where
+parentage would appear.
+
+The probe's own `show` had the same defect in miniature: it asked whether `duration` was present,
+printed `PRESENT on 0`, and listed `duration_ms` in the key line two lines below. The key list is
+what caught this. It now reports every duration-shaped key rather than one spelling chosen in
+advance.
+
+### What the hostile session settled, and what it did not
+
+**Answered — failure capture, both shapes.** A non-zero shell exit (`cat` on a missing file) and a
+tool-level error (`Read` on a missing file) both arrived on `PostToolUseFailure`, neither on
+`PostToolUse`. The two are not distinguishable by hook; the `error` string is the only
+discriminator, and it arrives as delivered, **including terminal colour escape sequences** — the
+`bat` error inside the shell failure is wrapped in a red-foreground SGR sequence. Any renderer
+treating `error` as plain text will show escape codes to a reader.
+
+**Answered — timing, on both hooks that fired.** Above. `PermissionDenied` still has never fired,
+so whether it carries a duration remains unknown.
+
+**Not answered — denial, and the reason is now known.** Every payload reports
+`permission_mode: "auto"`, and the host's `~/.claude/settings.json` sets `defaultMode: "auto"`.
+The `rm -rf` the protocol expected to be refused was auto-approved with no prompt.
+`PermissionDenied` was armed and did not fire. The open question is not "does an interactive
+refusal fire the hook" but "an interactive refusal has still never been staged", and the fix is a
+session started in a mode that prompts.
+
+**Not answered — interruption, and the miss is the more interesting result.** `sleep 120` never
+reached a hook: the harness rejects a standalone `sleep` at the tool level. There is **no trace of
+it in the recording and none in the independent probe** — no `PreToolUse`, no failure, no denial.
+The recording shows the agent falling silent between sequence 39 and 40 with nothing to say
+anything was attempted.
+
+That is a genuine and previously unnamed blind spot: **a call the harness refuses before dispatch
+is invisible to every hook this adapter subscribes to.** It is distinct from a denial, which is
+observable in principle, and distinct from a failure, which is observable in fact. A recording
+cannot distinguish "the agent tried something the harness would not run" from "the agent did not
+try". Nothing in the capture boundary (CLAUDE.md §4) claimed otherwise, but nothing named it
+either, and the unmeasured list in `docs/claude-adapter.md` should carry it.
+
+### One more observation, offered as an observation
+
+`SubagentStart` fired once, for the one `Agent` call, and that subagent's own `Bash` call carries
+the matching `agent_id` — the correlation works end to end. `SubagentStop` fired **three** times:
+once for that subagent, and once near the end of each of the two turns, each of those two with a
+distinct `agent_id` never seen elsewhere and an **empty** `agent_type`. This resembles the
+unmatched `subagent_stopped` task:4 found, and it now has company.
+
+Two data points do not establish a rule, and this must not become an inferred turn boundary. It is
+recorded so the next session's operator knows to count them. CLAUDE.md §6 forbids the causal
+hierarchy this sits one inference away from.
+
+### The adapter drops `permission_mode`, and this session shows why that matters
+
+`permission_mode` arrives on every payload and `context_of` does not keep it. The entire denial
+result above is explained by that field, and **the recording cannot state it**. A reader of this
+recording sees no denial and has no way to learn whether that means denials do not fire, or that
+nothing in the session could have been denied. That is an absence the recording cannot render as
+an absence, which is the condition decision:5 flagged as most likely to break by accident.
+
+Capturing it is a schema change and belongs in its own decision, not in a follow-up. Recorded here
+as an argument for one.
