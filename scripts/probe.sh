@@ -24,7 +24,11 @@
 # `install` works whether or not WitnessGlass is armed; it merges into an
 # existing configuration rather than replacing one. Running it alongside an
 # armed session is the useful case: the recording and the raw payloads then
-# describe the same events, and can be compared.
+# describe the same events, and can be compared. Set PROBE_HOOKS to a
+# space-separated list to attach to different hooks than the default.
+#
+# `remove` takes out every probe block it finds, whichever hooks they are on,
+# so an unusual PROBE_HOOKS does not need to be repeated to undo it.
 #
 # `show` is payload-quiet by design, in the same spirit as check-recording.sh:
 # it reports which keys arrived, not what was in them, so the question can be
@@ -43,8 +47,13 @@ SETTINGS="$ROOT/.claude/settings.local.json"
 CAPTURE="$ROOT/.witnessglass/probe/raw-hooks.ndjson"
 PROBE="$ROOT/scripts/probe-hook.sh"
 
-# The hooks that document an optional duration.
-HOOKS="PostToolUse PostToolUseFailure PermissionDenied"
+# The hooks that document an optional duration. Override with PROBE_HOOKS to
+# observe others — `PROBE_HOOKS="SubagentStart SubagentStop"` is the useful one,
+# because dragon:1's parentage findings were established from adapter output and
+# no raw payload from those hooks has ever been inspected. More hooks means more
+# captured payloads, and a payload is as sensitive as a recording, so this is
+# opt-in rather than the default.
+HOOKS="${PROBE_HOOKS:-PostToolUse PostToolUseFailure PermissionDenied}"
 
 usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
