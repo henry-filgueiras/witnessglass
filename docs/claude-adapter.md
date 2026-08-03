@@ -224,9 +224,24 @@ tool call attributable to it. Subagent boundary events are not guaranteed to pai
 `session_ended` alone. Do not segment a recording by it, and do not describe a recording as
 containing N turns. See dragon:3.
 
-**`duration_ms` never arrived.** Documented as optional on `PostToolUse`; supplied zero times
-in 82 completions. Any derived view intending to use tool duration has no input from this
-path.
+**The hook-level `duration` never arrived.** Documented as optional on `PostToolUse`; supplied
+zero times in 82 completions, so `duration_ms` is absent on every record. This was later
+confirmed by inspection rather than by field count: the adapter reads the documented key, its
+payload struct is strict about types so a malformed value would have failed the translation
+outright rather than silently, and a recursive scan of every captured payload found no
+hook-level duration anywhere. The absence is the integration's, not this adapter's.
+
+**One tool self-reports a duration in its response body, and the adapter deliberately does not
+lift it.** The single `Agent` completion carries `totalDurationMs` inside its `tool_response`,
+alongside `totalTokens`, `totalToolUseCount`, `toolStats`, and `resolvedModel`. `Bash`, `Read`,
+`Write`, and `Edit` carry nothing of the kind. That value is preserved exactly where it arrived —
+inside `response`, as delivered — and is **not** promoted into the envelope's `duration_ms`.
+Promoting it would make one tool appear to have hook-level timing it does not have, and would
+make `duration_ms` mean two different things depending on which tool a reader is looking at.
+A reader wanting it must go to the response payload and know which tool produced it.
+
+Either way, a derived view intending to use per-call tool duration has no usable input from this
+path: one completion in 82, on one tool. See dragon:1 for the full follow-up.
 
 **Reported intent behaved exactly as documented, and the duplication is real.** 65
 `reported_intent` records, all on the `reported` channel, from 64 `Bash` calls and one `Agent`

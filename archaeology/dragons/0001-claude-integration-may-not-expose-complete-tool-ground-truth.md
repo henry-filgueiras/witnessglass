@@ -194,3 +194,57 @@ carries per-record `provenance.mechanism` a reader can act on. Two criteria are 
    subagent-level attribution, which narrows what corroboration would need to add. That
    trade-off deserves a second recorded session — ideally one that fails, is denied, and is
    interrupted on purpose — before anything is decided.
+
+## Follow-up: the absent `duration` was confirmed by payload inspection, and one tool self-reports
+
+Appended after sprint:2 closed, from a question Henry asked about whether the missing duration
+was a WitnessGlass defect rather than a coverage gap. It was worth asking, and answering it
+sharpened the finding in two directions. No new session was recorded; this is a re-reading of the
+first-contact recording.
+
+### The absence is the integration's, not the adapter's
+
+task:4 reported `duration_ms` as supplied zero times in 82 completions. That was a
+field-population count, which is consistent with an adapter that reads the wrong key. Three
+checks rule that out:
+
+- The adapter deserializes `duration`, which is the key the hooks reference documents on
+  `PostToolUse`.
+- The hook payload struct ignores unknown fields but is strict about types. A `duration` arriving
+  as a float or a string would have failed the whole translation, the record would not have been
+  written, and the recording would hold fewer completions than requests. It holds exactly 82 for
+  82, so nothing failed and the field was absent rather than misread.
+- A recursive scan of every captured payload for any duration-shaped key found no hook-level
+  field anywhere in the recording.
+
+So the finding stands at full strength, and now rests on inspection rather than on a count.
+
+### One tool carries its own duration, in its response body
+
+The same scan found `totalDurationMs` on exactly one completion: the single `Agent` call, inside
+its `tool_response`, alongside `totalTokens`, `totalToolUseCount`, `toolStats`, and
+`resolvedModel`. `Bash` (64), `Read` (7), `Write` (5), and `Edit` (5) carry nothing of the kind.
+
+This is worth the dragon carrying, for two reasons.
+
+**It is a different measurement from a different source.** `duration_ms` on the envelope means
+the capture mechanism reported how long a call took. `totalDurationMs` inside a response means
+one tool's output format happens to include a self-reported number. The adapter deliberately does
+not lift the second into the first: doing so would make one tool appear to have hook-level timing
+that it does not have, and would make `duration_ms` mean two different things depending on which
+tool a reader is looking at. That is the silent promotion decision:2 forbids, arriving from a
+direction nobody was watching — not from a merge, but from a field name that reads the same.
+
+**It is not a rescue for a timeline.** One completion in 82, on one tool, is 1.2% coverage. Any
+derived view wanting per-call timing still has no input from this recording, and the only
+elapsed quantity computable for all 82 calls remains the interval between two recorder writes,
+which contains hook spawn, permission wait, queueing, and execution without separating them.
+
+### What this does not settle
+
+Whether the hook-level `duration` is absent by version, by host, by tool, or by defect. One
+macOS host, one Claude Code version, one session. A newer version may populate it, and
+re-measuring is cheap: arm, run a session with a single tool call, disarm, and check. That
+measurement should record the Claude Code version beside the result, because this one is scoped
+to a version that was never written down alongside the finding — which is itself a small lesson
+for the next pass.
