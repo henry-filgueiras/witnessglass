@@ -34,8 +34,17 @@ mkdir -p "$(dirname "$OUT")" 2>/dev/null
 
 # One payload per line, appended. `cat` rather than any interpretation: the
 # whole point is that these bytes have not been through a parser.
-if ! { cat; printf '\n'; } >> "$OUT" 2>/dev/null; then
+if ! cat >> "$OUT" 2>/dev/null; then
     echo "probe-hook: could not append to $OUT" >&2
+fi
+
+# Terminate the line only if the payload did not already terminate itself. The
+# delivered payloads end in a newline, so unconditionally adding one put a blank
+# line between every record and left the capture something a reader had to skip
+# past. Still no parsing: `$(tail -c 1)` strips a trailing newline, so an empty
+# result means the last byte was one.
+if [ -s "$OUT" ] && [ -n "$(tail -c 1 "$OUT" 2>/dev/null)" ]; then
+    printf '\n' >> "$OUT" 2>/dev/null
 fi
 
 exit 0

@@ -162,12 +162,21 @@ struct HookPayload {
     tool_input: Option<serde_json::Value>,
     #[serde(default)]
     tool_response: Option<serde_json::Value>,
+    // `duration_ms` and `is_interrupt` are named for the wire, not for the
+    // record. The adapter originally read `duration` and `interrupted`, the
+    // names the hooks reference documents, and the observed payloads use
+    // neither. Because unknown fields are ignored here — deliberately, see
+    // above — both fields were dropped in silence, and a field-population
+    // count over the resulting recording reported them as never supplied.
+    // dragon:1 carried that as a coverage gap for two sprints. Renaming these
+    // to the wire's own spelling keeps the mismatch visible to the next
+    // reader; the record-side names are unchanged.
     #[serde(default)]
-    duration: Option<u64>,
+    duration_ms: Option<u64>,
     #[serde(default)]
     error: Option<String>,
     #[serde(default)]
-    interrupted: Option<bool>,
+    is_interrupt: Option<bool>,
 
     // Subagent lifecycle. Recorded only when supplied; never synthesized.
     #[serde(default)]
@@ -360,7 +369,7 @@ fn translate_payload(payload: &HookPayload) -> Result<Vec<Emission>, HookError> 
                     tool_name: tool_name.clone(),
                     effective_input: tool_input.clone(),
                     response: tool_response.clone(),
-                    duration_ms: payload.duration,
+                    duration_ms: payload.duration_ms,
                 }),
             }]
         }
@@ -380,8 +389,8 @@ fn translate_payload(payload: &HookPayload) -> Result<Vec<Emission>, HookError> 
                     tool_name: tool_name.clone(),
                     effective_input: tool_input.clone(),
                     error: error.clone(),
-                    interrupted: payload.interrupted,
-                    duration_ms: payload.duration,
+                    interrupted: payload.is_interrupt,
+                    duration_ms: payload.duration_ms,
                 }),
             }]
         }

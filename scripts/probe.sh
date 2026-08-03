@@ -8,9 +8,11 @@
 # distinction a field-population count cannot make, and one that dragon:1 turned
 # on.
 #
-# It attaches to the three hooks that document an optional `duration`:
-# PostToolUse, PostToolUseFailure, and PermissionDenied. Only the last of those
-# has ever been observed carrying one, and only from a tool's own response body.
+# It attaches to the three hooks that document an optional duration:
+# PostToolUse, PostToolUseFailure, and PermissionDenied. Its first run found
+# `duration_ms` populated on every completion of both hooks that fired, against
+# an adapter that had been reading `duration` since it was written — which is
+# the distinction above, doing exactly the job it was built for.
 #
 # Usage:
 #   scripts/probe.sh install   add the probe hooks to .claude/settings.local.json
@@ -41,7 +43,7 @@ SETTINGS="$ROOT/.claude/settings.local.json"
 CAPTURE="$ROOT/.witnessglass/probe/raw-hooks.ndjson"
 PROBE="$ROOT/scripts/probe-hook.sh"
 
-# The hooks that document an optional `duration`.
+# The hooks that document an optional duration.
 HOOKS="PostToolUse PostToolUseFailure PermissionDenied"
 
 usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
@@ -138,7 +140,7 @@ import json, sys
 from collections import Counter, defaultdict
 keys = defaultdict(Counter)
 counts = Counter()
-duration = defaultdict(Counter)
+timing = defaultdict(lambda: defaultdict(Counter))
 tools = defaultdict(Counter)
 unparsed = 0
 for line in open(sys.argv[1], encoding="utf-8"):
@@ -157,17 +159,30 @@ for line in open(sys.argv[1], encoding="utf-8"):
     tool = payload.get("tool_name")
     if tool:
         tools[hook][tool] += 1
-    duration[hook]["present" if "duration" in payload else "absent"] += 1
+    # Match any duration-shaped key rather than one spelling. The first probe
+    # run asked whether `duration` was present, printed "PRESENT on 0", and
+    # listed `duration_ms` in the key line immediately below it. Naming the
+    # field in advance is how the adapter missed it for two sprints; the probe
+    # should not repeat that by asking a narrower question than it can answer.
+    for k in payload:
+        if "duration" in k.lower():
+            timing[hook][k]["present" if payload[k] is not None else "null"] += 1
 
 print("Raw hook payloads captured, key names only. No values are printed.\n")
 if unparsed:
     print(f"!! {unparsed} line(s) did not parse as JSON\n")
 for hook in sorted(counts):
     print(f"{hook}  ({counts[hook]} payload(s))")
-    d = duration[hook]
-    verdict = "PRESENT on %d, absent on %d" % (d["present"], d["absent"])
-    flag = "  <-- the field in question" if d["present"] else ""
-    print(f"  top-level `duration`: {verdict}{flag}")
+    total = counts[hook]
+    if timing[hook]:
+        for k in sorted(timing[hook]):
+            c = timing[hook][k]
+            print(
+                f"  duration-shaped key `{k}`: value on {c['present']}, "
+                f"null on {c['null']}, absent on {total - c['present'] - c['null']}"
+            )
+    else:
+        print(f"  duration-shaped keys: none on any of {total} payload(s)")
     if tools[hook]:
         print("  tools: " + ", ".join(f"{t}={n}" for t, n in sorted(tools[hook].items())))
     print("  top-level keys: " + ", ".join(sorted(keys[hook])))

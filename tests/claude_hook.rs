@@ -132,7 +132,7 @@ fn post_tool_use_records_effective_input_and_response() {
         "tool_name": "Bash",
         "tool_input": { "command": "echo synthetic-effective" },
         "tool_response": { "content": [{ "type": "text", "text": "synthetic output" }] },
-        "duration": 5000,
+        "duration_ms": 5000,
     }));
     let Event::ToolSucceeded(succeeded) = event else {
         panic!("expected tool_succeeded");
@@ -154,8 +154,8 @@ fn post_tool_use_failure_records_error_and_interruption() {
         "tool_name": "Bash",
         "tool_input": { "command": "echo synthetic" },
         "error": "Command failed with exit code 1",
-        "duration": 3000,
-        "interrupted": false,
+        "duration_ms": 3000,
+        "is_interrupt": false,
     }));
     let Event::ToolFailed(failed) = event else {
         panic!("expected tool_failed");
@@ -163,6 +163,41 @@ fn post_tool_use_failure_records_error_and_interruption() {
     assert_eq!(failed.error, "Command failed with exit code 1");
     assert_eq!(failed.interrupted, Some(false));
     assert_eq!(failed.duration_ms, Some(3000));
+}
+
+#[test]
+fn timing_and_interruption_are_read_from_the_wire_names_not_the_documented_ones() {
+    // The hooks reference documents `duration` and `interrupted`. Observed
+    // payloads from Claude Code 2.1.220 carry `duration_ms` and `is_interrupt`
+    // instead, on every completion. The adapter read the documented names from
+    // the day it was written, ignored the real ones as unknown fields, and
+    // dragon:1 recorded the resulting emptiness as an integration coverage gap
+    // for two sprints.
+    //
+    // This test pins the spelling that was actually observed. If the
+    // integration ever sends the documented names as well, that is a new
+    // observation to record — not a reason to quietly swap these back.
+    let event = only_event(serde_json::json!({
+        "hook_event_name": "PostToolUseFailure",
+        "session_id": HOOK_SESSION,
+        "tool_use_id": "toolu_synthetic_0001",
+        "tool_name": "Bash",
+        "tool_input": { "command": "echo synthetic" },
+        "error": "synthetic failure",
+        "duration": 111,
+        "interrupted": true,
+    }));
+    let Event::ToolFailed(failed) = event else {
+        panic!("expected tool_failed");
+    };
+    assert_eq!(
+        failed.duration_ms, None,
+        "`duration` is not the delivered key and must not populate duration_ms"
+    );
+    assert_eq!(
+        failed.interrupted, None,
+        "`interrupted` is not the delivered key and must not populate interrupted"
+    );
 }
 
 #[test]
