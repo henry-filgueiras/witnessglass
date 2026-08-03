@@ -1,0 +1,91 @@
+/* Bundled with the binary. No external font, no remote asset, no network
+   access of any kind — the process serves this file and nothing fetches
+   anything else. */
+
+:root {
+    color-scheme: light dark;
+    --ink: #14181d;
+    --paper: #f6f7f8;
+    --rule: #c8ccd2;
+    --quiet: #5b636d;
+    --warn: #7a3b00;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --ink: #e6e9ec;
+        --paper: #16191d;
+        --rule: #3a4148;
+        --quiet: #9aa3ad;
+        --warn: #f0b26b;
+    }
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 2rem 1.25rem 4rem;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+    max-width: 42rem;
+    margin: 0 auto;
+}
+
+h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.5rem;
+    letter-spacing: -0.01em;
+}
+
+h2 {
+    margin: 2rem 0 0.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--quiet);
+}
+
+.lede {
+    margin: 0 0 1.5rem;
+    color: var(--quiet);
+}
+
+code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.9em;
+}
+
+a {
+    color: inherit;
+    text-underline-offset: 0.2em;
+}
+
+a:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 3px;
+}
+
+ul {
+    padding-left: 1.2rem;
+}
+
+li {
+    margin-bottom: 0.4rem;
+}
+
+.warning {
+    margin: 1.5rem 0;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--rule);
+    border-left: 4px solid var(--warn);
+    color: var(--ink);
+}

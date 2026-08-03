@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>WitnessGlass — local recording snapshot</title>
+<link rel="stylesheet" href="/viewer.css?c={{CAPABILITY}}">
+</head>
+<body>
+<main>
+<h1>WitnessGlass</h1>
+<p class="lede">A flight recorder for coding agents: declared intent, observed activity, and temporal replay.</p>
+
+<p>A foreground <code>witnessglass view</code> process on this machine is serving one recording
+snapshot to this browser over loopback. It is not a daemon: it dies with the command that
+started it, it does not watch the file it read, and it will not still be here afterwards.</p>
+
+<div class="warning">
+<strong>This snapshot is not redacted.</strong> A recording holds whatever the session put into
+it — prompts, commands, absolute paths, file contents, tool output, and any credential that
+passed through any of them. Rendering is not redacting. Nothing here is safe to share, screenshot,
+or paste, and this page being tidier than the raw file does not make it safer.
+</div>
+
+<h2>What is being served</h2>
+<p><a href="/projection.json?c={{CAPABILITY}}">projection.json</a> — the receipt-bearing
+inspection projection of the recording this process was pointed at. Every derived claim in it
+carries the raw sequence numbers that support it, and every count of zero carries the scope it
+was counted in.</p>
+
+<p>That representation is internal and unstable. It is not an interchange format and nothing
+outside this repository should depend on its shape.</p>
+
+<h2>What this page is not</h2>
+<ul>
+<li>Not the evidence workbench. That is a later slice; this page renders no recording data at all.</li>
+<li>Not a complete account of the session. A recording shows what its capture path could see, and
+tool events do not reveal every file a command changed.</li>
+<li>Not shareable, exportable, or safe. There is no download path and no share affordance, by
+design.</li>
+</ul>
+</main>
+</body>
+</html>

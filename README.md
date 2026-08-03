@@ -24,20 +24,25 @@ What works today:
 - concurrent appends from independent short-lived processes, without a daemon or database
 - explicit, tested behavior for unsupported and mixed schema versions, corrupt records,
   truncated tails, and ambiguous sequences
+- a derived, receipt-bearing inspection projection over a replayed recording, in which every
+  derived claim carries the raw sequence numbers supporting it and every count of zero carries
+  the scope it was counted in
+- `witnessglass view --recording <PATH>`: a foreground process that validates and projects one
+  recording, holds it as one immutable in-memory snapshot, and serves it read-only to a browser
+  on a loopback port behind an unguessable per-launch capability
 
-What does not exist: redaction, projections, spans, timelines, summaries, a UI, or any
-second adapter.
+What does not exist: redaction, an evidence workbench in the browser, spans, timelines,
+summaries, or any second adapter.
 
 **First contact is complete.** The first sprint closed with all seven of its success criteria
 met against evidence, and its outcome — including where the recording and the recorded
 session's own account of itself disagree — is in
 [the sprint's archaeology](archaeology/sprints/0001-first-contact/sprint.md).
 
-The next planned slice is a **local-first browser trace explorer**: a foreground
-`witnessglass view` command that validates and projects one recording, then serves that
-snapshot read-only to a browser on loopback and exits. **It does not exist yet.** The plan is
-[sprint 2](archaeology/sprints/0002-first-light/sprint.md); nothing in this repository
-implements it, and no command in the CLI accepts `view`.
+**The viewer is being built now, and its browser half does not exist yet.** `view` currently
+serves an inert page and the projection as JSON; the surfaces that make a recording legible — a
+session HUD, an event map, a canonical ledger, an evidence inspector — are the next slice. The
+plan is [sprint 2](archaeology/sprints/0002-first-light/sprint.md).
 
 The raw-stream contract is
 [decision 3](archaeology/decisions/0003-define-raw-stream-v1-and-canonical-replay-order.md),
@@ -248,6 +253,38 @@ A recording uses one schema version throughout. v1 recordings, written before th
 adapter existed, still replay; only v2 is written; appending across versions is refused at
 both ends.
 
+## Viewing a recording in a browser
+
+```sh
+witnessglass view --recording "$REC"            # opens a browser
+witnessglass view --recording "$REC" --no-open  # prints the URL and waits
+```
+
+`view` replays and projects the recording *first*, so a corrupt one fails at the terminal
+rather than in a tab, then binds a listener on an operating-system-selected port on
+`127.0.0.1` and prints a URL carrying an unguessable per-launch capability. A truncated
+recording is served: its valid prefix is evidence, and every absence in the projection is
+scoped to that prefix rather than to a complete recording.
+
+It reads the file once. The snapshot is held in memory and the file is never consulted again,
+so changing or deleting the recording underneath a running viewer changes nothing it shows.
+**It is not a daemon**: it runs in the foreground, watches nothing, and dies with the command.
+Ctrl-C ends it and leaves no listener and no state behind.
+
+Every response that could carry recording data requires the capability. A request without it
+gets the same 404 as a request for a path that does not exist, carrying no session id, record
+count, or schema version. Loopback binding is treated as one layer, not as the answer, and
+there is no flag, environment variable, or configuration anywhere in this build that binds
+anywhere else. Nothing about the request stream is logged, because the URL carries a secret
+and the responses carry evidence.
+
+The browser half is deliberately thin so far: an inert page with no script, plus the projection
+at `/projection.json`. The surfaces that make a recording legible are the next slice.
+
+**A rendered recording is exactly as sensitive as the recording.** Rendering is not redacting,
+there is no export or share affordance, and there will not be one until a capture and redaction
+contract exists.
+
 ## Privacy
 
 Session recordings can contain source code, prompts, commands, absolute paths, command
@@ -313,7 +350,10 @@ Not in scope at this stage, and not to be inferred from the framing above:
 **Recently moved into scope:** derived projections — spans, timelines, landmarks, correlated
 views — and a local presentation layer over them. Lifted by
 [decision 5](archaeology/decisions/0005-lift-the-user-interface-non-goal-and-constrain-derived-projections.md)
-once a working kernel and one real recording existed to project from. None of it is built.
+once a working kernel and one real recording existed to project from. The projection and its
+loopback server exist; the browser surfaces over them do not yet. Where the meaning of a
+recording lives, and what a browser may therefore do with one, is
+[decision 6](archaeology/decisions/0006-keep-recording-semantics-in-a-receipt-bearing-rust-projection.md).
 
 That lift carries conditions, because a view is the surface where partial coverage is most
 easily mistaken for complete observation. A projection must be rebuildable from the raw stream

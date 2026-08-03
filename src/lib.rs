@@ -68,6 +68,7 @@ pub mod error;
 pub mod inspection;
 pub mod record;
 pub mod replay;
+pub mod view;
 
 pub use append::append;
 pub use error::{Error, Result};
@@ -83,3 +84,4 @@ pub use record::v2::{
 };
 pub use record::{AnyRecord, Channel, Provenance, SCHEMA_VERSION, SUPPORTED_SCHEMA_VERSIONS};
 pub use replay::{Replay, Tail, replay_bytes, replay_file};
+pub use view::{Capability, Snapshot, Viewer};
