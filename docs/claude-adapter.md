@@ -28,8 +28,8 @@ Claude Code version present on the authoring host: **2.1.220**.
 | --- | --- | --- |
 | `SessionStart` | A session begins or resumes | `source` ∈ {`startup`, `resume`, `clear`, `compact`, `fork`}, optional `model` |
 | `PreToolUse` | After the model constructs a tool request, **before the call is processed** | `tool_name`, `tool_input`, `tool_use_id` |
-| `PostToolUse` | After a tool call **succeeds** | `tool_name`, `tool_input`, `tool_use_id`, `tool_response`, optional `duration` |
-| `PostToolUseFailure` | After a tool call **fails** | `tool_name`, `tool_input`, `tool_use_id`, `error`, optional `duration`, optional `interrupted` |
+| `PostToolUse` | After a tool call **succeeds** | `tool_name`, `tool_input`, `tool_use_id`, `tool_response`, optional `duration` — **delivered as `duration_ms`**, see below |
+| `PostToolUseFailure` | After a tool call **fails** | `tool_name`, `tool_input`, `tool_use_id`, `error`, optional `duration`, optional `interrupted` — **delivered as `duration_ms` and `is_interrupt`** |
 | `PermissionDenied` | When a tool call is denied by the auto mode classifier | `tool_name`, `tool_input`, `tool_use_id` |
 | `SubagentStart` | A subagent is spawned | `agent_id`, `agent_type`, optional `parent_agent_id`, `parent_agent_type` |
 | `SubagentStop` | A subagent finishes | as above, plus `last_assistant_message`, `stop_reason` |
@@ -38,6 +38,13 @@ Claude Code version present on the authoring host: **2.1.220**.
 Common fields documented across hooks include `session_id`, `hook_event_name`,
 `transcript_path`, `cwd`, `permission_mode`, an optional `prompt_id` (documented as absent
 until the first input), and — inside a subagent — `agent_id` and `agent_type`.
+
+**The table above is the documentation, and the documentation is not the wire.** On Claude Code
+2.1.220 the timing and interruption fields arrive under different names than the reference gives:
+`duration_ms` rather than `duration`, and `is_interrupt` rather than `interrupted`. The adapter
+believed the reference for two sprints and dropped both. Where this document says "documented",
+read it as a claim about the reference; where it says "observed" or "delivered", read it as a
+claim about payloads this project has actually captured. Only the second kind is evidence.
 
 ### The four documented facts that determined the design
 
@@ -171,7 +178,7 @@ has defined.
 recording. Because Claude runs matching hooks in parallel, it is *not* automatically a total
 causal order for Claude's execution: two calls that complete concurrently land in whichever
 order their hook processes won the file lock. Per-call correlation by `tool_use_id` and the
-supplied `duration` can support a derived causal view. Raw replay never reorders.
+supplied `duration_ms` can support a derived causal view. Raw replay never reorders.
 
 ---
 
@@ -224,12 +231,14 @@ tool call attributable to it. Subagent boundary events are not guaranteed to pai
 `session_ended` alone. Do not segment a recording by it, and do not describe a recording as
 containing N turns. See dragon:3.
 
-**The hook-level `duration` never arrived.** Documented as optional on `PostToolUse`; supplied
-zero times in 82 completions, so `duration_ms` is absent on every record. This was later
-confirmed by inspection rather than by field count: the adapter reads the documented key, its
-payload struct is strict about types so a malformed value would have failed the translation
-outright rather than silently, and a recursive scan of every captured payload found no
-hook-level duration anywhere. The absence is the integration's, not this adapter's.
+**The hook-level duration is absent on all 82 completions, and that was this adapter's fault.**
+The measurement was reported twice as an integration coverage gap, and confirmed once by an
+inspection that could not have detected the actual cause: the adapter read `duration`, the
+integration sends `duration_ms`, unknown fields are ignored by design, and the confirming scan
+ran over the recording — which is the adapter's own output, downstream of the field selection
+under test. A later session captured raw payloads with an independent probe and found
+`duration_ms` populated on **every** completion of both hooks that fired. The 82 completions
+here are unrecoverable; nothing retroactively fills them, and they stay absent. See dragon:1.
 
 **One tool self-reports a duration in its response body, and the adapter deliberately does not
 lift it.** The single `Agent` completion carries `totalDurationMs` inside its `tool_response`,
@@ -240,8 +249,9 @@ Promoting it would make one tool appear to have hook-level timing it does not ha
 make `duration_ms` mean two different things depending on which tool a reader is looking at.
 A reader wanting it must go to the response payload and know which tool produced it.
 
-Either way, a derived view intending to use per-call tool duration has no usable input from this
-path: one completion in 82, on one tool. See dragon:1 for the full follow-up.
+Either way, a derived view intending to use per-call tool duration has no usable input from
+**this recording**: one completion in 82, on one tool. That is a fact about a recording written
+by a defective adapter, not about the integration. See dragon:1 for the full follow-up.
 
 **Reported intent behaved exactly as documented, and the duplication is real.** 65
 `reported_intent` records, all on the `reported` channel, from 64 `Bash` calls and one `Agent`

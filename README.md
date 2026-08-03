@@ -45,7 +45,10 @@ session's own account of itself disagree — is in
 finding task:4 had extracted by hand with `jq` — the 82 correlated request/completion pairs, the
 `subagent_stopped` with no matching start, `duration_ms` absent on all 82 completions, parentage
 absent on all three subagent records — without displaying the recording anywhere outside that
-machine. What the viewer shows, derives, and cannot know is
+machine. One of those findings was later shown to be an adapter defect rather than an integration
+limit: the timing field was arriving and being dropped, unread, before it reached the recording.
+The viewer reproduced faithfully what the recording said, and the recording was wrong. See
+dragon:1. What the viewer shows, derives, and cannot know is
 [docs/viewer.md](docs/viewer.md); the sprint is
 [sprint 2](archaeology/sprints/0002-first-light/sprint.md).
 
@@ -102,12 +105,16 @@ Measured against that one session:
 - `parent_agent_id` never arrived, so nothing links a subagent to what spawned it;
 - one `subagent_stopped` arrived with no matching `subagent_started`;
 - `prompt_id` arrived populated, but nothing in a recording says what it delimits;
-- `duration_ms` never arrived, in any of 82 completions;
+- `duration_ms` is absent on all 82 completions — **because the adapter read the wrong key**, not
+  because the integration withheld it; a later session with an independent raw-payload probe found
+  it populated on every completion;
 - a file written by a shell command left **no mutation event** — demonstrated, not asserted.
 
 Still unmeasured, and not to be read as working:
 
-- failure, denial, and interruption capture — none of the three was exercised;
+- denial and interruption capture — neither has been exercised, and until one is, neither should
+  be read as working; failure capture has since been exercised, on both a non-zero shell exit and
+  a tool-level error, and both arrived on `PostToolUseFailure`;
 - what a pre-tool record with no completion looks like in practice; none occurred;
 - whether parallel dispatch is distinguishable from serial dispatch — it was not, here;
 - whether a resumed session appends to the same recording;
