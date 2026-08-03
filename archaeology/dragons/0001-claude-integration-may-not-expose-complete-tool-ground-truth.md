@@ -248,3 +248,39 @@ re-measuring is cheap: arm, run a session with a single tool call, disarm, and c
 measurement should record the Claude Code version beside the result, because this one is scoped
 to a version that was never written down alongside the finding — which is itself a small lesson
 for the next pass.
+
+### Correction: the version was recoverable, and it is 2.1.220
+
+The follow-up above closed by saying the finding "is scoped to a version that was never written
+down". That was true of the archaeology and false of the machine, which still held enough install
+metadata to recover it. Recovered before a later update could overwrite it:
+
+| fact | value |
+| --- | --- |
+| `~/.local/bin/claude` symlink target | `versions/2.1.220`, a native (non-npm, non-Homebrew) install |
+| `2.1.220` installed and symlink repointed | 2026-07-25 |
+| only update attempt between then and the recording | 2026-08-02, **failed** (`install_failed`, `version_to: null`) |
+| first-contact recording written | 2026-08-02 |
+
+No successful version change occurred between the symlink being repointed and the recording being
+written, and the failed attempt names `2.1.220` as the version it was updating *from*. So
+**task:4's measurements are scoped to Claude Code 2.1.220 on macOS arm64**, and every count in
+this dragon's findings section inherits that scope.
+
+`claude update` subsequently reported 2.1.220 as the latest available version. Two consequences
+follow, and the second is the one that matters:
+
+- The absent hook-level `duration` is not a stale-install artifact. It is the behaviour of the
+  current release.
+- **A newly recorded session cannot answer the version question**, because there is no newer
+  version to compare against. What a second recording can still answer is whether `duration`
+  arrives on hooks that have never fired here — `PostToolUseFailure` and `PermissionDenied` each
+  document their own optional `duration`, and neither has ever been observed — and whether the
+  absence is per-hook, per-tool, or total.
+
+The install metadata that made this recoverable is transient: `.last-update-result.json` is
+overwritten by the next update attempt, and old version binaries are eventually reaped. The
+durable lesson is the cheap one — **record the integration version at arm time, not at analysis
+time**. `scripts/arm.sh` already writes a sentinel recording the WitnessGlass version, the binary
+path, and its checksum; it records nothing about the agent being recorded, which is the more
+consequential of the two.
