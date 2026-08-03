@@ -11,16 +11,34 @@
 <a class="skip" href="#ledger">Skip to the event ledger</a>
 
 <header class="masthead">
-  <div class="masthead-title">
+  <div class="masthead-row">
     <span class="wordmark">WitnessGlass</span>
     <span class="subtitle">local recording snapshot</span>
+    <details class="sensitive">
+      <summary>
+        <span class="sensitive-mark" aria-hidden="true">!</span>
+        <span><strong>Not redacted.</strong> Rendering is not redacting.</span>
+      </summary>
+      <p>
+        This recording holds whatever the session put into it — prompts, commands, absolute
+        paths, file contents, tool output, and any credential that passed through any of them.
+        Nothing here is filtered, masked, or omitted. This page being easier to read than the
+        raw file does not make it safer to share, screenshot, or paste, and there is no export,
+        download, or share path anywhere in this tool.
+      </p>
+    </details>
   </div>
-  <p class="sensitive" role="note">
-    <strong>Not redacted.</strong> This recording holds whatever the session put into it —
-    prompts, commands, absolute paths, file contents, tool output, and any credential that
-    passed through any of them. Rendering is not redacting. This page is not safer to share,
-    screenshot, or paste than the raw file behind it.
-  </p>
+
+  <nav class="perspectives">
+    <div role="tablist" aria-label="Perspective">
+      <button type="button" role="tab" id="tab-events" aria-controls="panel-events"
+              aria-selected="true" tabindex="0" data-perspective="events">Events</button>
+      <button type="button" role="tab" id="tab-coverage" aria-controls="panel-coverage"
+              aria-selected="false" tabindex="-1" data-perspective="coverage">Coverage</button>
+      <button type="button" role="tab" id="tab-provenance" aria-controls="panel-provenance"
+              aria-selected="false" tabindex="-1" data-perspective="provenance">Provenance</button>
+    </div>
+  </nav>
 </header>
 
 <noscript>
@@ -31,53 +49,76 @@
 </noscript>
 
 <main id="workbench" hidden>
-  <section id="hud" aria-labelledby="hud-heading">
-    <h2 id="hud-heading">Evidence HUD</h2>
-    <div id="hud-body" class="panels"></div>
-  </section>
+  <section id="panel-events" role="tabpanel" aria-labelledby="tab-events" tabindex="-1">
+    <div id="summary" class="summary"></div>
 
-  <section id="map" aria-labelledby="map-heading">
-    <div class="section-head">
-      <h2 id="map-heading">Event map</h2>
-      <div class="controls" role="group" aria-label="Event map axis">
-        <label><input type="radio" name="axis" value="sequence" checked> Recorder order</label>
-        <label><input type="radio" name="axis" value="time"> Recorder time <span class="tag tag-derived">derived</span></label>
+    <section id="map" aria-labelledby="map-heading">
+      <div class="section-head">
+        <h2 id="map-heading">Event map</h2>
+        <div class="controls" role="group" aria-label="Event map axis">
+          <label><input type="radio" name="axis" value="sequence" checked> Recorder order</label>
+          <label><input type="radio" name="axis" value="time"> Recorder time <span class="tag tag-derived"><span class="glyph" aria-hidden="true">&#10192;</span><span>derived</span></span></label>
+        </div>
       </div>
+      <p class="note" id="map-note"></p>
+      <div id="map-body"></div>
+    </section>
+
+    <div class="split">
+      <section id="ledger" aria-labelledby="ledger-heading">
+        <div class="section-head">
+          <h2 id="ledger-heading">Event ledger</h2>
+          <p class="note" id="ledger-count"></p>
+        </div>
+
+        <div class="ledger-controls">
+          <div class="search-row">
+            <label class="visually-hidden" for="search-input">Search records</label>
+            <input type="search" id="search-input" autocomplete="off" spellcheck="false"
+                   placeholder="Search kind, tool, mechanism, agent, correlation id, sequence">
+            <details class="filter-drawer" id="filter-drawer">
+              <summary><span>Filters</span><span class="filter-badge" id="filter-badge" hidden></span></summary>
+              <div id="filters" class="filters"></div>
+            </details>
+            <label class="toggle">
+              <input type="checkbox" id="filter-anomalous">
+              <span>Anomalous only</span>
+            </label>
+          </div>
+
+          <div class="payload-row">
+            <label class="toggle">
+              <input type="checkbox" id="search-payloads">
+              <span>Search payloads too</span>
+            </label>
+            <p class="note" id="search-note">
+              Searching metadata only. Payload search reads commands, file contents, and tool
+              output — the most sensitive part of the recording — and is off until you turn it on.
+            </p>
+          </div>
+
+          <div id="active-filters" class="active-filters" hidden></div>
+        </div>
+
+        <div id="ledger-body" class="scroller"></div>
+      </section>
+
+      <aside id="inspector" aria-labelledby="inspector-heading">
+        <div class="inspector-inner">
+          <h2 id="inspector-heading">Evidence inspector</h2>
+          <div id="inspector-body"></div>
+        </div>
+      </aside>
     </div>
-    <p class="note" id="map-note"></p>
-    <div id="map-body"></div>
   </section>
 
-  <div class="split">
-    <section id="ledger" aria-labelledby="ledger-heading">
-      <div class="section-head">
-        <h2 id="ledger-heading">Event ledger</h2>
-        <p class="note" id="ledger-count"></p>
-      </div>
-      <div id="filters" class="filters"></div>
-      <div class="search">
-        <label for="search-input">Search</label>
-        <input type="search" id="search-input" autocomplete="off" spellcheck="false"
-               placeholder="kind, tool, mechanism, agent, correlation id, sequence">
-        <label class="payload-opt">
-          <input type="checkbox" id="search-payloads">
-          Also search payloads
-        </label>
-        <p class="note" id="search-note">
-          Searching metadata only. Payload search reads commands, file contents, and tool
-          output — the most sensitive part of the recording — and is off until you turn it on.
-        </p>
-      </div>
-      <div id="ledger-body" class="scroller"></div>
-    </section>
+  <section id="panel-coverage" role="tabpanel" aria-labelledby="tab-coverage" tabindex="-1" hidden>
+    <div id="coverage-body" class="stack"></div>
+  </section>
 
-    <section id="inspector" aria-labelledby="inspector-heading" tabindex="-1">
-      <div class="section-head">
-        <h2 id="inspector-heading">Evidence inspector</h2>
-      </div>
-      <div id="inspector-body" class="scroller"></div>
-    </section>
-  </div>
+  <section id="panel-provenance" role="tabpanel" aria-labelledby="tab-provenance" tabindex="-1" hidden>
+    <div id="provenance-body" class="stack"></div>
+  </section>
 </main>
 
 <p id="failure" class="failure" hidden></p>

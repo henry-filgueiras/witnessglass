@@ -2,55 +2,71 @@
    Bundled with the binary. No external font, no remote asset, no network access
    of any kind.
 
-   The visual direction is a flight-recorder workbench: hairline rules, dense
-   monospace evidence, a restrained palette, and nothing that reads as a product
-   dashboard. Colour is decoration everywhere; every distinction that matters is
-   also carried by a glyph and a word, because a reader who cannot see the
+   A precise optical instrument rather than a dashboard: hairline rules, dense
+   monospace evidence, restrained semantic colour, and hierarchy carried by
+   spacing and type rather than by boxing everything equally. The first-use pass
+   in task:11 found the previous layout gave panels, tags, identifiers,
+   warnings, aggregates, and controls near-identical weight; this one commits to
+   one dominant surface and lets the rest recede.
+
+   Colour is decoration everywhere. Every distinction that matters is also
+   carried by a glyph, a shape, and a word, because a reader who cannot see the
    colour must still be able to tell a claim from an observation. */
 
 :root {
     color-scheme: dark light;
 
     --paper: #0f1216;
-    --panel: #151a20;
-    --raised: #1c232b;
-    --ink: #e8edf2;
+    --raised: #161b21;
+    --sunken: #0b0e11;
+    --ink: #e9edf1;
     --quiet: #98a4b0;
-    --rule: #2c353f;
-    --rule-strong: #3d4956;
+    --faint: #7b8794;
+    --rule: #262e37;
+    --rule-strong: #39434e;
 
-    --reported: #c9a227;
-    --observed: #5aa9e6;
-    --recorder: #9d8df1;
-    --derived: #6fd3b0;
-    --alarm: #f0866b;
+    --reported: #d8a72c;
+    --observed: #5fb0ea;
+    --recorder: #a695f5;
+    --derived: #64d0ac;
+    --alarm: #f2896c;
     --focus: #ffd479;
 
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
     --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --gutter: 1.5rem;
 }
 
 @media (prefers-color-scheme: light) {
     :root {
-        --paper: #f4f6f8;
-        --panel: #ffffff;
-        --raised: #eef1f4;
-        --ink: #11161b;
-        --quiet: #4d5761;
-        --rule: #d3d9df;
-        --rule-strong: #b3bcc5;
+        --paper: #fbfcfd;
+        --raised: #f2f4f7;
+        --sunken: #ffffff;
+        --ink: #10151a;
+        --quiet: #4a545f;
+        --faint: #616b76;
+        --rule: #dde2e8;
+        --rule-strong: #b9c2cb;
 
-        --reported: #7a5c00;
-        --observed: #10527f;
-        --recorder: #4b3ba8;
-        --derived: #056b52;
-        --alarm: #9a3412;
-        --focus: #7a4b00;
+        --reported: #79550a;
+        --observed: #0f527f;
+        --recorder: #4a37a6;
+        --derived: #06674f;
+        --alarm: #9a3210;
+        --focus: #8a4f00;
     }
 }
 
 * {
     box-sizing: border-box;
+}
+
+/* A `display` declaration on a class beats the `hidden` attribute's UA rule, so
+   an element the script hides stays on screen. Restated here once rather than
+   remembered at every call site. */
+[hidden] {
+    display: none !important;
 }
 
 body {
@@ -60,23 +76,23 @@ body {
     font: 14px/1.55 var(--sans);
 }
 
+h1,
 h2,
 h3,
-h4,
-h5 {
+h4 {
     margin: 0;
     font-weight: 600;
 }
 
 h2 {
-    font-size: 0.78rem;
-    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--quiet);
 }
 
 h3 {
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -84,17 +100,9 @@ h3 {
 }
 
 h4 {
-    font-size: 0.8rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-h5 {
-    margin-top: 0.75rem;
-    font-size: 0.75rem;
-    letter-spacing: 0.1em;
+    margin-top: 1rem;
+    font-size: 0.7rem;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--quiet);
     display: flex;
@@ -124,6 +132,12 @@ h5 {
     font-weight: 600;
 }
 
+.lede {
+    margin: 0 0 1.25rem;
+    color: var(--quiet);
+    max-width: 74ch;
+}
+
 .note {
     margin: 0.4rem 0 0;
     font-size: 0.8rem;
@@ -133,18 +147,21 @@ h5 {
 
 .warn-note {
     margin: 0.5rem 0 0;
-    padding: 0.4rem 0.6rem;
+    padding: 0.4rem 0.7rem;
     border-left: 3px solid var(--alarm);
     background: var(--raised);
     font-size: 0.8rem;
+    color: var(--ink);
     max-width: 78ch;
 }
 
-.alarm-note {
-    margin: 0.5rem 0 0;
-    color: var(--alarm);
-    font-size: 0.8rem;
-    max-width: 78ch;
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
 }
 
 /* --- focus and motion ---------------------------------------------------- */
@@ -158,10 +175,10 @@ h5 {
     position: absolute;
     left: -9999px;
     top: 0;
+    z-index: 20;
     padding: 0.6rem 1rem;
-    background: var(--panel);
+    background: var(--raised);
     color: var(--ink);
-    z-index: 10;
 }
 
 .skip:focus {
@@ -179,62 +196,114 @@ h5 {
 /* --- masthead ------------------------------------------------------------ */
 
 .masthead {
-    padding: 1rem 1.25rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--paper);
     border-bottom: 1px solid var(--rule-strong);
-    background: var(--panel);
 }
 
-.masthead-title {
+.masthead-row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.75rem;
     flex-wrap: wrap;
+    padding: 0.7rem var(--gutter) 0.5rem;
 }
 
 .wordmark {
-    font-size: 1.05rem;
+    font-size: 0.95rem;
     font-weight: 700;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.01em;
 }
 
 .subtitle {
-    color: var(--quiet);
-    font-size: 0.8rem;
-    letter-spacing: 0.1em;
+    color: var(--faint);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
     text-transform: uppercase;
 }
 
+/* A compact strip that always says the two things it must, with the rest
+   behind a native disclosure. */
 .sensitive {
-    margin: 0.75rem 0 0;
-    padding: 0.7rem 0.9rem;
-    border: 1px solid var(--alarm);
-    border-left-width: 4px;
-    background: var(--raised);
-    font-size: 0.82rem;
-    max-width: 100ch;
+    margin-left: auto;
+    max-width: 100%;
 }
 
-.failure {
-    margin: 1.25rem;
-    padding: 0.9rem;
+.sensitive > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.25rem 0.6rem;
     border: 1px solid var(--alarm);
+    border-left-width: 3px;
     background: var(--raised);
-    max-width: 90ch;
+    font-size: 0.78rem;
+    cursor: pointer;
+    list-style: none;
+}
+
+.sensitive > summary::-webkit-details-marker {
+    display: none;
+}
+
+.sensitive-mark {
+    font-weight: 700;
+    color: var(--alarm);
+}
+
+.sensitive > p {
+    margin: 0.4rem 0 0;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--rule);
+    background: var(--raised);
+    font-size: 0.8rem;
+    max-width: 80ch;
+}
+
+/* --- perspectives -------------------------------------------------------- */
+
+.perspectives {
+    padding: 0 var(--gutter);
+}
+
+.perspectives [role="tablist"] {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.perspectives button {
+    appearance: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--quiet);
+    font: inherit;
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    padding: 0.45rem 0.85rem;
+    cursor: pointer;
+}
+
+.perspectives button:hover {
+    color: var(--ink);
+}
+
+.perspectives button[aria-selected="true"] {
+    color: var(--ink);
+    font-weight: 600;
+    border-bottom-color: var(--observed);
 }
 
 /* --- layout -------------------------------------------------------------- */
 
 main {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    background: var(--rule);
+    padding: 1.1rem var(--gutter) 4rem;
 }
 
-main > section,
-.split > section {
-    background: var(--paper);
-    padding: 1rem 1.25rem;
+.stack > * + * {
+    margin-top: 1.75rem;
 }
 
 .section-head {
@@ -243,209 +312,94 @@ main > section,
     justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+
+#map {
+    margin-top: 1.5rem;
 }
 
 .split {
     display: grid;
-    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
-    gap: 1px;
-    background: var(--rule);
+    grid-template-columns: minmax(0, 1fr) minmax(20rem, 26rem);
+    gap: 1.75rem;
+    margin-top: 1.75rem;
+    align-items: start;
 }
 
-/* Below this the ledger cannot hold seven columns beside an inspector, so the
+/* Below this the ledger cannot hold six columns beside an inspector, so the
    inspector moves under it rather than squeezing both. */
-@media (max-width: 1200px) {
+@media (max-width: 1180px) {
     .split {
         grid-template-columns: minmax(0, 1fr);
     }
 }
 
 .scroller {
-    max-height: 62vh;
+    max-height: 60vh;
     overflow: auto;
     overscroll-behavior: contain;
 }
 
-/* --- panels -------------------------------------------------------------- */
+/* --- the compact summary ------------------------------------------------- */
 
-.panels {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-    gap: 0.75rem;
-    margin-top: 0.75rem;
-}
-
-.panel {
-    padding: 0.8rem 0.9rem;
-    border: 1px solid var(--rule);
-    background: var(--panel);
-}
-
-.panel + .panel {
-    margin-top: 0.75rem;
-}
-
-.panel-gaps {
-    border-color: var(--alarm);
-    border-left-width: 3px;
-}
-
-.facts {
-    display: grid;
-    grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
-    gap: 0.25rem 0.75rem;
-    margin: 0.6rem 0 0;
-}
-
-.facts dt {
-    color: var(--quiet);
-    font-size: 0.78rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-}
-
-.facts dd {
-    margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
+.summary {
     display: flex;
-    align-items: baseline;
-    gap: 0.4rem;
     flex-wrap: wrap;
-}
-
-/* --- counts and receipts ------------------------------------------------- */
-
-.counts {
-    margin-top: 0.6rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-}
-
-.count-row,
-.gap-row,
-.anomaly-row,
-.subagent-row {
-    display: flex;
-    align-items: baseline;
-    gap: 0.45rem;
-    flex-wrap: wrap;
-    padding: 0.18rem 0;
+    gap: 0 1.75rem;
+    padding-bottom: 1rem;
     border-bottom: 1px solid var(--rule);
 }
 
-.count-label,
-.gap-label {
+.stat {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.35rem 0;
+    min-width: 6.5rem;
+    max-width: 22rem;
+}
+
+.stat-value {
     font-family: var(--mono);
-    font-size: 0.82em;
-    min-width: 12rem;
+    font-size: 1.15rem;
+    font-weight: 600;
+    line-height: 1.2;
 }
 
-.count-value {
-    font-family: var(--mono);
-    font-weight: 700;
-    min-width: 2.5rem;
-    text-align: right;
-}
-
-.count-absent {
-    color: var(--alarm);
-    font-size: 0.82em;
-}
-
-.count-scope {
+.stat-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
     color: var(--quiet);
-    font-size: 0.76em;
-    font-style: italic;
 }
 
-.receipts {
-    display: inline-flex;
-    gap: 0.2rem;
-    flex-wrap: wrap;
+.stat-note {
+    font-size: 0.72rem;
+    color: var(--faint);
 }
 
-.receipt {
-    font-family: var(--mono);
-    font-size: 0.75rem;
-    padding: 0.05rem 0.3rem;
-    border: 1px solid var(--rule-strong);
-    background: var(--raised);
-    color: var(--ink);
+.stat-absent .stat-value,
+.stat-absent .stat-note {
+    color: var(--alarm);
+}
+
+.stat-alarm .stat-value {
+    color: var(--alarm);
+}
+
+button.stat-action {
+    appearance: none;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
     cursor: pointer;
-    border-radius: 2px;
 }
 
-.receipt:hover {
-    border-color: var(--focus);
-}
-
-.pair {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.25rem;
-    font-size: 0.82em;
-}
-
-.anomaly-name {
-    color: var(--alarm);
-    font-size: 0.85em;
-}
-
-/* --- tags ---------------------------------------------------------------- */
-
-.tag {
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.25rem;
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    letter-spacing: 0.04em;
-    padding: 0.05rem 0.35rem;
-    border: 1px solid currentColor;
-    border-radius: 2px;
-    white-space: nowrap;
-}
-
-.tag .glyph {
-    font-size: 0.9em;
-}
-
-.tag-reported {
-    color: var(--reported);
-}
-
-.tag-observed {
-    color: var(--observed);
-}
-
-.tag-recorder {
-    color: var(--recorder);
-}
-
-.tag-derived {
-    color: var(--derived);
-}
-
-.tag-anomalous {
-    color: var(--alarm);
-}
-
-.chip {
-    display: inline-block;
-    font-size: 0.72rem;
-    padding: 0.05rem 0.35rem;
-    margin: 0.1rem 0.2rem 0.1rem 0;
-    border: 1px solid var(--rule-strong);
-    background: var(--raised);
-    border-radius: 2px;
-}
-
-.chip-anomalous {
-    border-color: var(--alarm);
-    color: var(--alarm);
+button.stat-action:hover .stat-note {
+    color: var(--ink);
 }
 
 /* --- event map ----------------------------------------------------------- */
@@ -465,16 +419,19 @@ main > section,
 
 .lane {
     display: grid;
-    grid-template-columns: minmax(8rem, 14rem) minmax(0, 1fr);
+    grid-template-columns: minmax(7rem, 12rem) 2.5rem minmax(0, 1fr);
     align-items: center;
-    gap: 0.75rem;
-    border-bottom: 1px solid var(--rule);
-    padding: 0.15rem 0;
+    gap: 0.5rem;
+    padding: 0.1rem 0;
+}
+
+.lane + .lane {
+    border-top: 1px solid var(--rule);
 }
 
 .lane-label {
     font-family: var(--mono);
-    font-size: 0.75rem;
+    font-size: 0.72rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -485,87 +442,230 @@ main > section,
     font-style: italic;
 }
 
-.lane-track {
-    position: relative;
-    height: 1.6rem;
-    background: linear-gradient(to bottom, transparent 48%, var(--rule) 48%, var(--rule) 52%, transparent 52%);
+.lane-count {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    text-align: right;
 }
 
+.lane-track {
+    position: relative;
+    height: 1.5rem;
+    background: linear-gradient(to bottom, transparent calc(50% - 1px), var(--rule) calc(50% - 1px), var(--rule) calc(50% + 1px), transparent calc(50% + 1px));
+}
+
+/* The button is a comfortable hit target; the visible mark inside it is small,
+   so a few hundred records read as a temporal texture rather than as
+   overlapping poker chips. Shape carries the channel — a circle, a diamond, a
+   square — so the distinction survives without colour. */
 .mark {
     position: absolute;
     top: 50%;
+    left: 0;
     transform: translate(-50%, -50%);
-    width: 1.15rem;
-    height: 1.15rem;
+    width: 15px;
+    height: 15px;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--paper);
-    border: 1px solid currentColor;
-    border-radius: 50%;
+    background: none;
+    border: 0;
     cursor: pointer;
-    font-size: 0.6rem;
-    line-height: 1;
 }
 
-.mark-reported {
-    color: var(--reported);
+.mark-dot {
+    width: 7px;
+    height: 7px;
+    background: currentColor;
+    border: 1px solid var(--paper);
 }
 
 .mark-observed {
     color: var(--observed);
 }
 
+.mark-observed .mark-dot {
+    border-radius: 50%;
+}
+
+.mark-reported {
+    color: var(--reported);
+}
+
+.mark-reported .mark-dot {
+    transform: rotate(45deg);
+}
+
 .mark-recorder {
     color: var(--recorder);
 }
 
-.mark-anomalous {
+.mark-anomalous .mark-dot {
     box-shadow: 0 0 0 2px var(--alarm);
 }
 
 .mark-filtered {
-    opacity: 0.28;
+    opacity: 0.22;
+}
+
+.mark:hover {
+    z-index: 3;
+}
+
+.mark:hover .mark-dot {
+    box-shadow: 0 0 0 2px var(--focus);
 }
 
 .mark-selected {
-    outline: 2px solid var(--focus);
-    outline-offset: 1px;
-    z-index: 2;
+    z-index: 4;
+}
+
+.mark-selected .mark-dot {
+    width: 11px;
+    height: 11px;
+    box-shadow: 0 0 0 2px var(--focus);
 }
 
 .legend {
     display: flex;
-    gap: 0.6rem;
+    gap: 1.1rem;
     align-items: center;
     flex-wrap: wrap;
     margin-top: 0.7rem;
-    font-size: 0.78rem;
+    font-size: 0.74rem;
+    color: var(--quiet);
 }
 
-/* --- filters and search -------------------------------------------------- */
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
 
-.filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+/* The legend's swatches carry the same shapes as the marks, so the legend
+   teaches the shape rather than only the colour. */
+.mark-sample {
+    width: 7px;
+    height: 7px;
+    background: currentColor;
+}
+
+.mark-sample.mark-observed {
+    border-radius: 50%;
+}
+
+.mark-sample.mark-reported {
+    transform: rotate(45deg);
+}
+
+.mark-sample.mark-anomalous {
+    box-shadow: 0 0 0 2px var(--alarm);
+}
+
+/* --- ledger controls ----------------------------------------------------- */
+
+.ledger-controls {
+    display: flex;
+    flex-direction: column;
     gap: 0.5rem;
     margin-bottom: 0.6rem;
 }
 
+.search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.search-row input[type="search"] {
+    flex: 1 1 16rem;
+    min-width: 0;
+    padding: 0.4rem 0.6rem;
+    background: var(--sunken);
+    color: var(--ink);
+    border: 1px solid var(--rule-strong);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+}
+
+.toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    white-space: nowrap;
+}
+
+.filter-drawer > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0.7rem;
+    border: 1px solid var(--rule-strong);
+    background: var(--raised);
+    font-size: 0.78rem;
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+}
+
+.filter-drawer > summary::-webkit-details-marker {
+    display: none;
+}
+
+.filter-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.2rem;
+    height: 1.2rem;
+    padding: 0 0.25rem;
+    border-radius: 999px;
+    background: var(--observed);
+    color: var(--paper);
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    font-weight: 700;
+}
+
+.payload-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.payload-row .note,
+.payload-row .warn-note {
+    flex: 1 1 24rem;
+    margin-top: 0;
+}
+
+.filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.6rem;
+    border: 1px solid var(--rule);
+    background: var(--raised);
+}
+
 .filter-group {
     margin: 0;
-    padding: 0.4rem 0.6rem 0.5rem;
-    border: 1px solid var(--rule);
-    background: var(--panel);
-    max-height: 11rem;
+    padding: 0.3rem 0.5rem 0.4rem;
+    border: 0;
+    border-left: 2px solid var(--rule-strong);
+    max-height: 10rem;
     overflow: auto;
 }
 
 .filter-group legend {
-    padding: 0 0.3rem;
-    font-size: 0.72rem;
-    letter-spacing: 0.1em;
+    padding: 0;
+    font-size: 0.68rem;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--quiet);
 }
@@ -574,89 +674,95 @@ main > section,
     display: flex;
     align-items: center;
     gap: 0.35rem;
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     padding: 0.05rem 0;
     overflow-wrap: anywhere;
 }
 
-.search {
-    margin-bottom: 0.6rem;
+.active-filters {
     display: flex;
-    align-items: center;
-    gap: 0.6rem;
+    gap: 0.35rem;
     flex-wrap: wrap;
+    align-items: center;
 }
 
-.search label {
-    font-size: 0.72rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--quiet);
-}
-
-.search input[type="search"] {
-    flex: 1 1 18rem;
-    min-width: 0;
-    padding: 0.35rem 0.5rem;
-    background: var(--panel);
-    color: var(--ink);
-    border: 1px solid var(--rule-strong);
-    font-family: var(--mono);
-    font-size: 0.82rem;
-}
-
-.payload-opt {
+.active-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    text-transform: none;
-    letter-spacing: 0;
-    font-size: 0.8rem;
+    gap: 0.3rem;
+    padding: 0.1rem 0.2rem 0.1rem 0.45rem;
+    border: 1px solid var(--rule-strong);
+    background: var(--raised);
+    border-radius: 2px;
+    font-size: 0.73rem;
+}
+
+.chip-remove {
+    appearance: none;
+    border: 0;
+    background: none;
+    color: var(--quiet);
+    font: inherit;
+    font-size: 0.9rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+    cursor: pointer;
+}
+
+.chip-remove:hover {
+    color: var(--alarm);
+}
+
+.chip-clear {
+    appearance: none;
+    border: 0;
+    background: none;
+    color: var(--quiet);
+    font: inherit;
+    font-size: 0.73rem;
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+    cursor: pointer;
+}
+
+.chip-clear:hover {
     color: var(--ink);
 }
 
-.search .note,
-.search .warn-note {
-    flex: 1 1 100%;
-}
-
-/* --- ledger -------------------------------------------------------------- */
+/* --- ledger table -------------------------------------------------------- */
 
 .ledger-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.82rem;
+    font-size: 0.81rem;
 }
 
 .ledger-table th {
     position: sticky;
     top: 0;
     z-index: 1;
-    background: var(--panel);
+    background: var(--paper);
     text-align: left;
-    padding: 0.35rem 0.5rem;
+    padding: 0.3rem 0.5rem;
     border-bottom: 1px solid var(--rule-strong);
-    font-size: 0.72rem;
-    letter-spacing: 0.08em;
+    font-size: 0.66rem;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--quiet);
+    font-weight: 600;
 }
 
 .ledger-table td {
-    padding: 0.3rem 0.5rem;
+    padding: 0.25rem 0.5rem;
     border-bottom: 1px solid var(--rule);
     vertical-align: top;
+    /* `break-word`, never `anywhere`: a note may wrap between words and must
+       not be shredded one character per line. */
     overflow-wrap: break-word;
 }
 
-/* Identifiers and kinds are read as whole tokens. Breaking `session_started`
-   across two lines makes a ledger harder to scan than a wide one. */
 .ledger-table td.mono {
     white-space: nowrap;
-}
-
-#ledger-body {
-    overflow-x: auto;
 }
 
 .ledger-table tbody tr {
@@ -680,32 +786,230 @@ main > section,
 .cell-seq {
     text-align: right;
     white-space: nowrap;
+    color: var(--quiet);
 }
 
-.cell-notes {
-    white-space: normal;
-    /* `break-word`, never `anywhere`: a note may wrap between words and must
-       not be shredded one character per line. */
-    overflow-wrap: break-word;
+.cell-anomaly {
+    color: var(--alarm);
+    font-size: 0.76rem;
 }
 
-.cell-notes .chip {
-    white-space: normal;
+.flag {
+    display: inline-block;
+    max-width: 18rem;
 }
 
 /* --- inspector ----------------------------------------------------------- */
+
+#inspector {
+    border-left: 1px solid var(--rule);
+    padding-left: 1.25rem;
+}
+
+@media (max-width: 1180px) {
+    #inspector {
+        border-left: 0;
+        border-top: 1px solid var(--rule);
+        padding-left: 0;
+        padding-top: 1.25rem;
+    }
+}
+
+/* A stable companion to the ledger rather than something to rediscover below
+   a long table. */
+@media (min-width: 1181px) {
+    .inspector-inner {
+        position: sticky;
+        top: 6.5rem;
+        max-height: calc(100vh - 8rem);
+        overflow: auto;
+        overscroll-behavior: contain;
+    }
+}
 
 .inspector-title {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
-    margin-bottom: 0.6rem;
+    margin: 0.6rem 0 0.9rem;
 }
+
+/* --- blocks -------------------------------------------------------------- */
+
+.block + .block {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--rule);
+}
+
+.block-alarm {
+    border-left: 3px solid var(--alarm);
+    padding-left: 0.85rem;
+}
+
+.facts {
+    display: grid;
+    grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+    gap: 0.2rem 0.75rem;
+    margin: 0.6rem 0 0;
+}
+
+.facts dt {
+    color: var(--faint);
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding-top: 0.15rem;
+}
+
+.facts dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+/* --- counts, gaps, anomalies -------------------------------------------- */
+
+.counts {
+    margin-top: 0.6rem;
+}
+
+.count-row,
+.gap-row,
+.anomaly-row,
+.subagent-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--rule);
+}
+
+.count-label,
+.gap-label {
+    font-family: var(--mono);
+    font-size: 0.8em;
+    min-width: 13rem;
+}
+
+.count-value {
+    font-family: var(--mono);
+    font-weight: 700;
+    min-width: 2.5rem;
+    text-align: right;
+}
+
+.count-absent {
+    color: var(--alarm);
+    font-size: 0.8em;
+}
+
+.count-scope {
+    color: var(--faint);
+    font-size: 0.74em;
+    font-style: italic;
+}
+
+.anomaly-name {
+    color: var(--alarm);
+    font-size: 0.85em;
+}
+
+.pair {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    font-size: 0.8em;
+}
+
+/* --- receipts ------------------------------------------------------------ */
+
+.receipts {
+    display: inline-flex;
+    gap: 0.2rem;
+    flex-wrap: wrap;
+    align-items: baseline;
+}
+
+.receipt {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    padding: 0.02rem 0.28rem;
+    border: 1px solid var(--rule-strong);
+    background: var(--raised);
+    color: var(--quiet);
+    cursor: pointer;
+    border-radius: 2px;
+}
+
+.receipt:hover {
+    color: var(--ink);
+    border-color: var(--focus);
+}
+
+.receipt-set > summary {
+    font-size: 0.74rem;
+    color: var(--quiet);
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 0.2em;
+}
+
+.receipt-set > summary:hover {
+    color: var(--ink);
+}
+
+.receipt-holder {
+    display: flex;
+    gap: 0.2rem;
+    flex-wrap: wrap;
+    margin-top: 0.3rem;
+    max-height: 9rem;
+    overflow: auto;
+}
+
+/* --- tags ---------------------------------------------------------------- */
+
+.tag {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.03em;
+    padding: 0.02rem 0.3rem;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    white-space: nowrap;
+}
+
+.tag-reported {
+    color: var(--reported);
+}
+
+.tag-observed {
+    color: var(--observed);
+}
+
+.tag-recorder {
+    color: var(--recorder);
+}
+
+.tag-derived {
+    color: var(--derived);
+}
+
+/* --- evidence cards ------------------------------------------------------ */
 
 .evidence {
     margin-top: 0.5rem;
-    padding: 0.5rem 0.6rem;
+    padding: 0.5rem 0.65rem;
     border: 1px solid var(--rule);
     border-left-width: 3px;
     background: var(--raised);
@@ -735,21 +1039,23 @@ main > section,
     padding: 0.35rem 0.6rem;
     border-left: 2px solid var(--reported);
     font-family: var(--mono);
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
 }
 
+/* --- payloads ------------------------------------------------------------ */
+
 .payload {
     margin-top: 0.5rem;
     border: 1px solid var(--rule);
-    background: var(--panel);
+    background: var(--sunken);
 }
 
 .payload > summary {
     padding: 0.4rem 0.6rem;
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     color: var(--quiet);
 }
 
@@ -759,17 +1065,18 @@ main > section,
 
 .payload > *:not(summary) {
     padding: 0 0.6rem 0.6rem;
+    max-height: 26rem;
+    overflow: auto;
 }
 
 .json-object {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
 }
 
 .json-row {
     display: grid;
-    grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+    grid-template-columns: minmax(5rem, auto) minmax(0, 1fr);
     gap: 0.5rem;
     padding: 0.1rem 0;
     border-bottom: 1px solid var(--rule);
@@ -777,8 +1084,8 @@ main > section,
 
 .json-key {
     font-family: var(--mono);
-    font-size: 0.78rem;
-    color: var(--quiet);
+    font-size: 0.75rem;
+    color: var(--faint);
 }
 
 .json-string,
@@ -786,7 +1093,7 @@ main > section,
 .json-bool,
 .json-null {
     font-family: var(--mono);
-    font-size: 0.78rem;
+    font-size: 0.75rem;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     min-width: 0;
@@ -800,4 +1107,14 @@ main > section,
 .json-list {
     margin: 0;
     padding-left: 1.1rem;
+}
+
+/* --- failure ------------------------------------------------------------- */
+
+.failure {
+    margin: 1.25rem var(--gutter);
+    padding: 0.9rem;
+    border: 1px solid var(--alarm);
+    background: var(--raised);
+    max-width: 90ch;
 }

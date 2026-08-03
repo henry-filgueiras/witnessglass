@@ -30,9 +30,9 @@ What works today:
 - `witnessglass view --recording <PATH>`: a foreground process that validates and projects one
   recording, holds it as one immutable in-memory snapshot, and serves it read-only to a browser
   on a loopback port behind an unguessable per-launch capability
-- a local evidence workbench in that browser — an evidence HUD, an event map, a canonical event
-  ledger, and an evidence inspector — in which every derived claim links back to the raw records
-  supporting it
+- a local evidence workbench in that browser — three perspectives over an event map, a canonical
+  event ledger, and an evidence inspector — in which every derived claim links back to the raw
+  records supporting it
 
 What does not exist: redaction, spans, summaries, or any second adapter.
 
@@ -41,10 +41,12 @@ met against evidence, and its outcome — including where the recording and the 
 session's own account of itself disagree — is in
 [the sprint's archaeology](archaeology/sprints/0001-first-contact/sprint.md).
 
-**The viewer has not yet been run against a real recording.** Everything it does is exercised
-against synthetic fixtures and verified by hand in a browser; the private first-use pass against
-the original first-contact recording is the sprint's last task. What the viewer shows, derives,
-and cannot know is [docs/viewer.md](docs/viewer.md). The plan is
+**The viewer has been run privately against the first-contact recording**, and reproduced every
+finding task:4 had extracted by hand with `jq` — the 82 correlated request/completion pairs, the
+`subagent_stopped` with no matching start, `duration_ms` absent on all 82 completions, parentage
+absent on all three subagent records — without displaying the recording anywhere outside that
+machine. What the viewer shows, derives, and cannot know is
+[docs/viewer.md](docs/viewer.md); the sprint is
 [sprint 2](archaeology/sprints/0002-first-light/sprint.md).
 
 The raw-stream contract is
@@ -281,8 +283,9 @@ there is no flag, environment variable, or configuration anywhere in this build 
 anywhere else. Nothing about the request stream is logged, because the URL carries a secret
 and the responses carry evidence.
 
-The browser gets four synchronized surfaces: an evidence HUD, an event map of point events, a
-canonical event ledger with filters and search, and an evidence inspector. Every derived claim
+The browser gets three perspectives — Events, Coverage, Provenance — with the investigative loop
+in the first: an event map of point events, a canonical event ledger with search and filters, and
+an evidence inspector beside it. Every derived claim
 carries clickable receipts back to the raw records supporting it, and every count of zero carries
 the scope it was counted in. Reported, observed, and derived are distinguished by a glyph and a
 word, never by colour alone. **What it refuses to claim** — a turn count, a causal hierarchy, an

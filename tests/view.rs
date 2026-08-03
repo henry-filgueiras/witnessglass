@@ -156,7 +156,15 @@ fn the_capability_unlocks_the_page_the_stylesheet_and_the_projection() {
     assert!(head.starts_with("HTTP/1.1 200 OK"));
     assert!(head.contains("Content-Type: text/html; charset=utf-8"));
     assert!(body.contains("WitnessGlass"));
-    assert!(body.contains("Evidence HUD"));
+    // The three perspectives are declared in the served markup, not conjured by
+    // script, so the page announces its own structure before anything runs.
+    assert!(body.contains(r#"role="tablist""#));
+    for perspective in ["Events", "Coverage", "Provenance"] {
+        assert!(
+            body.contains(perspective),
+            "the page should offer {perspective:?}"
+        );
+    }
 
     let (head, body) = get(served.addr, &format!("/viewer.css?c={c}"));
     assert!(head.starts_with("HTTP/1.1 200 OK"));

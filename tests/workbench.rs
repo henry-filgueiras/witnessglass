@@ -327,6 +327,100 @@ fn guard_absences_are_phrased_as_absences() {
 }
 
 #[test]
+fn guard_the_perspectives_are_declared_as_real_tabs() {
+    let page = asset("viewer.html");
+    assert!(page.contains(r#"role="tablist""#));
+    for perspective in ["events", "coverage", "provenance"] {
+        assert!(page.contains(&format!(r#"id="tab-{perspective}""#)));
+        assert!(page.contains(&format!(r#"aria-controls="panel-{perspective}""#)));
+        assert!(page.contains(&format!(r#"id="panel-{perspective}""#)));
+    }
+    // Events is the initial perspective, in the markup as well as at runtime.
+    assert!(page.contains(
+        r#"id="tab-events" aria-controls="panel-events"
+              aria-selected="true" tabindex="0""#
+    ));
+    assert!(page.contains(
+        r#"id="panel-coverage" role="tabpanel" aria-labelledby="tab-coverage" tabindex="-1" hidden"#
+    ));
+
+    // Roving tabindex and the arrow keys that go with it.
+    let script = asset("viewer.js");
+    assert!(script.contains(r#"tab.setAttribute("tabindex", on ? "0" : "-1")"#));
+    for key in ["ArrowRight", "ArrowLeft", "Home", "End"] {
+        assert!(
+            script.contains(key),
+            "tab and map navigation should handle {key}"
+        );
+    }
+}
+
+#[test]
+fn guard_receipts_are_collapsed_but_never_deleted() {
+    let script = asset("viewer.js");
+    // A long receipt list becomes a disclosure naming its size, and builds its
+    // buttons on open. Collapsed is not deleted.
+    assert!(script.contains("supporting records"));
+    assert!(script.contains("INLINE_RECEIPT_LIMIT"));
+    assert!(script.contains(r#"el("details", { class: "receipt-set" }"#));
+    // Every path still ends at a receiptButton, which selects a raw record.
+    assert!(script.contains("holder.appendChild(receiptButton(sequence))"));
+    assert!(
+        script.contains(
+            "for (const sequence of sequences) wrap.appendChild(receiptButton(sequence))"
+        )
+    );
+}
+
+#[test]
+fn guard_the_summary_reads_rusts_counts_and_invents_no_rollup() {
+    let script = asset("viewer.js");
+    // Lifecycle kinds are named per schema and rendered individually. Nothing
+    // sums them: a derived aggregate without receipts belongs in Rust, or
+    // nowhere.
+    assert!(script.contains("const LIFECYCLE_KINDS"));
+    assert!(script.contains("never adds them together into an invented \"outcomes\" total"));
+    for forbidden in ["totalOutcomes", "outcomeTotal", "sumOf", "reduce("] {
+        assert!(
+            !script.contains(forbidden),
+            "viewer.js computes {forbidden:?} itself"
+        );
+    }
+    // The summary carries completeness, so moving the recording panel to
+    // Provenance cannot hide damage.
+    assert!(script.contains(
+        r#"statCell(
+      "completeness","#
+    ));
+    assert!(script.contains("ends mid-record"));
+}
+
+#[test]
+fn guard_the_map_stays_one_point_per_record() {
+    let script = asset("viewer.js");
+    let css = asset("viewer.css");
+    // No binning, no aggregation, no spans: one mark per ledger entry.
+    assert!(script.contains("for (const entry of laneEntries)"));
+    assert!(script.contains("One mark per record, positioned by append sequence"));
+    assert!(script.contains("DERIVED VIEW"));
+    for forbidden in [
+        "bucket",
+        "bin(",
+        "aggregateMarks",
+        "span-bar",
+        "duration-bar",
+    ] {
+        assert!(!script.contains(forbidden), "the map uses {forbidden:?}");
+    }
+    // Channel survives without colour: a circle, a diamond, a square.
+    assert!(css.contains(".mark-observed .mark-dot"));
+    assert!(css.contains(".mark-reported .mark-dot"));
+    assert!(css.contains("transform: rotate(45deg)"));
+    // Marks stay individually operable, with a real hit target.
+    assert!(css.contains("width: 15px"));
+}
+
+#[test]
 fn guard_the_stylesheet_respects_reduced_motion_and_shows_focus() {
     let css = asset("viewer.css");
     assert!(css.contains("@media (prefers-reduced-motion: reduce)"));

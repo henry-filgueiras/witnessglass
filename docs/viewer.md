@@ -16,28 +16,57 @@ capture and redaction contract exists (dragon:2).
 
 ## 1. What it shows
 
-Four synchronized surfaces over one projection.
+**Three perspectives.** The first-use pass in task:11 found a single column of twelve peer
+panels put the investigative loop too late in the hierarchy, so the workbench now leads with the
+loop and keeps the rest one keystroke away. The perspective controls are real tabs: click, or
+arrow keys, `Home`, and `End`.
 
-**Evidence HUD.** Schema version, completeness, record count, session identifier, recorder time
-range, per-channel counts, per-kind counts across the whole schema vocabulary, capture points,
-records per supplied agent identity, subagent boundaries, an evidence-gaps panel, and every
-anomaly with its receipts.
+### Events — the default
 
-**Event map.** One mark per record, in lanes. Point events only. Default axis is append
-sequence; an optional recorder-time axis is labelled derived and never reorders the ledger.
-Lanes exist for supplied agent identities and for an explicitly unattributed lane; anomalous
-records carry a ring and a glyph.
+The whole investigative loop, above the fold on a 1440×900 window.
 
-**Event ledger.** Canonical append order, always. Filters for channel, kind, tool, mechanism,
-supplied agent identity, and anomaly state. Search covers metadata by default; payload search
-is a separate opt-in that says what it reads at the point of use.
+- **A compact summary**: completeness, record count, each tool-lifecycle kind counted
+  individually and honestly, and the anomaly count as a button into Coverage. Completeness lives
+  here, not only in Provenance, so relocating the detailed recording panel cannot hide damage.
+- **The event map**: one mark per record, in lanes. Point events only. Append sequence by
+  default; an optional recorder-time axis labelled derived, which never reorders the ledger.
+  Channel is carried by shape — circle, diamond, square — as well as by colour and by the
+  labelled legend. Anomalous marks are ringed; the selected mark grows. One tab stop for the
+  whole map, with arrow keys moving between marks.
+- **Search and compact filtering**: search always visible; a Filters disclosure carrying a count
+  of active filters; removable chips for each active filter and a "clear all"; a visible
+  anomaly-only shortcut; and the payload-search opt-in with its sensitivity warning at the point
+  of use.
+- **The canonical ledger**: append order, always. Sequence, channel, kind, tool, agent
+  attribution, anomaly state. Correlation ids and secondary fields live in the inspector rather
+  than consuming permanent width.
+- **The evidence inspector**: a sticky companion to the ledger on wide screens, stacked beneath
+  it below 1180px. Envelope, provenance, context, supplied duration and interruption where they
+  exist, lifecycle subject where it exists, anomalies citing the record, correlated evidence as
+  separate cards, and the raw payload collapsed until revealed.
 
-**Evidence inspector.** The selected record's envelope, provenance, context, and payload —
-collapsed until revealed — plus every other record sharing its correlation id, shown as
-separate cards with their own receipts.
+Selection, search, filters, map axis, and inspector state survive perspective switches. They
+live in memory only and die with the tab.
 
-Every derived claim in the interface carries the raw sequence numbers supporting it, as
-clickable receipts. Every zero carries the scope it was counted in.
+### Coverage — what was and was not captured
+
+Evidence gaps and supplied-field coverage; every anomaly with receipts; per-kind counts across
+the whole schema vocabulary including honest zero rows with their examined scope; subagent
+boundary pairing; and the standing warnings that an unexercised surface is not a working
+surface, that tool events do not reveal every file a session changed, and that two silences
+agreeing is not corroboration.
+
+### Provenance — where the recording came from
+
+Recording identity and schema, recorder-time extrema and their caveat, channel counts, adapters
+and mechanisms, and records by supplied agent identity.
+
+### Everywhere
+
+Every derived claim carries the raw sequence numbers supporting it, as clickable receipts, and
+every zero carries the scope it was counted in. A receipt list longer than eight collapses
+behind a disclosure naming how many records support the claim and builds its buttons when
+opened — **collapsed is not deleted**, and the count is always visible.
 
 ## 2. What it derives, and what derived means here
 
@@ -79,6 +108,10 @@ These are load-bearing. Each corresponds to something task:4 measured or dragon:
 - **An unexercised surface is not a working surface** and is not rendered as one.
 - **A truncated recording's absences are scoped to its valid prefix**, not to a complete
   recording, everywhere the interface reports one.
+- **No aggregate is computed in the browser.** Every count comes from the projection with its
+  own receipts and examined scope. The summary renders each lifecycle kind individually and never
+  sums them into an invented "outcomes" total, because a derived number without receipts belongs
+  in Rust or nowhere.
 
 ## 4. The security boundary
 
@@ -145,7 +178,8 @@ checklist in one sentence.
 
 ## 7. Manual smoke checklist
 
-Deterministic, and runnable in about three minutes against the committed fixtures.
+Deterministic, and runnable in a few minutes against the committed fixtures. Run it at roughly
+1440×900 and again near 1024 wide, in both light and dark system themes.
 
 ```sh
 cargo build
@@ -158,47 +192,72 @@ cargo build
 2. Opening `http://127.0.0.1:<port>/` without the query gives `404 not found` and nothing else.
 3. Opening `/projection.json` without the capability gives the identical 404.
 
-**HUD**
+**Orientation — Events is the default**
 
-4. The sensitive-recording warning is visible without scrolling.
-5. Recording reads `complete`, 34 records, schema v2.
-6. Recorder time reports the clock moving backwards once, citing `#31`, and says append order is
-   unaffected.
-7. Event kinds lists all nine v2 kinds. Every count has receipts or an explicit
-   "no … record observed" with its scope.
-8. Evidence gaps shows `duration_ms` supplied on 1 of 12, parent identity **never** supplied on
-   any of 3, and the two standing caveats about unexercised surfaces and filesystem effects.
-9. Anomalies lists seven, each with receipts.
+4. The page opens on Events, with the tab marked selected.
+5. The sensitive strip reads "Not redacted." and "Rendering is not redacting." without opening
+   anything; expanding it gives the full explanation.
+6. Without scrolling: the compact summary, the event map, the search box, the Filters control,
+   the first ledger rows, and the inspector's relationship to the ledger are all understandable.
+7. Summary reads `complete`, 34 records, and each lifecycle kind separately — 13 requested,
+   10 succeeded, 2 failed, 1 denied — plus 7 anomalies. No "outcomes" total appears anywhere.
+8. Clicking the anomalies figure moves to Coverage.
+
+**Perspectives**
+
+9. `Tab` to the tablist, then `ArrowRight`/`ArrowLeft`/`Home`/`End` move between perspectives and
+   the selected one is visually and programmatically marked.
+10. Set a search term, turn on Anomalous only, select a row; switch to Coverage and back. The
+    search text, the filter chip, the row set, and the selection are all still there.
 
 **Map**
 
-10. Two lanes: `identity not supplied` and `agent-synthetic-child-0001`. The unattributed lane is
-    labelled as such, never as root.
-11. Marks are spread across the track, not stacked at the left edge.
-12. Anomalous marks carry a ring.
-13. Switching to "Recorder time" changes mark positions, shows the DERIVED note, and leaves the
+11. Two lanes: `identity not supplied` and `agent-synthetic-child-0001`, each with a count. The
+    unattributed lane is labelled as such, never as root.
+12. Marks are small, spread across the track, and do not read as overlapping chips. Reported is a
+    diamond, observed a circle, recorder a square — check with colour ignored.
+13. Anomalous marks are ringed. The selected mark is visibly larger.
+14. `Tab` reaches the map once, not once per record; `ArrowRight`/`ArrowLeft`/`Home`/`End` move
+    between marks and the selection follows.
+15. Switching to "Recorder time" changes mark positions, shows the DERIVED note, and leaves the
     ledger in canonical order 1…34.
 
-**Ledger**
+**Ledger and filters**
 
-14. Rows run 1…34 in order.
-15. Filtering to channel `reported` leaves exactly `#3`, `#22`, `#30`, and the count line says the
-    canonical order is unchanged.
-16. The payload-search checkbox is off, and its note says what turning it on reads.
-17. Click a row; tab to it and press Enter; both select. Arrow Down/Up moves through consecutive
-    rows and selection follows.
+16. Rows run 1…34 in order. Columns are sequence, channel, kind, tool, agent, anomaly.
+17. The Filters control shows no badge when nothing is filtered. Open it, tick channel
+    `reported`: the badge reads 1, a removable chip appears, exactly `#3`, `#22`, `#30` remain,
+    and the count line still says canonical order is unchanged.
+18. Non-matching map marks fade.
+19. The chip's × removes that filter; "clear all" removes everything.
+20. The payload-search checkbox is off and its note says what turning it on reads; turning it on
+    changes the note to the ON warning.
+21. Click a row; tab to it and press Enter; both select. `ArrowDown`/`ArrowUp` move through
+    consecutive rows and selection follows.
 
 **Inspector**
 
-18. Select `#3`. Reported and Observed appear as separately headed groups; the claim is quoted as
+22. On a wide window the inspector sits beside the ledger and stays put while the ledger scrolls.
+    Below about 1180px it moves underneath and neither is crushed.
+23. Select `#3`. Reported and Observed appear as separately headed groups; the claim is quoted as
     a claim; `#2` is labelled "request — not proof of execution".
-19. Select `#17`. Shape reads "ambiguous — nothing was paired", and `#16`, `#17`, `#18` appear as
+24. Select `#17`. Shape reads "ambiguous — nothing was paired", and `#16`, `#17`, `#18` appear as
     three separate cards with neither outcome chosen.
-20. Select `#20`. Parent reads "parent identity not supplied — none is inferred from containment,
+25. Select `#20`. Parent reads "parent identity not supplied — none is inferred from containment,
     adjacency, or timing".
-21. Select `#28`. Expand the raw record: the markup-shaped payload is visible **as text**. No
+26. Select `#28`. Expand the raw record: the markup-shaped payload is visible **as text**. No
     image, no alert, no styling change.
-22. Click any receipt: it selects that record and the map mark follows.
+27. Click any receipt: it selects that record and the map mark follows.
+
+**Coverage and Provenance**
+
+28. Coverage shows `duration_ms` supplied on 1 of 12, parent identity **never** supplied on any
+    of 3, the seven anomalies with receipts, the whole event-kind vocabulary, and both standing
+    caveats.
+29. A long receipt list is collapsed as "N supporting records"; expanding it reveals N clickable
+    receipts, and clicking one returns to Events with that record selected.
+30. Provenance shows session, schema, completeness, recorder-time extrema with their caveat,
+    channels, capture points, and records by supplied agent identity.
 
 **Truncation**
 
@@ -206,13 +265,16 @@ cargo build
 ./target/debug/witnessglass view --recording fixtures/synthetic-truncated.ndjson
 ```
 
-23. Completeness reads "ends mid-record", in alarm styling, with the fragment offset and length.
-24. `session_ended` reads "no session_ended record observed" with the scope "the valid prefix of
-    a recording that stops mid-record" — **not** the complete-recording scope.
+31. The Events summary reads "ends mid-record" in alarm styling, with the fragment offset and
+    length, and says every absence is scoped to the valid prefix. Damage is visible without
+    opening Provenance.
+32. In Coverage, `session_ended` reads "no session_ended record observed" with the scope "the
+    valid prefix of a recording that stops mid-record" — **not** the complete-recording scope.
 
 **Accessibility**
 
-25. Tab from the top: the skip link appears first and works.
-26. Every focused control has a visible outline.
-27. With reduced motion enabled at the OS level, nothing animates.
-28. The page is usable in both light and dark system themes.
+33. Tab from the top: the skip link appears first and works.
+34. Every focused control has a visible outline.
+35. With reduced motion enabled at the OS level, nothing animates.
+36. The page is usable in both light and dark system themes, and every distinction that matters
+    survives with colour ignored.
