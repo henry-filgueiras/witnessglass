@@ -1,9 +1,29 @@
 ---
-description: Hostile recording, turn 2 of 2 — a permission denial and an interrupted call, in the same session as turn 1
+description: "HISTORICAL, superseded: pass 3's turn 2. Kept as a record; do not run as written."
 ---
+
+**HISTORICAL — pass 3's turn 2, run 2026-08-04 on Claude Code 2.1.221. Do not run this as
+written.**
+
+It measured its denial: an interactive refusal fired no `PermissionDenied` hook at all, and
+left a `tool_requested` with no terminal record. See dragon:1 and `docs/claude-adapter.md`
+§3.3.
+
+**It cannot measure its interruption, and rerunning it will not.** Denying at step 3 returns
+control to the human and ends the turn, so step 4 never starts. A denial and an interruption
+cannot be staged in one turn, and interruption is now the largest surface this project has
+never observed. Whatever protocol comes next must put the interruption in its own turn, and
+should put it first.
+
+**If this command is invoked**: say that it is a superseded protocol whose step 4 is
+unreachable, and do not begin the steps unless the operator confirms they want the historical
+run reproduced anyway.
 
 <!--
 OPERATOR NOTE — for the human running this, not an instruction to the agent.
+
+The note below is pass 3's, preserved as written, and describes what pass 3 expected rather
+than what it found.
 
 This is pass 2's /hostile-2 with the two steps that failed replaced. Both failed
 for reasons that had nothing to do with the integration:

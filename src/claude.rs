@@ -24,19 +24,30 @@
 //!   the model constructs a tool request and before the call is processed. The
 //!   request may then be modified, denied, deferred, or never executed. It is
 //!   recorded as [`ToolRequested`](crate::record::v2::ToolRequested) and must
-//!   never be read as proof that anything ran.
+//!   never be read as proof that anything ran. **Observed**: a request denied at
+//!   an interactive permission prompt produces exactly this and nothing else.
 //! * A completion payload carries Claude's **effective** tool input and the
 //!   tool-level response. It is not an account of what the tool did internally,
-//!   and it is not a record of descendant processes.
-//! * Validation rejections can fire neither the pre hook nor the failure hook,
-//!   so a request that never reaches execution can leave no trace at all.
-//! * Permission denial coverage depends on the documented event's actual
-//!   behavior on this host and version, which is unmeasured until first contact.
+//!   and it is not a record of descendant processes. **Observed**: a shell
+//!   command's file writes leave no event of any kind.
+//! * A call the harness rejects **before dispatch** — a validation rejection, an
+//!   unknown tool — fires neither the pre hook nor the failure hook, so it can
+//!   leave no trace at all. **Observed** in a recording and in an independent
+//!   raw-payload probe simultaneously, which is what makes it a fact about the
+//!   integration rather than about this code.
+//! * [`ToolDenied`](crate::record::v2::ToolDenied) has never been produced by a
+//!   live session. `PermissionDenied` fires only for the auto-mode classifier;
+//!   an interactive refusal fires nothing. The mapping is tested against
+//!   synthetic payloads and is otherwise unexercised.
 //! * `@`-style file references may bypass `Read` tool hooks, so file content
-//!   can enter a session without any tool event.
+//!   can enter a session without any tool event. Documented, never exercised.
 //!
-//! Those are provisional statements taken from documentation. Nothing in this
-//! module has been exercised against a live session yet; that is task:4.
+//! Which of the above is documentation and which is observation is marked,
+//! because this module has twice been wrong by believing the first kind. Three
+//! live sessions have now been recorded — first contact (task:4) plus two
+//! hostile passes — and `docs/claude-adapter.md` §3 reports each separately,
+//! with what none of them reached in §4. Interruption is the largest thing
+//! still unobserved.
 
 use serde::Deserialize;
 
@@ -89,6 +100,12 @@ const SUPPORTED_HOOKS: &[&str] = &[
 /// documentation was wrong in the same direction that cost this project two
 /// sprints over `duration`. A documented field that has never been observed
 /// belongs in neither list, so that the canary fires if it ever shows up.
+///
+/// Two are in exactly that position as of the 2026-08-04 reading of the
+/// reference and are deliberately absent from this list: `model`, documented on
+/// `SessionStart` and "not guaranteed to be present", and `reason`, documented
+/// on `PermissionDenied` — a hook that has never fired against this adapter at
+/// all.
 const DELIBERATELY_UNRECORDED: &[&str] = &[
     // Absolute working directory. Privacy: it names the operator's filesystem on
     // every record (CLAUDE.md §5, dragon:2). Note that dragon:2 also found it
@@ -120,12 +137,17 @@ const DELIBERATELY_UNRECORDED: &[&str] = &[
     // machinery itself, not evidence about the session it is observing.
     "stop_hook_active",
     // Both observed on SubagentStop, both **empty on every payload seen so far**,
-    // so what they contain when populated is unknown. They are dropped on the
-    // strength of not being tool lifecycle evidence, which is a claim about
-    // their role and not about their contents — an empty array is not a licence
-    // to assume the populated one is harmless. dragon:2 carries them as
-    // unexamined surfaces; if either is ever seen non-empty, look before
-    // deciding this entry still holds.
+    // so what they hold when populated has never been observed here. They are
+    // dropped on the strength of not being tool lifecycle evidence, which is a
+    // claim about their role and not about their contents.
+    //
+    // Documentation read 2026-08-04 describes those contents, and it argues the
+    // entry harder rather than softer: a `background_tasks` entry carries a
+    // `command` — a shell command line, capped at 1000 characters — and a
+    // `session_crons` entry carries the `prompt` a scheduled wakeup submits.
+    // Populated, these are session content, not bookkeeping. dragon:2 carries
+    // them as unexamined surfaces; nothing here has ever seen one non-empty, and
+    // that is the reason to look before this entry is ever revisited.
     "background_tasks",
     "session_crons",
 ];
@@ -136,6 +158,26 @@ const DELIBERATELY_UNRECORDED: &[&str] = &[
 /// Ignoring is the default and the only safe production posture: rejecting means
 /// a recording stops the day Claude adds a field, which is a worse outcome than
 /// a recording that misses one. Rejecting is a canary you run deliberately.
+///
+/// # What rejecting detects, exactly
+///
+/// One thing: a **top-level field name** on a payload that neither registry
+/// accounts for. Everything else the phrase "the wire moved" could mean is
+/// outside its reach, and the list is worth knowing before trusting a quiet run:
+///
+/// * a known field **moving to another hook** is accounted for and silent;
+/// * an optional field **disappearing** is indistinguishable from one that was
+///   never sent on that payload;
+/// * a known field **changing shape** fails deserialization as a type error, and
+///   an opaque `tool_input` whose interior changed does not fail at all;
+/// * a known field **becoming populated** where it was always empty — the case
+///   dragon:2 is watching `background_tasks` and `session_crons` for — is
+///   invisible;
+/// * anything **nested** below the top level is invisible.
+///
+/// Widening any of that means maintaining a schema model of somebody else's
+/// payloads by hand, which is what the flattened capture in [`HookPayload`]
+/// exists to avoid. The narrow check is what a quiet canary is worth.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum UnmodelledFields {
     /// Drop them, as this adapter always has.

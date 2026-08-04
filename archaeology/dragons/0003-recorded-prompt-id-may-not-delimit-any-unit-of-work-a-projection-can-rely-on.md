@@ -257,3 +257,69 @@ written down beside the recording, at the time, as a deliberate separate act —
 recording provably cannot supply it. Every future pass should do this, and it should be a numbered
 step rather than an instruction in prose, since two passes have now demonstrated that the
 unscripted parts are the ones that get missed.
+
+## The reference now makes a claim about what `prompt_id` means. That is a new claim to test.
+
+Appended 2026-08-04 from task:13. No session was recorded for this; it is a re-reading of
+<https://code.claude.com/docs/en/hooks>, read **2026-08-04**, against the reading this project
+took on 2026-08-02.
+
+The earlier reading gave `prompt_id` one property: absent until the first input. The current
+text gives it a meaning:
+
+> `prompt_id` — UUID identifying the user prompt currently being processed. Matches the
+> `prompt.id` attribute on OpenTelemetry events, so you can correlate hook output with telemetry
+> for a single prompt. Absent until the first user input. Requires Claude Code v2.1.196 or later.
+
+That is materially stronger than anything this dragon had to work with, and it is worth
+recording precisely what it does and does not change.
+
+**What it changes.** The candidate readings listed in the Context above are no longer equally
+supported by the documentation. "Identifying the user prompt currently being processed" is the
+first of them, stated by the vendor, and the OpenTelemetry correlation says the identifier is
+load-bearing elsewhere in the product rather than incidental to hooks. Both observations this
+dragon holds — pass 2 and pass 3, one value per turn, boundary where the human pressed enter —
+are consistent with it.
+
+**What it does not change, and this is the part that matters.**
+
+*Documentation is a claim, not evidence, and this project has the receipts on that.* The same
+reference documented the timing field as `duration` while the wire sent `duration_ms`, and this
+adapter believed it for two sprints across three write-ups. It documented `stop_reason` on
+`SubagentStop`, which pass 3 showed does not arrive. A sentence in a reference is a hypothesis
+with a good prior, and the correct response to a good prior is a cheap experiment, not a
+resolution.
+
+*It does not explain the observation that provoked this dragon.* First contact produced a
+`session_ended` carrying a `prompt_id` **no other record carried**, in a session its operator
+understood as one turn. Pass 3's `session_ended` carried turn 2's value. Both sessions exited
+identically (`prompt_input_exit`). "Identifies the user prompt currently being processed" does
+not by itself say which prompt is "current" when a session is ending, and it therefore does not
+adjudicate between the two. The most economical account remains the one written after pass 3 —
+that first contact had a further submission that produced no tool evidence — and the
+documentation neither confirms nor refutes it. **A recording still cannot say how many
+submissions it contains**, because `UserPromptSubmit` is not captured, which is the reason that
+question was unanswerable and stays the reason.
+
+*It does not license segmentation.* The statement this dragon adopted after pass 2 is unchanged
+and is still what the adapter documentation should carry:
+
+> A reader may conclude that two records with **different** `prompt_id` values were not produced
+> by the same submission. A reader may **not** conclude that two records sharing one belong to
+> the same turn, that a recording contains as many turns as it has distinct values, or that any
+> span between changes is a unit of work.
+
+The version note — "requires Claude Code v2.1.196 or later" — is a further reason for caution
+rather than less: it dates the field, and every measurement this project holds comes from
+2.1.220 and 2.1.221, two versions recorded a day apart on one host.
+
+**So the dragon stays open, and its resolution criteria are unchanged.** What would move it is
+what it has always been: a multi-turn session whose submission count is written down at the
+time, as a deliberate separate act, beside the recording. The documentation now gives that
+experiment something specific to confirm or contradict, which makes it more valuable than it
+was, not unnecessary.
+
+One criterion did move, quietly, and should be recorded as met: the fidelity documentation now
+carries the negative statement where a user encounters it, at no greater strength than the
+evidence supports — `docs/claude-adapter.md` §3.1 and §3.2, with this section's documentation
+claim kept separate from the observations.

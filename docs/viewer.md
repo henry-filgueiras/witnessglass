@@ -105,13 +105,27 @@ These are load-bearing. Each corresponds to something task:4 measured or dragon:
 - **No absence of failures or denials.** A kind with no records reads "no `tool_failed` record
   observed", with the examined scope attached. Two silences agreeing is not corroboration, and
   the panel says that too.
-- **An unexercised surface is not a working surface** and is not rendered as one.
+- **An unexercised surface is not a working surface** and is not rendered as one. The denial
+  rendering is the standing example: it has only ever met synthetic `tool_denied` records,
+  because `PermissionDenied` has never fired against this project. Pass 3 established that an
+  interactive refusal fires no hook at all and leaves a request with **no terminal record**, so
+  what a reader sees for a denied call is a `tool_requested` that stops — indistinguishable in
+  the interface, as in the recording, from an interruption or a crash. See
+  [docs/claude-adapter.md](claude-adapter.md) §3.3.
 - **A truncated recording's absences are scoped to its valid prefix**, not to a complete
   recording, everywhere the interface reports one.
-- **No aggregate is computed in the browser.** Every count comes from the projection with its
-  own receipts and examined scope. The summary renders each lifecycle kind individually and never
-  sums them into an invented "outcomes" total, because a derived number without receipts belongs
-  in Rust or nowhere.
+- **No recording-semantic aggregate is computed in the browser.** JavaScript chooses no
+  membership, no grouping, and no rollup: which records belong to a claim, which claims belong
+  together, and what a count of them means are all decided in Rust and arrive with receipts and
+  an examined scope. The summary renders each lifecycle kind individually and never sums them
+  into an invented "outcomes" total, because a derived number without receipts belongs in Rust
+  or nowhere.
+
+  It does take the **cardinality of a receipt set Rust supplied** — "3 records" beside a claim
+  whose receipts Rust listed — and it does compute **transient interface counts**, such as how
+  many rows a filter or a search left showing. Neither invents a membership: the first counts a
+  set it was handed, and the second describes the viewport rather than the recording. The line
+  this draws is between counting what Rust decided and deciding what to count.
 
 ## 4. The security boundary
 

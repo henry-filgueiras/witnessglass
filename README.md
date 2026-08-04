@@ -2,15 +2,15 @@
 
 > WitnessGlass is a flight recorder for coding agents: declared intent, observed activity, and temporal replay.
 
-## Status: experimental kernel plus a Claude adapter measured against one session
+## Status: experimental kernel plus a Claude adapter measured against three sessions
 
 There is a working recording kernel, and a passive Claude Code command-hook adapter that
-**has now recorded one real session** — one session, one macOS host, one Claude Code
-version, 17 minutes, 234 records, structurally complete. What that session measured is
-[section 3 of the adapter document](docs/claude-adapter.md); what it did not reach is
-section 4, and section 4 is still the longer of the two. A surface the session did not
-exercise — a tool failure, a permission denial, an interruption, a resume — is not a working
-surface, and is not described as one.
+**has now recorded three real sessions** — one macOS host, two Claude Code versions: 17
+minutes of ordinary work, and two deliberately hostile sessions run to a written protocol.
+What each session measured is [section 3 of the adapter document](docs/claude-adapter.md),
+reported one session at a time; what none of them reached is section 4, and section 4 is
+still substantial. A surface no session exercised — an interruption, a resume, an abnormal
+termination — is not a working surface, and is not described as one.
 
 What works today:
 
@@ -94,31 +94,40 @@ can quote the bytes it rejected, so a recording that checks as corrupt is the on
 investigate on a shared terminal. Checking does not make a recording safe to share.
 
 Read [docs/claude-adapter.md](docs/claude-adapter.md) before drawing any conclusion from a
-recording. It states separately what Claude's documentation promises, what this adapter
-maps, what one real session measured, and — at length — what is still unmeasured.
+recording. It states separately what Claude's documentation promises (re-read 2026-08-04),
+what this adapter maps, what each recorded session measured, and — at length — what is still
+unmeasured.
 
-Measured against that one session:
+Measured, with the session each result came from:
 
 - both session boundaries were captured, including the exit and its reason;
-- 82 tool requests paired with 82 completions, with no unmatched record either way;
+- 82 tool requests paired with 82 completions, no unmatched record either way (first contact);
 - a subagent's **own** tool calls were recorded, and are attributable to it by `agent_id`;
-- `parent_agent_id` never arrived, so nothing links a subagent to what spawned it;
-- one `subagent_stopped` arrived with no matching `subagent_started`;
-- `prompt_id` arrived populated, but nothing in a recording says what it delimits;
-- `duration_ms` is absent on all 82 completions — **because the adapter read the wrong key**, not
-  because the integration withheld it; a later session with an independent raw-payload probe found
-  it populated on every completion;
-- a file written by a shell command left **no mutation event** — demonstrated, not asserted.
+- a file written by a shell command left **no mutation event** — demonstrated, not asserted;
+- failure capture works on both shapes: a non-zero shell exit and a tool-level error, both
+  arriving on `PostToolUseFailure`, distinguishable only by the `error` string (pass 2);
+- a call the harness refuses before dispatch reaches **no hook at all** — invisible in the
+  recording and in an independent raw-payload probe alike (pass 2);
+- `duration_ms` arrives populated on every completion (pass 3). First contact recorded it
+  absent on all 82 completions **because the adapter read the wrong key**, and those 82 stay
+  absent; nothing retroactively fills them;
+- `parent_agent_id` genuinely does not arrive — confirmed by a probe that shares no code with
+  the adapter, on the subagent hooks themselves, so nothing links a subagent to what spawned
+  it (pass 3);
+- an **interactive permission refusal fires no hook**, and leaves a `tool_requested` with no
+  terminal record of any kind. From inside a recording that is indistinguishable from an
+  interruption, a crash, or a call still running (pass 3);
+- `prompt_id` changes at a turn boundary, but nothing in a recording establishes what it
+  delimits, and no projection segments by it (dragon:3).
 
 Still unmeasured, and not to be read as working:
 
-- denial and interruption capture — neither has been exercised, and until one is, neither should
-  be read as working; failure capture has since been exercised, on both a non-zero shell exit and
-  a tool-level error, and both arrived on `PostToolUseFailure`;
-- what a pre-tool record with no completion looks like in practice; none occurred;
-- whether parallel dispatch is distinguishable from serial dispatch — it was not, here;
+- interruption capture — three sessions, three different reasons for missing it;
+- abnormal termination: every session so far ended through a documented exit;
 - whether a resumed session appends to the same recording;
-- validation failures escaping the hooks entirely, and `@` references bypassing `Read`;
+- `PermissionDenied` itself, which has never fired, so its payload is unobserved;
+- whether parallel dispatch is distinguishable from serial dispatch — it was not, here;
+- `@` references bypassing `Read`;
 - under parallel hooks, `sequence` is recorder order, not causal order;
 - total hook latency; only the append transaction itself has a number.
 
@@ -198,10 +207,12 @@ pretending otherwise would poison exactly the evidentiary value the project exis
 
 Each adapter is therefore expected to document its fidelity and its blind spots
 explicitly. "We did not see this" is a supported result. The Claude adapter's are in
-[docs/claude-adapter.md](docs/claude-adapter.md), split between what one real session
+[docs/claude-adapter.md](docs/claude-adapter.md), split between what each recorded session
 measured and what is still provisional. The first recording produced a worked example of why
 the split matters: the session's own account of what it did and the recording of what it did
-disagree in two places, and both accounts are kept.
+disagree in two places, and both accounts are kept. The two hostile sessions after it produced
+a sharper one — a finding this project had published twice turned out to be an artifact of the
+adapter reading a field name that was never on the wire.
 
 ## Using the kernel directly
 
@@ -375,8 +386,8 @@ Not in scope at this stage, and not to be inferred from the framing above:
 **Recently moved into scope:** derived projections — spans, timelines, landmarks, correlated
 views — and a local presentation layer over them. Lifted by
 [decision 5](archaeology/decisions/0005-lift-the-user-interface-non-goal-and-constrain-derived-projections.md)
-once a working kernel and one real recording existed to project from. The projection and its
-loopback server exist; the browser surfaces over them do not yet. Where the meaning of a
+once a working kernel and one real recording existed to project from. The projection, its
+loopback server, and the browser workbench over them all exist. Where the meaning of a
 recording lives, and what a browser may therefore do with one, is
 [decision 6](archaeology/decisions/0006-keep-recording-semantics-in-a-receipt-bearing-rust-projection.md).
 

@@ -1,8 +1,19 @@
 # Recording a deliberately hostile session
 
-> **This protocol has been run, and three of its five questions are settled. It is kept as
-> written — the questions below are what pass 2 set out to ask, not what is still open, and
-> rewriting them would erase the reasoning that produced the answers.**
+> ## HISTORICAL — pass 2's protocol, superseded. Do not run this as written.
+>
+> This ran on 2026-08-03 against Claude Code 2.1.220, and pass 3 (2026-08-04, 2.1.221)
+> superseded it. Running it again as written reproduces both of its known misses: it does not
+> set a permission mode that prompts, so nothing is denied, and its step 4 uses a bare `sleep`,
+> which the harness refuses before dispatch so there is nothing to interrupt. Its `/hostile-2`
+> command is marked historical for the same reasons.
+>
+> It is kept unedited because the questions below are what pass 2 set out to ask, and the
+> reasoning that produced the answers is not recoverable from the answers alone. Read it as a
+> record, not as instructions. **What is still open, and what a next pass would have to stage,
+> is dragon:1 and dragon:3 — not this file.**
+
+> **Three of its five questions are settled.**
 >
 > - **Question 1 is answered, and its premise was wrong.** The duration was never absent. The
 >   integration sends `duration_ms`; the adapter read `duration` and discarded it unread from the

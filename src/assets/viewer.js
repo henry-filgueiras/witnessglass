@@ -3,8 +3,16 @@
 // This file renders what Rust already derived. It does not parse NDJSON, does
 // not redefine lifecycle semantics, and does not invent a correlation the
 // projection did not license. Where it needs to know what an event means, it
-// reads a field the projection supplied. Where it needs a count, it reads a
-// count Rust computed with receipts — it does not roll up its own.
+// reads a field the projection supplied.
+//
+// Counting is the place that rule is easiest to overstate, so it is stated
+// precisely. This file chooses no membership, grouping, or rollup with meaning
+// for the recording: which records support a claim, and what a number about
+// them signifies, is decided in Rust and arrives with receipts and an examined
+// scope. What it does compute is the size of a receipt set Rust handed it, and
+// transient interface numbers such as how many rows survived a filter. Counting
+// a set somebody else defined is not the same act as deciding what belongs in
+// one.
 //
 // Two rules hold everywhere in this file:
 //

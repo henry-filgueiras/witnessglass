@@ -5,18 +5,32 @@ document states four things separately, and they must stay separate:
 
 1. what Claude's current documentation promises;
 2. what this implementation maps;
-3. what one real recorded session **measured**;
+3. what each recorded session **measured**, one subsection per session;
 4. what remains unmeasured.
 
 Section 4 is not a disclaimer. It is the honest scope of every claim in sections 1 and 2 that
 section 3 has not yet reached.
 
-The adapter **has now been run against one live Claude Code session** — one session, one
-macOS host, one Claude Code version — and section 3 states what that produced. Anything not
-in section 3 and not marked as tested is read off documentation, not measured.
+The adapter **has now been run against three live Claude Code sessions**, on one macOS host,
+across two Claude Code versions, and section 3 states what each produced separately rather
+than merged into a single verdict. Anything not in section 3 and not marked as tested is read
+off documentation, not measured.
 
-Reference used: <https://code.claude.com/docs/en/hooks>, read 2026-08-02.
-Claude Code version present on the authoring host: **2.1.220**.
+| | when | version | shape | what it produced |
+| --- | --- | --- | --- | --- |
+| **first contact** | 2026-08-02 | 2.1.220 | 17 minutes of ordinary repository work | 234 records, no failure, no denial, no interruption |
+| **pass 2** | 2026-08-03 | 2.1.220 | hostile, two turns, probe on 3 hooks | 40 records, 2 deliberate failures, 14 raw payloads |
+| **pass 3** | 2026-08-04 | 2.1.221 | hostile, two turns, probe on 5 hooks | 39 records, 2 deliberate failures, 1 refused call, 16 raw payloads |
+
+Reference used: <https://code.claude.com/docs/en/hooks>, **re-read 2026-08-04**. The previous
+reading of it was 2026-08-02, and section 1 records where the two readings differ. Claude Code
+versions this document's measurements come from: **2.1.220** and **2.1.221**.
+
+**Documentation agreeing with an observation is not the observation's evidence.** Several
+things this project measured the hard way are now stated outright in the reference. Where that
+happens it is written down as two independent facts that agree, because a reference can be
+wrong — this adapter dropped the delivered timing field for two sprints on the strength of one
+that was.
 
 ---
 
@@ -24,27 +38,69 @@ Claude Code version present on the authoring host: **2.1.220**.
 
 ### The hooks this adapter subscribes to
 
+As of the 2026-08-04 reading:
+
 | Hook | Documented firing condition | Documented payload beyond the common fields |
 | --- | --- | --- |
-| `SessionStart` | A session begins or resumes | `source` ∈ {`startup`, `resume`, `clear`, `compact`, `fork`}, optional `model` |
+| `SessionStart` | A session begins or resumes | `source` ∈ {`startup`, `resume`, `clear`, `compact`, `fork`}, optional `model` — the only hook documented to receive `model`, and "not guaranteed to be present" |
 | `PreToolUse` | After the model constructs a tool request, **before the call is processed** | `tool_name`, `tool_input`, `tool_use_id` |
-| `PostToolUse` | After a tool call **succeeds** | `tool_name`, `tool_input`, `tool_use_id`, `tool_response`, optional `duration` — **delivered as `duration_ms`**, see below |
-| `PostToolUseFailure` | After a tool call **fails** | `tool_name`, `tool_input`, `tool_use_id`, `error`, optional `duration`, optional `interrupted` — **delivered as `duration_ms` and `is_interrupt`** |
-| `PermissionDenied` | When a tool call is denied by the auto mode classifier | `tool_name`, `tool_input`, `tool_use_id` |
-| `SubagentStart` | A subagent is spawned | `agent_id`, `agent_type`, optional `parent_agent_id`, `parent_agent_type` |
-| `SubagentStop` | A subagent finishes | as above, plus `last_assistant_message`, `stop_reason` |
+| `PostToolUse` | After a tool call **succeeds** | `tool_name`, `tool_input`, `tool_use_id`, `tool_response`, optional `duration_ms` |
+| `PostToolUseFailure` | After a tool that **started executing** fails | `tool_name`, `tool_input`, `tool_use_id`, `error`, optional `is_interrupt`, optional `duration_ms` |
+| `PermissionDenied` | When the **auto mode classifier** denies a tool call | `tool_name`, `tool_input`, `tool_use_id`, `reason` |
+| `SubagentStart` | A subagent is spawned via the Agent tool | `agent_id`, `agent_type` |
+| `SubagentStop` | A subagent finishes responding | `stop_hook_active`, `agent_id`, `agent_type`, `agent_transcript_path`, `last_assistant_message`, `background_tasks`, `session_crons` |
 | `SessionEnd` | A session terminates | `reason` ∈ {`clear`, `resume`, `logout`, `prompt_input_exit`, `bypass_permissions_disabled`, `other`} |
 
 Common fields documented across hooks include `session_id`, `hook_event_name`,
-`transcript_path`, `cwd`, `permission_mode`, an optional `prompt_id` (documented as absent
-until the first input), and — inside a subagent — `agent_id` and `agent_type`.
+`transcript_path`, `cwd`, `permission_mode`, `effort`, an optional `prompt_id`, and — inside a
+subagent — `agent_id` and `agent_type`.
 
-**The table above is the documentation, and the documentation is not the wire.** On Claude Code
-2.1.220 the timing and interruption fields arrive under different names than the reference gives:
-`duration_ms` rather than `duration`, and `is_interrupt` rather than `interrupted`. The adapter
-believed the reference for two sprints and dropped both. Where this document says "documented",
-read it as a claim about the reference; where it says "observed" or "delivered", read it as a
-claim about payloads this project has actually captured. Only the second kind is evidence.
+`duration_ms` is documented as "tool execution time in milliseconds", explicitly **excluding**
+time spent in permission prompts and `PreToolUse` hooks. So it is not wall-clock time from
+request to completion, and a projection must not present it as one.
+
+#### What changed between the 2026-08-02 reading and the 2026-08-04 one
+
+The reference is not a fixed target, and four of these differences matter:
+
+- **The timing and interruption fields are now documented under the names that are actually
+  delivered** — `duration_ms` and `is_interrupt`, where the earlier reading gave `duration` and
+  `interrupted`. This adapter believed the earlier reading for two sprints and dropped both
+  fields unread. The reference now agrees with what the probe observed; the observation is what
+  established it.
+- **`PermissionDenied`'s firing condition is now explicit about what it excludes**: "This hook
+  only fires in auto mode: it doesn't run when you manually deny a permission dialog, when a
+  `PreToolUse` hook blocks a call, or when a `deny` rule matches." Pass 3 measured exactly that
+  and measured it first. It also documents a `reason` field, which no session here has seen.
+- **`parent_agent_id` and `parent_agent_type` no longer appear in the reference at all.**
+  The 2026-08-02 reading recorded them as documented-and-optional on `SubagentStart`, and this
+  document's table said so. They are absent from the current text, and pass 3 observed neither
+  on any raw payload. Documented-then-undocumented is not the same as never-documented, and the
+  earlier reading is left recorded above rather than erased.
+- **`prompt_id` carries a stronger claim than "absent until the first input"**: "UUID
+  identifying the user prompt currently being processed. Matches the `prompt.id` attribute on
+  OpenTelemetry events… Requires Claude Code v2.1.196 or later." That is a claim about meaning,
+  not just availability. It is a new claim to test, not a resolution of dragon:3 — see the note
+  there.
+
+Two more current statements are worth recording because they corroborate blind spots this
+project found by running into them:
+
+- `PostToolUseFailure` "doesn't fire for tool calls rejected before execution: an unknown tool
+  name, input that fails schema or tool-specific validation, or a permission denial. Validation
+  rejections … fire neither `PreToolUse` nor `PostToolUseFailure`." Pass 2 discovered this with
+  a `sleep` that vanished from the recording *and* from the independent probe.
+- "Permission denials fire `PreToolUse` but not this event." That is the shape of the dangling
+  request pass 3 recorded: a `tool_requested` with no terminal record of any kind.
+- `permission_mode`'s documented values are `default`, `plan`, `acceptEdits`, `auto`,
+  `dontAsk`, `bypassPermissions`, and "the mode labeled **Manual** arrives as `default`, never
+  as `manual`". Anyone reading a captured `permission_mode` should know that before concluding
+  which mode a session ran in.
+
+**The table above is the documentation, and the documentation is not the wire.** Where this
+document says "documented", read it as a claim about the reference; where it says "observed" or
+"delivered", read it as a claim about payloads this project has actually captured. Only the
+second kind is evidence, and the second kind has twice been the thing that corrected the first.
 
 ### The four documented facts that determined the design
 
@@ -55,8 +111,10 @@ at all.
 
 **Completion, failure, and denial are three separate events.** `PostToolUse` fires only on
 success and carries the input *actually sent* plus the response. `PostToolUseFailure`
-carries the effective input, an error, and an optional `interrupted` flag. `PermissionDenied`
-fires on a denial, where nothing executed.
+carries the effective input, an error, and an optional `is_interrupt` flag. `PermissionDenied`
+fires on a classifier denial, where nothing executed — and, as the current reference now says
+and pass 3 measured, on nothing else. A human refusing a permission prompt fires no hook of
+any kind.
 
 **Matching hooks run in parallel.** Parallel tool completions can therefore launch
 concurrent hook processes writing to the same recording.
@@ -89,6 +147,11 @@ any more; a recording never mixes versions.
 | `SubagentStart` | `subagent_started` | observed | `agent_id` (the child), optional `agent_type`, optional supplied parent ids |
 | `SubagentStop` | `subagent_stopped` | observed | as above |
 | `SessionEnd` | `session_ended` | observed | `reason` |
+
+**`tool_denied` has never been reachable by the route a human would take.** The mapping is
+implemented and tested against synthetic payloads, and no live session has produced one:
+pass 3's interactive refusal fired no `PermissionDenied` hook at all (§3.3). The row above
+says what the adapter would record if the hook fired, not that anything has ever fired it.
 
 `prompt_id`, and `agent_id`/`agent_type` where the payload supplies them, go into the
 record envelope's `context`. `tool_use_id` goes on the event.
@@ -170,10 +233,19 @@ and a bad permanent posture, so the adapter now names what it drops.
 **Every top-level payload field is accounted for in one of two places**, both compile-time:
 
 - the `HookPayload` struct, for fields that reach a record;
-- a `DELIBERATELY_UNRECORDED` list, for fields seen and dropped on purpose — `cwd`,
-  `transcript_path`, `permission_mode`, `effort`, `model`, `last_assistant_message`,
-  `stop_reason`. Each entry carries its reason. Most are privacy (CLAUDE.md §5); `permission_mode`
-  is a gap dragon:1 argues should be closed by a schema decision.
+- a `DELIBERATELY_UNRECORDED` list, for fields **seen on a captured payload** and dropped on
+  purpose — `cwd`, `transcript_path`, `agent_transcript_path`, `permission_mode`, `effort`,
+  `last_assistant_message`, `stop_hook_active`, `background_tasks`, `session_crons`. Each entry
+  carries its reason. Most are privacy (CLAUDE.md §5); `permission_mode` is a gap dragon:1
+  argues should be closed by a schema decision.
+
+**A field is listed only after being observed, never on the strength of documentation.** The
+first version of that list broke the rule twice, adding `model` and `stop_reason` from the
+hooks reference. Pass 3 then captured both `SubagentStop` payloads and `stop_reason` was not on
+either — the same class of error as `duration`, committed inside the list written to prevent
+it. Both entries were removed. A documented field nobody here has seen belongs in neither list,
+so the canary fires the first time it arrives; `model` on `SessionStart` and `reason` on
+`PermissionDenied` are currently in exactly that position.
 
 `--strict-json-validation` refuses any payload carrying a field in neither list, naming the
 fields. `WITNESSGLASS_STRICT_JSON=1` does the same and is the usable form, because a hook is
@@ -182,6 +254,32 @@ spawned by Claude from a settings file rather than by a human with a command lin
 **It is a canary for one session, not a setting to leave on.** A refused payload is a record
 that was never written, which is exactly the failure the lenient default exists to prevent. Run
 it deliberately to ask "has the wire moved since anybody looked", read the answer, turn it off.
+It has fired in earnest once: pass 3's two `SubagentStop` payloads carried four fields nobody
+had looked at, and were refused.
+
+#### What strict mode detects, exactly
+
+Its granularity is one thing, and it is narrower than "the wire has changed":
+
+> A **top-level field name** on a payload that is in neither the struct nor
+> `DELIBERATELY_UNRECORDED`.
+
+That is all. It does **not** detect:
+
+- a field it already knows **moving to a different hook** — `duration_ms` appearing on
+  `SubagentStop`, say, would be accounted for and silent;
+- an optional field **disappearing**, because a field that stops arriving is indistinguishable
+  from one that was never sent on that payload;
+- a known field **changing shape** — a `duration_ms` delivered as a string or an object would
+  fail deserialization as a type error, not as drift, and a `tool_input` whose interior schema
+  changed is opaque JSON either way;
+- a known field **becoming populated** where it was always empty, which is precisely the case
+  dragon:2 is watching for `background_tasks` and `session_crons`;
+- anything **nested** below the top level, anywhere.
+
+Widening any of that means a schema model of somebody else's payloads, maintained by hand,
+which is the thing `#[serde(flatten)]` exists here to avoid. It is not attempted, and this
+paragraph is the statement of what a quiet canary is therefore worth.
 
 Strict mode would have caught the `duration_ms` mismatch on day one — the adapter modelled
 `duration`, so the delivered `duration_ms` was in neither list, and there is a test asserting
@@ -192,8 +290,35 @@ complements rather than substitutes:
 | --- | --- | --- |
 | asks | has the wire moved past *this adapter's model*? | what is on the wire? |
 | reports | the names of fields the adapter cannot account for | every key, per hook, with counts |
-| costs | the records it refuses | a capture file as sensitive as a recording |
-| fails when | the adapter is stale | never; it has no model to be wrong |
+| costs | the records it refuses | captured payloads as sensitive as a recording |
+| fails independently of | nothing; it *is* the adapter's model | the adapter — it shares no code, no field model, and no translation with it |
+| fails when | the adapter is stale | a payload is lost, a hook is not installed on, or `show` cannot parse a capture |
+
+That last row is the correction this document owes a reader: it previously said the probe
+"fails when: never; it has no model to be wrong". **Independent failure modes are not absent
+ones.** The probe can be installed on the wrong hooks and capture nothing, lose a payload if a
+hook process is killed mid-write, and — before the spool — corrupt its own capture when two
+large payloads were appended concurrently. What it cannot do is fail in the *same way* the
+adapter fails, and that is the entire property it was built for.
+
+`scripts/probe.sh show` deserves the same care: it is **a parser and a summary, not raw
+evidence**. It has a model of the payload, and a payload it cannot parse is reported by name
+and count rather than folded in. The raw evidence is the captured files. Before drawing a
+conclusion from a probe run — especially a negative one, of the form "the integration never
+sent X" — check that the capture is complete and parseable: `show` prints the number of
+completed captures, the number of incomplete ones left by hooks that did not finish, and every
+capture that failed to parse. A negative finding taken from a capture with holes in it is
+exactly the kind of confident wrong answer this project already published once.
+
+Each captured payload is **one file** under `.witnessglass/probe/payloads/`, written under
+`payloads/incomplete/` and renamed into place once stdin has been consumed — so a file in the
+spool is a whole payload and a file left in `incomplete/` is a partial one, distinguishable
+without parsing either. It is one file per invocation rather than one line appended to a shared
+capture because Claude runs matching hooks in parallel: measured on this host, eight concurrent
+512 KiB payloads appended with `cat >>` produced **four lines in total — two that parsed and two
+that did not — leaving six of the eight payloads unrecoverable**. `tests/probe_capture.rs` runs the same
+concurrent shape against the spool and asserts every capture is independently parseable, byte
+for byte what the hook was handed, and that `show` prints none of it.
 
 Strict mode is cheap enough to run on a whole session and tells you *that* something moved. The
 probe tells you *what*. Neither is a substitute for reading a recording.
@@ -217,14 +342,25 @@ supplied `duration_ms` can support a derived causal view. Raw replay never reord
 
 ---
 
-## 3. What one real session measured
+## 3. What the recorded sessions measured
+
+Three sessions, on one macOS host, across two Claude Code versions. **Each is reported under
+its own heading, and none of them is edited to agree with a later one.** A measurement taken
+during first contact is a fact about that session and that adapter build; where a later session
+measured the same thing differently, the later result is added beside it and the difference is
+named. Nothing here generalizes to another host, another version, or another session shape.
+
+### 3.1 First contact — 2026-08-02, Claude Code 2.1.220, 234 records
 
 Scope of the measurement: **one** session, recorded end to end on **one** macOS host running
 Claude Code **2.1.220**, doing ordinary repository work for 17 minutes and producing 234
-records. Everything here is what that recording demonstrably contained. Nothing here
-generalizes to another host, another version, or another kind of session, and each item says
-what it saw rather than what it concludes. See task:4 for the full comparison, including the
-places where the recording and the session's own self-report disagree.
+records. Everything here is what that recording demonstrably contained. Each item says what it
+saw rather than what it concludes. See task:4 for the full comparison, including the places
+where the recording and the session's own self-report disagree.
+
+**This session was recorded by an adapter now known to be defective in one respect** — it read
+`duration`, and the integration sends `duration_ms` — so the timing result below is a fact
+about this recording rather than about the integration. It is left as measured.
 
 **The recording survived and is structurally intact.** 234 records, schema v2 throughout,
 `sequence` 1..234 with no gap, duplicate, or decrease, `recorded_at` monotonic, final newline
@@ -248,11 +384,15 @@ tool calls produced 81 records — request, reported intent, and completion — 
 recorded at the same fidelity as its parent's and can be separated from it by identifier
 rather than by adjacency.
 
-**`parent_agent_id` and `parent_agent_type` did not arrive.** Documented, and absent on every
-subagent record in this session. The adapter recorded what was supplied and invented nothing,
-so the recording contains **no expressible link** between a subagent and the tool call or
-agent that spawned it. A causal parent/child overlay is not buildable honestly from a
-recording like this one.
+**`parent_agent_id` and `parent_agent_type` did not arrive.** Documented at the time, and
+absent on every subagent record in this session. The adapter recorded what was supplied and
+invented nothing, so the recording contains **no expressible link** between a subagent and the
+tool call or agent that spawned it. A causal parent/child overlay is not buildable honestly
+from a recording like this one.
+
+*Measured here from adapter output, which cannot tell a withheld field from a dropped one.
+Confirmed independently in §3.3, upstream of the adapter, on the hooks where parentage would
+appear.*
 
 **A `subagent_stopped` arrived with no `subagent_started`.** One of the two stop records named
 an agent id that appears nowhere else in the recording, with an empty `agent_type`, and no
@@ -314,66 +454,172 @@ process, the interval between its two appends — one complete lock / tail-scan 
 excludes process spawn, JSON parsing, and Claude's own overhead. Total hook latency is still
 unmeasured.
 
+### 3.2 Pass 2 — 2026-08-03, Claude Code 2.1.220, 40 records, 14 raw payloads
+
+The first deliberately hostile session, run to the protocol in
+[`hostile-recording.md`](hostile-recording.md), with `scripts/probe.sh` capturing raw payloads
+from `PostToolUse`, `PostToolUseFailure`, and `PermissionDenied` alongside the recording. Two
+turns, submitted separately. Findings in dragon:1, dragon:2, and dragon:3.
+
+**Failure capture is exercised, in both shapes.** A non-zero shell exit (`cat` on a missing
+file) and a tool-level error (`Read` on a missing file) both arrived on `PostToolUseFailure`,
+neither on `PostToolUse`. The hook does not distinguish them; the `error` string is the only
+discriminator. It arrives as delivered, **including terminal colour escape sequences** — the
+error inside the shell failure is wrapped in a red-foreground SGR sequence — so a renderer
+treating `error` as plain text will show escape codes to a reader.
+
+**The delivered timing field was found, upstream of the adapter.** All 12 `PostToolUse` and
+both `PostToolUseFailure` raw payloads carried a populated top-level `duration_ms`. The adapter
+was reading `duration` and discarding it; the same mismatch existed for `is_interrupt` against
+`interrupted`. Both fixed in `1b655ac`. This is the measurement that established the timing
+field arrives at all, and it was taken by an observer sharing no code with the adapter.
+
+**A call the harness refuses before dispatch is invisible to every hook.** A `sleep 120` was
+rejected at the tool level and produced no `PreToolUse`, no failure, and no denial — **not in
+the recording and not in the independent probe**. A recording cannot distinguish "the agent
+tried something the harness would not run" from "the agent did not try". This was not one of
+the session's five questions; it is the most useful thing the session found.
+
+**Denial was not staged.** Every payload reported `permission_mode: "auto"` and the deletion the
+protocol expected to be refused was auto-approved with no prompt. `PermissionDenied` was armed
+and did not fire, which measures nothing about denial — only about the mode the session ran in.
+
+**`prompt_id` changed at the turn boundary**, one value per turn, exactly where the human
+pressed enter — reproduced in pass 3 on a different version. Necessary for a turn identifier and
+not sufficient. What a reader may take from it, at full strength:
+
+> A reader may conclude that two records with **different** `prompt_id` values were not produced
+> by the same submission. A reader may **not** conclude that two records sharing one belong to
+> the same turn, that a recording contains as many turns as it has distinct values, or that any
+> span between changes is a unit of work.
+
+The current reference calls it "a UUID identifying the user prompt currently being processed",
+which is a stronger claim than anything measured here and does not explain first contact's
+`session_ended` carrying a value no other record carried. It is a claim to test. dragon:3 is
+open, and no projection segments by this field.
+
+**`SubagentStop` fired three times against one `SubagentStart`** — once for the real subagent,
+and once near the end of each turn with an `agent_id` seen nowhere else and an empty
+`agent_type`. Recorded as an observation. It is not a turn boundary and must not become one.
+
+### 3.3 Pass 3 — 2026-08-04, Claude Code 2.1.221, 39 records, 16 raw payloads
+
+Run to [`hostile-recording-pass-3.md`](hostile-recording-pass-3.md), in `manual` permission
+mode, with the probe extended to five hooks including both subagent hooks for the first time.
+Note the version: pass 2 ran on 2.1.220 and Claude updated in between, so every pass-2 to
+pass-3 comparison is cross-version.
+
+**An interactive denial fires no hook at all.** The operator was prompted for
+`rm -rf /tmp/wg-probe/scratch` and refused it. No `PermissionDenied` payload reached the probe,
+which was armed for it; no record of any kind reached the recording. The arithmetic states it
+exactly: **14 `tool_requested`, 11 `tool_succeeded`, 2 `tool_failed` — one request with no
+terminal record.** From inside the file, a denied call is indistinguishable from one that was
+interrupted, one that crashed the harness, and one that is still running. Two consequences,
+and they are separate:
+
+- the **event** is unobservable, measured upstream of the adapter, so it is the integration's
+  boundary rather than this adapter's defect;
+- the **absence** is unrenderable, because `permission_mode` — the one field that would tell a
+  reader denials were even possible — is dropped. dragon:1 carries the argument for a schema
+  decision about it.
+
+The current reference now says the same thing about the hook's scope (§1). The observation came
+first and does not depend on it.
+
+**A denial ends the turn**, so the interruption the same protocol asked for never started.
+Interruption is now unmeasured for a third time and a third distinct reason, and a denial and
+an interruption cannot be staged in one turn.
+
+**Parentage is genuinely absent, confirmed independently.** `SubagentStart` on 2.1.221 carried
+exactly `agent_id`, `agent_type`, `cwd`, `hook_event_name`, `prompt_id`, `session_id`,
+`transcript_path` — with **zero occurrences of `parent_agent_id` or `parent_agent_type` across
+all 16 captured payloads**. The standing refusal to infer parentage now rests on an observation
+taken upstream of the adapter rather than on the adapter's own output.
+
+**`duration_ms` is populated on all 13 completions** — 430 ms on the first `Bash`, 3943 ms on
+the `Agent`, 38 ms and 10 ms on the two deliberate failures. This is the first recording this
+project has written that carries per-call timing, and it is the adapter's first output after
+the field-name fix. Whether `PermissionDenied` carries one is unknown and now looks
+unanswerable by this route, since the hook does not fire.
+
+**`SubagentStop` carries four fields nobody had looked at** — `agent_transcript_path`,
+`background_tasks`, `session_crons`, `stop_hook_active` — and strict mode refused both payloads
+on its first live session, which is what it was built to do. `stop_reason`, which the earlier
+`DELIBERATELY_UNRECORDED` list had taken from documentation, **did not arrive**.
+
+**`SessionEnd` fired**, with `reason: "prompt_input_exit"`, on the first recording that runs
+boundary to boundary *and* contains failures.
+
 ---
 
 ## 4. What remains unmeasured
 
-Everything in this section is a **provisional blind spot**. None of it has been measured
-against a live session, and none of it may be described as characterized until it has been.
-Where the one recorded session left a surface deliberately unexercised, it says so — an
-unexercised surface is not a working one.
+Everything in this section is a **provisional blind spot**: not measured against a live
+session, and not to be described as characterized until it has been. An unexercised surface is
+not a working one. Three sessions have now moved several items out of this list, and section 3
+is where they went; what is left is what three sessions did not reach.
 
-- **Pre-tool evidence is a request, not proof of execution.** A `tool_requested` record
-  with no matching completion means WitnessGlass did not see what happened next. It does
-  not mean nothing happened, and it does not mean the call was blocked. *Unexercised: the
-  recorded session produced zero unmatched requests, so what one looks like in practice, and
-  under what conditions one arises, is still unknown.*
-- **Failure capture is unexercised.** `PostToolUseFailure` did not fire once in the recorded
-  session, because no tool call failed. Zero `tool_failed` records is not evidence that the
-  surface works, and `interrupted` has never been observed at all.
-- **Behaviour under interruption and abnormal termination is unmeasured.** The one recorded
-  session ended cleanly through a documented exit. Nothing here says what a recording looks
-  like after a crash, a kill, or a cancelled tool call.
-- **Whether a resumed session appends to the same recording is unmeasured.** The recorded
-  session produced one `session_started` with `source: "startup"` and nothing after its
-  `session_ended`. No resume with hooks armed has been observed.
-- **Parallel dispatch is not distinguishable from serial dispatch.** The recorded session
-  reports having issued tool calls in parallel batches; the recording contains no overlapping
-  tool-call spans, no non-monotonic timestamps, and no interleaving of any kind. A batch whose
-  hooks serialize is indistinguishable in the record from a sequence of separate calls. So the
-  ordering caveat below is still a documented hazard rather than a demonstrated one — and the
-  absence of parallel evidence is itself a coverage gap, not a finding that nothing ran in
+- **Interruption has never been observed**, for three distinct reasons, and it is the largest
+  remaining hole. First contact never provoked one; pass 2's `sleep 120` was refused by the
+  harness before dispatch, invisibly; pass 3 never reached the command, because the denial in
+  the same turn ended the turn. `is_interrupt` is modelled and has never arrived with a value.
+  A denial and an interruption cannot be staged in one turn, and whatever runs next should put
+  the interruption first, in its own turn.
+- **Behaviour under abnormal termination is unmeasured.** All three sessions ended cleanly
+  through a documented exit. Nothing here says what a recording looks like after a crash or a
+  kill.
+- **Whether a resumed session appends to the same recording is unmeasured.** Every session so
+  far produced one `session_started` with `source: "startup"` and nothing after its
+  `session_ended`. No resume with hooks armed has been observed, and neither has `compact`,
+  `clear`, or `fork`.
+- **Parallel dispatch is not distinguishable from serial dispatch.** First contact reports
+  having issued tool calls in parallel batches; the recording contains no overlapping tool-call
+  spans, no non-monotonic timestamps, and no interleaving of any kind. A batch whose hooks
+  serialize is indistinguishable in the record from a sequence of separate calls. The ordering
+  caveat below therefore remains a documented hazard rather than a demonstrated one, and the
+  absence of parallel evidence is a coverage gap rather than a finding that nothing ran in
   parallel.
-- **Validation failures can escape the selected lifecycle hooks.** A request rejected by
-  input validation may fire neither `PreToolUse` nor `PostToolUseFailure`, leaving no trace
-  in the recording whatsoever.
-- **Permission-denial coverage depends on this host and version.** `PermissionDenied` is
-  documented as firing when a call is denied *by the auto mode classifier*. Whether a denial
-  at an interactive permission prompt, under a different permission mode, or via a deny rule
-  also fires it is unknown here. Absence of `tool_denied` records must not be read as
-  absence of denials. *Unexercised: no denial was provoked in the recorded session, so it
-  tests this neither way.*
 - **`@` file references may bypass `Read` tool hooks.** File content can enter a session
   without any tool event, so a recording can be missing files the session demonstrably read.
+  Documented, never exercised here.
 - **Appender order under parallel hooks is recorder order.** See above. Do not read
   `sequence` as proof that one tool call happened before another.
 - **Total hook latency is unmeasured.** Eight hook surfaces are configured as synchronous
   command hooks, each a process spawn plus a lock-protected append. `async: true` was
   deliberately not used: during first contact, a complete recording and a visible failure
   matter more than shaving hook latency. One recorded session bounded the append transaction
-  alone at a median of 5.0 ms (section 3); process spawn, parsing, and Claude's own overhead
-  are not in that number and have not been measured.
+  alone at a median of 5.0 ms (§3.1); process spawn, parsing, and Claude's own overhead are not
+  in that number and have not been measured.
+- **`PermissionDenied` has never fired**, so nothing is known about its payload from
+  observation: not whether it carries a duration, not what its documented `reason` field
+  contains, and not whether `tool_denied` renders correctly from a real one. Pass 3 established
+  that an interactive refusal does not reach it; the auto-mode classifier path it documents has
+  never been exercised here. **Absence of `tool_denied` records is not absence of denials**, and
+  after pass 3 it is known to be compatible with a denial having happened.
+- **Host and version coverage is one macOS host and two Claude Code versions**, 2.1.220 and
+  2.1.221, recorded a day apart. Linux is untested, Windows is not claimed, and no result here
+  should be read as stable across versions — the reference itself changed between two readings
+  two days apart.
 - **Recordings remain sensitive and unsafe to share.** A recording contains prompts,
   commands, absolute paths, file contents, tool output, and any credential that passed
-  through any of them. Nothing is redacted. See dragon:2. *This is now measured rather than
+  through any of them. Nothing is redacted. See dragon:2. *This is measured rather than
   feared: one 17-minute session of ordinary repository work produced 580 KB, of which 58% was
   tool response bodies and 24% was tool input, with the host's home-directory path present in
   a quarter of all records.*
 
+Measured and no longer provisional, with the detail in section 3: failure capture on both
+shapes (§3.2), hook-level timing on every completion (§3.2, §3.3), parentage genuinely absent
+(§3.3), an interactive denial firing nothing and leaving a request with no terminal record
+(§3.3), and a harness-refused call leaving no trace in any hook (§3.2). That last one is worth
+naming as its own limit: **a request the harness rejects before dispatch is invisible to every
+hook this adapter subscribes to**, so a recording cannot distinguish it from a call the agent
+never attempted.
+
 Also deliberately **not captured** in this slice, and therefore invisible in any recording:
 `UserPromptSubmit`, streamed assistant messages, transcript contents, `SessionStart.model`,
-`SubagentStop.last_assistant_message` and `stop_reason`, `permission_mode`, `cwd`, and every
-other lifecycle hook Claude offers.
+`SubagentStop.last_assistant_message`, `agent_transcript_path`, `background_tasks`,
+`session_crons`, `stop_hook_active`, `permission_mode`, `cwd`, `effort`, and every other
+lifecycle hook Claude offers.
 
 ---
 

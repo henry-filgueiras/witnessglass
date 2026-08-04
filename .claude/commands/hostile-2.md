@@ -1,9 +1,24 @@
 ---
-description: Hostile recording, turn 2 of 2 — a permission denial and an interrupted call, in the same session as turn 1
+description: "HISTORICAL, superseded: pass 2's turn 2. Kept as a record; do not run as written."
 ---
+
+**HISTORICAL — pass 2's turn 2, run 2026-08-03 on Claude Code 2.1.220. Superseded, first by
+`/hostile-3` and then by that command's own miss. Do not run this as written.**
+
+Both of its two human-operated steps failed for reasons now understood, and neither failure is
+fixed here: step 3's denial did not prompt because the session ran in `auto` permission mode,
+and step 4's bare `sleep` is refused by the harness before dispatch, so it left no trace in any
+hook. Its results are in dragon:1 and dragon:3 and in `docs/claude-adapter.md` §3.2.
+
+**If this command is invoked**: say that it is a superseded protocol and what its known misses
+are, and do not begin the steps unless the operator confirms they want the historical run
+reproduced anyway.
 
 <!--
 OPERATOR NOTE — for the human running this, not an instruction to the agent.
+
+The note below is pass 2's, preserved as written. It was accurate for pass 2 and is not
+accurate as instructions today.
 
 Submit this as a SECOND turn in the SAME session that ran /hostile-1. Do not
 restart, do not /clear. A new session gets a new session_id and the prompt_id

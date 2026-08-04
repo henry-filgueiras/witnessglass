@@ -99,3 +99,52 @@ The affordance is either half: `scarp close task:N --body-file <path>`, filling 
 same write that closes the task, or a general `scarp append <ref> --body-file <path>` that knows
 which sections a collection has. The second is more useful, since dragons and sprints accumulate
 follow-ups the same way and hit the same gap.
+
+## Addendum, 2026-08-04: the seven-field inventory was superseded by pass 3
+
+Appended from task:13, after the hostile session in `docs/hostile-recording-pass-3.md` ran
+against Claude Code 2.1.221. **The Result above is left exactly as written.** It was accurate on
+2026-08-03, against the payloads that existed then, and it recorded a claim this addendum
+corrects — which is the useful thing about leaving it alone.
+
+The claim: *"`DELIBERATELY_UNRECORDED` names the seven fields seen and dropped on purpose —
+`cwd`, `transcript_path`, `permission_mode`, `effort`, `model`, `last_assistant_message`,
+`stop_reason` … Their union is a complete, reviewable statement of everything this adapter has
+ever seen on the wire."*
+
+Two of those seven had not been seen on the wire. They were added from the hooks reference,
+in the same commit as a list whose stated purpose was to stop the adapter from believing the
+hooks reference. Pass 3 captured raw `SubagentStart` and `SubagentStop` payloads for the first
+time and settled both, and the inventory is now nine entries rather than seven.
+
+**Removed, because they were documentation and not observation** (`47c00d2`):
+
+| field | what happened |
+| --- | --- |
+| `stop_reason` | Documented on `SubagentStop` at the time; **absent from both captured `SubagentStop` payloads**. It is also absent from the reference as re-read on 2026-08-04 — the only `stop_reason` there is a hook *output* field. Listing it claimed an observation that was never made. |
+| `model` | Documented on `SessionStart` and "not guaranteed to be present". No captured payload has carried it, because the probe has never been attached to `SessionStart`. Unseen is unseen. |
+
+**Added, because pass 3 saw them** — strict mode refused both `SubagentStop` payloads on its
+first live session, naming all four, which is exactly the event it was built to produce:
+
+`agent_transcript_path`, `stop_hook_active`, `background_tasks`, `session_crons`.
+
+**Why this matters more than a list being four entries longer.** The Result above argued that
+the flattened capture keeps the inventory honest because "the set of modelled fields *is* the
+struct". True, and it does not extend to the second list, which is hand-written and was wrong
+within three commits of being written for exactly the reason it exists. The rule now stated in
+the code — *a field is listed only after being observed, never from the reference* — is the
+repair, and it is a convention rather than a mechanism. Nothing enforces it but review.
+
+Two fields sit in neither list on purpose as of the 2026-08-04 reading, and they are the test of
+whether the rule is being followed: `model` on `SessionStart`, and `reason` on
+`PermissionDenied` — a hook that has never fired against this adapter at all. Both are
+documented. Neither has been observed. Strict mode fires the first time either arrives, which is
+the correct outcome and the whole point.
+
+**One claim in the Result stands and one narrows.** Strict mode would have caught `duration_ms`
+on day one: that is still true and still tested. But "the canary is quiet against Claude Code
+2.1.220" was a calibration against 14 payloads from three hooks; on 2.1.221 with five hooks it
+fired immediately. A quiet canary means *nothing has moved on the hooks you attached it to,
+among the payloads it saw*. task:13 records what its granularity is in `docs/claude-adapter.md`,
+and the list of what it cannot detect is longer than the list of what it can.

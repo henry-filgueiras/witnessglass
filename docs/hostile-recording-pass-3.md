@@ -7,6 +7,28 @@ cwd: ..
 
 # Hostile recording, pass 3
 
+> ## HISTORICAL — this protocol has been run. Do not run it as written.
+>
+> Executed 2026-08-04 against Claude Code 2.1.221. Its results are in dragon:1 and dragon:3,
+> and are summarised in `docs/claude-adapter.md` §3.3. It is kept unedited as the record of
+> what was asked and how.
+>
+> **Rerunning it as written cannot measure the one question left.** Its turn 2 stages a denial
+> and an interruption in that order, and the denial ends the turn: the run never reached the
+> interruption, which is now the largest unobserved surface this project has. Its `/hostile-3`
+> command carries the same defect and is marked historical for the same reason.
+>
+> A pass 4 does not exist and is not authorized by this file. Whatever runs next has to put the
+> interruption in its own turn, and should put it first. It also has to write down the
+> operator's submission count at the time, which dragon:3 established a recording provably
+> cannot supply.
+>
+> One mechanical note for whoever writes that protocol: cell `arm` below moves
+> `.witnessglass/probe/raw-hooks.ndjson` aside, which was correct when every payload landed in
+> one appended file. The probe now spools one file per hook invocation under
+> `.witnessglass/probe/payloads/`, and the command that starts a session cleanly is
+> `scripts/probe.sh clear`.
+
 Pass 2 answered two of its five questions, disproved a finding this project had been carrying
 for two sprints, and failed at both of the jobs that needed a human. This pass exists to
 retry the two that failed, plus one that pass 2 made newly urgent.
