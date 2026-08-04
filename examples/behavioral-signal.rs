@@ -30,16 +30,20 @@ behavioral-signal — a disposable sprint:4 experiment, not a product surface
 
 USAGE:
     behavioral-signal --recording <PATH> [--bucket-ms <N>] [--samples] [--json]
-    behavioral-signal --emit-oracle
+    behavioral-signal --emit-oracle | --emit-sparse-oracle
 
     --recording <PATH>  Replay, inspect, and project one recording.
     --bucket-ms <N>     Bucket width in milliseconds. Default 500.
     --samples           Print every bucket. Without it, the first and last few.
     --json              Print the whole signal and its normalization as JSON
                         instead of the human-readable summary.
-    --emit-oracle       Write the deterministic synthetic oracle recording to
+    --emit-oracle       Write the deterministic legible synthetic oracle to
                         stdout as NDJSON and exit. This is how the committed
                         fixture is regenerated; it reads nothing.
+    --emit-sparse-oracle
+                        The same, for the sparse companion oracle sprint:5 added:
+                        the same kinds of structure at a density in the band a
+                        real recording established.
 
 The time axis is `recorded_at`, which is descriptive metadata and NOT the
 canonical order of a recording. See the module documentation for what that costs.
@@ -75,6 +79,10 @@ fn run() -> Result<ExitCode, String> {
     }
     if args.iter().any(|a| a == "--emit-oracle") {
         print!("{}", oracle::ndjson());
+        return Ok(ExitCode::SUCCESS);
+    }
+    if args.iter().any(|a| a == "--emit-sparse-oracle") {
+        print!("{}", oracle::sparse::ndjson());
         return Ok(ExitCode::SUCCESS);
     }
 

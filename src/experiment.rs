@@ -36,5 +36,6 @@
 //! candidate dimensions that were considered and refused, and the specific
 //! evidence each one would have needed.
 
+pub mod haar;
 pub mod oracle;
 pub mod signal;

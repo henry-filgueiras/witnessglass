@@ -55,6 +55,24 @@
 //! line. `CLAUDE.md` §5 requires fixtures to be synthetic and obviously so; this
 //! one is generated, so the requirement is a property of the generator rather
 //! than of whoever last edited a file by hand.
+//!
+//! # Two fixtures, and the difference between them
+//!
+//! [`records`] and [`ndjson`] build the **legible** oracle described above. It is
+//! deliberately a best case: dense enough to read a bucket dump by eye, with
+//! structure placed where it is easy to see. sprint:4 measured it at 78% empty at
+//! 500 ms and measured a real session at 94% empty, so the legible oracle is
+//! roughly four times denser than reality and flatters anything run over it.
+//!
+//! [`sparse`] builds the **stress case** sprint:5 added for that reason: the same
+//! kinds of structure at a density in the band the real recording established.
+//! Neither replaces the other. A result that holds on the legible oracle and
+//! fails on the sparse one is a result about legibility, and the pair exists so
+//! that difference is measurable rather than assumed.
+//!
+//! Neither fixture is derived from a real recording. The sparse one takes one
+//! number from observation — roughly how empty a real session's buckets are — and
+//! nothing else: no content, no timing, no tool name, no payload.
 
 use crate::record::{Channel, Provenance, v2};
 
@@ -110,7 +128,13 @@ pub const TOOL_NAMES: [&str; 4] = [TOOL_READER, TOOL_SEARCHER, TOOL_EDITOR, TOOL
 /// Deterministic and clock-free: sequence numbers are assigned by position and
 /// every timestamp is the origin plus a computed offset.
 pub fn records() -> Vec<v2::Record> {
-    let mut builder = Builder::new();
+    let mut builder = Builder::new(Naming {
+        session_id: SESSION_ID,
+        adapter: ADAPTER,
+        prompt_id: "prompt-synthetic-oracle-0001",
+        call_prefix: "toolu_synthetic_oracle_",
+        origin: ORIGIN,
+    });
 
     builder.session_started(0);
 
@@ -307,24 +331,41 @@ impl Lcg {
     }
 }
 
+/// What a builder stamps on every record it assembles.
+///
+/// Parameterized because sprint:5 added a second fixture, and two generators
+/// sharing one builder is better than two copies of the record assembly drifting
+/// apart. The legible fixture's values are unchanged, and the test that
+/// regenerates it byte for byte is what says so.
+struct Naming {
+    session_id: &'static str,
+    adapter: &'static str,
+    prompt_id: &'static str,
+    call_prefix: &'static str,
+    origin: &'static str,
+}
+
 /// Assembles records in canonical order, owning the sequence counter and the
 /// timestamp arithmetic so no caller can get either wrong.
 struct Builder {
     records: Vec<v2::Record>,
+    naming: Naming,
     origin: jiff::Timestamp,
     calls: u64,
 }
 
 impl Builder {
-    fn new() -> Self {
+    fn new(naming: Naming) -> Self {
         Self {
             records: Vec::new(),
             // The constant is a valid RFC 3339 timestamp, checked by the test
             // that regenerates the fixture; `unwrap_or` keeps the builder total
             // without a panic path.
-            origin: ORIGIN
+            origin: naming
+                .origin
                 .parse::<jiff::Timestamp>()
                 .unwrap_or(jiff::Timestamp::UNIX_EPOCH),
+            naming,
             calls: 0,
         }
     }
@@ -335,29 +376,29 @@ impl Builder {
 
     fn next_call_id(&mut self) -> String {
         self.calls += 1;
-        format!("toolu_synthetic_oracle_{:04}", self.calls)
+        format!("{}{:04}", self.naming.call_prefix, self.calls)
     }
 
     /// The id the next call will use, so a reported intent can cite the call it
     /// is about before that call's records exist. Correlation, not fusion: the
     /// intent stays a separate record on the `reported` channel.
     fn peek_call_id(&self) -> String {
-        format!("toolu_synthetic_oracle_{:04}", self.calls + 1)
+        format!("{}{:04}", self.naming.call_prefix, self.calls + 1)
     }
 
     fn push(&mut self, offset_ms: u64, channel: Channel, mechanism: &str, event: v2::Event) {
         self.records.push(v2::Record {
             schema_version: v2::SCHEMA_VERSION,
-            session_id: SESSION_ID.to_owned(),
+            session_id: self.naming.session_id.to_owned(),
             sequence: self.records.len() as u64 + 1,
             recorded_at: self.at(offset_ms),
             context: v2::Context {
-                prompt_id: Some("prompt-synthetic-oracle-0001".to_owned()),
+                prompt_id: Some(self.naming.prompt_id.to_owned()),
                 ..v2::Context::default()
             },
             provenance: Provenance {
                 channel,
-                adapter: ADAPTER.to_owned(),
+                adapter: self.naming.adapter.to_owned(),
                 mechanism: mechanism.to_owned(),
             },
             event,
@@ -491,5 +532,248 @@ impl Builder {
                 parent_agent_type: None,
             }),
         );
+    }
+}
+
+/// The sparse companion oracle: the same kinds of structure at a density
+/// informed by a real recording.
+///
+/// **Disposable.** sprint:5, task:15.
+///
+/// # Why a second fixture
+///
+/// sprint:4 measured the legible oracle at 78% empty at 500 ms and a real
+/// 234-record session at 94% empty. A detector validated only against the
+/// legible one has been validated against a best case that reality does not
+/// supply. This fixture exists to be the stress case, and its only inheritance
+/// from observation is a target density — no content, no timing, no tool name,
+/// and no payload is derived from any real recording.
+///
+/// # The structure, in milliseconds from the origin
+///
+/// ```text
+///        0 ..  300000   sparse baseline   one two-record call every 30 s
+///   300000 ..  540000   motif             a five-record figure every 8 s, exactly
+///   540000 ..  780000   sparse baseline   as before
+///   780000 .. 1080000   regime block      one two-record call every 6 s, a
+///                                         different tool name throughout, and one
+///                                         subagent pair inside it
+///  1080000 .. 1200000   recurrence        the same figure with deterministic
+///                                         jitter, and one call that fails
+///  1200000             session ends
+/// ```
+///
+/// # Two structures, on purpose one dyadic and one not
+///
+/// The motif period is 8 s, which is 16 base samples at 500 ms and therefore a
+/// power of two: a Haar transform sees it cleanly, and it is the positive
+/// control. The regime block is 300 s, which is 600 base samples and sits
+/// between 2^9 and 2^10: a Haar transform must smear it across two levels. A
+/// fixture in which every structure happened to be dyadic would be a fixture
+/// built to make one transform look good.
+pub mod sparse {
+    use super::{Builder, Lcg, Naming};
+    use crate::record::v2;
+
+    /// Session id of the sparse oracle recording.
+    pub const SESSION_ID: &str = "sess-synthetic-sparse-oracle";
+
+    /// Adapter name stamped on every record.
+    pub const ADAPTER: &str = "synthetic-sparse-oracle-adapter";
+
+    /// Origin timestamp, as RFC 3339. Distinct from the legible oracle's, so two
+    /// dumps can never be confused for one another.
+    pub const ORIGIN: &str = "2026-04-01T00:00:00Z";
+
+    /// Period between baseline calls, in milliseconds.
+    pub const BASELINE_PERIOD_MS: u64 = 30_000;
+    /// End of the first baseline and start of the motif region.
+    pub const FIRST_MOTIF_START_MS: u64 = 300_000;
+    /// End of the motif region.
+    pub const FIRST_MOTIF_END_MS: u64 = 540_000;
+    /// Period between motif instances. 16 base samples at 500 ms: dyadic.
+    pub const MOTIF_PERIOD_MS: u64 = 8_000;
+    /// Records one motif instance contributes.
+    pub const MOTIF_RECORDS_PER_INSTANCE: usize = 5;
+    /// Start of the long regime block.
+    pub const REGIME_START_MS: u64 = 780_000;
+    /// End of the long regime block. 300 s wide: deliberately not a power of two
+    /// in base samples.
+    pub const REGIME_END_MS: u64 = 1_080_000;
+    /// Period between calls inside the regime block.
+    pub const REGIME_PERIOD_MS: u64 = 6_000;
+    /// Start of the motif's recurrence.
+    pub const SECOND_MOTIF_START_MS: u64 = REGIME_END_MS;
+    /// End of the recurrence, and the session boundary.
+    pub const SESSION_END_MS: u64 = 1_200_000;
+
+    /// Tool name delivered by the baselines and by the motif's first call.
+    pub const TOOL_READER: &str = "SparseSyntheticReader";
+    /// Tool name delivered by the motif's second call, and nowhere else.
+    pub const TOOL_SEARCHER: &str = "SparseSyntheticSearcher";
+    /// Tool name delivered inside the regime block, and nowhere else.
+    pub const TOOL_SHELL: &str = "SparseSyntheticShell";
+
+    /// The sparse oracle recording, as complete v2 records in canonical order.
+    pub fn records() -> Vec<v2::Record> {
+        let mut builder = Builder::new(Naming {
+            session_id: SESSION_ID,
+            adapter: ADAPTER,
+            prompt_id: "prompt-synthetic-sparse-0001",
+            call_prefix: "toolu_synthetic_sparse_",
+            origin: ORIGIN,
+        });
+
+        builder.session_started(0);
+        baseline(&mut builder, 15_000, FIRST_MOTIF_START_MS);
+        motif(
+            &mut builder,
+            FIRST_MOTIF_START_MS,
+            FIRST_MOTIF_END_MS,
+            false,
+        );
+        baseline(&mut builder, 555_000, REGIME_START_MS);
+        regime(&mut builder);
+        motif(&mut builder, SECOND_MOTIF_START_MS, SESSION_END_MS, true);
+        builder.session_ended(SESSION_END_MS);
+
+        builder.records
+    }
+
+    /// The sparse oracle recording, as the NDJSON bytes of a complete recording.
+    ///
+    /// One newline-terminated line per record, which is what
+    /// `fixtures/synthetic-behavioral-oracle-sparse.ndjson` holds.
+    pub fn ndjson() -> String {
+        let mut out = String::new();
+        for record in records() {
+            // Serializing a record this module built cannot fail; the arm keeps
+            // the function total without fabricating a line.
+            if let Ok(line) = serde_json::to_string(&record) {
+                out.push_str(&line);
+                out.push('\n');
+            }
+        }
+        out
+    }
+
+    /// One two-record call every [`BASELINE_PERIOD_MS`], landing in one bucket.
+    fn baseline(builder: &mut Builder, from_ms: u64, until_ms: u64) {
+        let mut at = from_ms;
+        while at < until_ms {
+            let id = builder.next_call_id();
+            let input = serde_json::json!({ "path": "/synthetic/sparse/baseline.txt" });
+            builder.tool_requested(at, TOOL_READER, &id, input.clone());
+            builder.tool_succeeded(
+                at + 120,
+                TOOL_READER,
+                &id,
+                input,
+                serde_json::json!({ "bytes": 32 }),
+            );
+            at += BASELINE_PERIOD_MS;
+        }
+    }
+
+    /// A reported intent and two calls, repeated at [`MOTIF_PERIOD_MS`].
+    ///
+    /// `noisy` jitters the instance start and each record's offset, and makes one
+    /// call fail. The jitter is a fixed generator seeded from the interval, so
+    /// "noise" here is reproducible — the only kind an oracle can have.
+    fn motif(builder: &mut Builder, from_ms: u64, until_ms: u64, noisy: bool) {
+        let mut jitter = Lcg::new(0x5350_4152_5345_0001 ^ from_ms);
+        let mut nominal = from_ms;
+        let mut instance = 0u64;
+
+        while nominal < until_ms {
+            let at = if noisy {
+                nominal + jitter.next_below(700)
+            } else {
+                nominal
+            };
+            let skew = |offset: u64, jitter: &mut Lcg| {
+                if noisy {
+                    at + offset + jitter.next_below(150)
+                } else {
+                    at + offset
+                }
+            };
+
+            builder.reported_intent(
+                at,
+                &builder.peek_call_id(),
+                "run the sparse synthetic motif over the synthetic tree",
+            );
+
+            for (index, (tool, request_offset, response_offset)) in
+                [(TOOL_READER, 150, 400), (TOOL_SEARCHER, 700, 950)]
+                    .into_iter()
+                    .enumerate()
+            {
+                let id = builder.next_call_id();
+                let input = serde_json::json!({
+                    "target": "/synthetic/sparse/motif",
+                    "step": index,
+                });
+                builder.tool_requested(skew(request_offset, &mut jitter), tool, &id, input.clone());
+
+                // The recurrence's one structural deviation, matching the legible
+                // oracle's: a single failing call rather than a perfect repeat.
+                if noisy && instance == 3 && tool == TOOL_SEARCHER {
+                    builder.tool_failed(
+                        skew(response_offset, &mut jitter),
+                        tool,
+                        &id,
+                        input,
+                        "synthetic failure injected by the sparse oracle fixture",
+                    );
+                } else {
+                    builder.tool_succeeded(
+                        skew(response_offset, &mut jitter),
+                        tool,
+                        &id,
+                        input,
+                        serde_json::json!({ "matches": 2 }),
+                    );
+                }
+            }
+
+            instance += 1;
+            nominal += MOTIF_PERIOD_MS;
+        }
+    }
+
+    /// The long block: one call every [`REGIME_PERIOD_MS`] under a tool name that
+    /// appears nowhere else, with one subagent pair inside it.
+    fn regime(builder: &mut Builder) {
+        let mut at = REGIME_START_MS;
+        let mut subagent_started = false;
+        let mut subagent_stopped = false;
+
+        while at < REGIME_END_MS {
+            if !subagent_started && at >= 840_000 {
+                builder.subagent_started(at, "agent-synthetic-sparse-child");
+                subagent_started = true;
+            }
+            if !subagent_stopped && at >= 1_020_000 {
+                builder.subagent_stopped(at, "agent-synthetic-sparse-child");
+                subagent_stopped = true;
+            }
+
+            let id = builder.next_call_id();
+            let input = serde_json::json!({
+                "command": "synthetic-sparse-build --target /synthetic/sparse/block",
+            });
+            builder.tool_requested(at, TOOL_SHELL, &id, input.clone());
+            builder.tool_succeeded(
+                at + 250,
+                TOOL_SHELL,
+                &id,
+                input,
+                serde_json::json!({ "exit_status": 0, "stdout": "synthetic block output" }),
+            );
+
+            at += REGIME_PERIOD_MS;
+        }
     }
 }
