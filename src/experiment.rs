@@ -37,5 +37,10 @@
 //! evidence each one would have needed.
 
 pub mod haar;
+// sprint:6's Matrix Profile experiment. Behind a non-default feature because it
+// is the one part of this experiment with a third-party dependency, and a
+// default build of the product must not link a numerics stack for research code.
+#[cfg(feature = "experiment-matrix-profile")]
+pub mod matrix_profile;
 pub mod oracle;
 pub mod signal;
