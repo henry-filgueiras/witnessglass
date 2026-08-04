@@ -54,3 +54,40 @@ Observed during the WitnessGlass bootstrap (Scarp 0.2.0), closing task:1 and tas
 sprint:1. Both required the same workaround: write the result body to a temporary file,
 append it to the task with a shell redirect, then run `scarp close`. Two occurrences in the
 first session of use, and the pattern will recur for every task the project ever closes.
+
+### 2026-08-04: upstream shipped this, and what it did not ship
+
+Scarp now writes a task's result in the same write that closes it. The
+flag is spelled `--body-file` rather than the sketched `--result-file`,
+reusing the name `scarp new` already uses for the same job:
+
+```sh
+scarp close task:1 --body-file result.md
+```
+
+Against this idea's Sketch and Boundaries, point by point:
+
+- **The outcome rides the transition.** The `## Result` section, the
+  status change, and the `closed:` stamp land in one atomic write, so
+  the two-step inconsistency described above is gone.
+- **Scarp keeps ownership of the heading**, its placement, and the
+  layout. A body file that writes `## Result` itself is refused, naming
+  the reason.
+- **A task can still close with nothing to add.** Omitting the flag
+  closes exactly as before and appends nothing.
+- **Not a general append command**, as this idea's first boundary asks.
+  Dragons and sprints get their own terminal sections (`Resolution`,
+  `Retrospective`, both dated); nothing else can be appended.
+- **The standalone form was not built.** `scarp result task:1
+  --body-file ...`, for recording an outcome before the task is ready to
+  close, does not exist. Nor does anything for adding narrative to an
+  artifact that already exists — which is what idea 4 asks for, and it
+  remains open.
+
+Also shipped alongside it, unasked: `[[kind:N]]` references in prose
+supplied to `--body-file` are resolved and rewritten to their canonical
+stable-id form at write time, on both the creation and the close paths.
+
+Disposition of this idea is left open deliberately. The mechanism it
+asks for exists; whether the missing standalone form is worth keeping it
+parked for is a call for this project, not for the tool.
