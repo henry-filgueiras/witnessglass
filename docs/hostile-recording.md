@@ -1,5 +1,25 @@
 # Recording a deliberately hostile session
 
+> **This protocol has been run, and three of its five questions are settled. It is kept as
+> written — the questions below are what pass 2 set out to ask, not what is still open, and
+> rewriting them would erase the reasoning that produced the answers.**
+>
+> - **Question 1 is answered, and its premise was wrong.** The duration was never absent. The
+>   integration sends `duration_ms`; the adapter read `duration` and discarded it unread from the
+>   day it was written. Fixed in `1b655ac`.
+> - **Question 2 is answered.** A non-zero shell exit and a tool-level error both arrive on
+>   `PostToolUseFailure`. Only the `error` string distinguishes them, and it carries terminal
+>   colour escapes.
+> - **Question 5 is answered narrowly.** One `prompt_id` per turn, boundary where the human
+>   pressed enter — necessary for a turn identifier, not sufficient. dragon:3 stays open.
+> - **Questions 3 and 4 were missed**, both because of the session's setup rather than the
+>   integration: it ran in `auto` mode so nothing prompted, and the harness refuses a standalone
+>   `sleep` before dispatch so there was nothing to interrupt.
+>
+> The findings are in dragon:1, dragon:2, and dragon:3. **The next session runs
+> [`hostile-recording-pass-3.md`](hostile-recording-pass-3.md)**, which fixes both misses and adds
+> a sixth question about parentage.
+
 Every recording this project has is of a session where nothing went wrong. 82 tool calls, 82
 successes, no failure, no denial, no interruption, no resume, and — as far as anything here can
 tell — one turn. Everything WitnessGlass does with failure, denial, interruption, and multi-turn
