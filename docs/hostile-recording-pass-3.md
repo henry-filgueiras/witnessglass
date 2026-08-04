@@ -68,10 +68,19 @@ the probe capture carries `cwd` and `transcript_path` on every line. See dragon:
 
 ```sh {"name":"arm","excludeFromRunAll":"true"}
 OUT=.witnessglass/pass-3
+CAPTURE=.witnessglass/probe/raw-hooks.ndjson
 rm -rf "$OUT" && mkdir -p "$OUT"
 
 {
   echo "### arm — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  # The probe appends. Pass 2's payloads are still in there, and left in place
+  # they would be counted as this session's — `probe.sh show` reports per hook,
+  # not per session, and has no way to tell two runs apart. Moved rather than
+  # deleted: they are the raw evidence behind dragon:1's correction.
+  if [ -s "$CAPTURE" ]; then
+    mv "$CAPTURE" "$CAPTURE.$(date -u +%Y%m%dT%H%M%SZ)"
+    echo "moved a previous capture aside; this session starts empty"
+  fi
   scripts/arm.sh
   PROBE_HOOKS="PostToolUse PostToolUseFailure PermissionDenied SubagentStart SubagentStop" \
     scripts/probe.sh install
@@ -94,8 +103,13 @@ undoing specially.
 This cannot be automated and should not be. Launch it yourself:
 
 ```sh {"name":"launch","interactive":"true","excludeFromRunAll":"true"}
-claude --permission-mode default
+claude --permission-mode manual
 ```
+
+`manual` is the mode that asks. There is **no `default`** on 2.1.220 — the valid choices are
+`acceptEdits`, `auto`, `bypassPermissions`, `manual`, `dontAsk`, and `plan`, and passing an
+invalid one fails the launch rather than falling back. If `manual` turns out not to prompt for
+step 3, that is itself the finding; do not retry the turn in another mode without recording it.
 
 Then, in that session, two submissions:
 
@@ -104,14 +118,17 @@ Then, in that session, two submissions:
 /hostile-3
 ```
 
-`/hostile-3` is pass 2's turn-2 skill with the two broken steps replaced. If it does not exist
-yet, create it from `/hostile-2` with these changes:
+`/hostile-3` exists at `.claude/commands/hostile-3.md`. It is pass 2's turn-2 skill with the two
+steps that failed replaced:
 
-- **Step 3, the denial.** Keep `rm -rf /tmp/wg-probe/scratch`. In `default` mode this should
-  prompt. **Choose no.** If no prompt appears, stop and record that — it means the mode override
-  did not take, and the rest of the turn measures nothing about denial.
-- **Step 4, the interruption.** Replace `sleep 120` with
-  `python3 -c 'import time; time.sleep(120)'`. Wait about five seconds, then interrupt with Esc.
+- **Step 3, the denial.** Still `rm -rf /tmp/wg-probe/scratch`. In `manual` mode this should
+  prompt. **Choose no.** If no prompt appears, stop and record that — the mode did not take, and
+  nothing after it measures denial.
+- **Step 4, the interruption.** `python3 -c 'import time; time.sleep(120)'` instead of a bare
+  `sleep`. Wait about five seconds, then interrupt with Esc.
+
+Both steps now tell the agent what to do if the expected outcome does not occur, because in
+pass 2 both surprises were more interesting than the results they replaced.
 
 Both jobs are yours and neither can be scripted. Interrupting ends the turn; everything before it
 is already recorded.
