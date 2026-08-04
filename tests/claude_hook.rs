@@ -1008,6 +1008,65 @@ fn observed_post_tool_use_payload() -> serde_json::Value {
     })
 }
 
+/// The exact top-level key set 2.1.221 sent on `SubagentStart` and
+/// `SubagentStop`, from pass 3's probe capture. The stop payload is the one the
+/// canary fired on: four of its fields had never been seen, because pass 2's
+/// probe was not attached to these hooks.
+fn observed_subagent_payloads() -> [serde_json::Value; 2] {
+    [
+        serde_json::json!({
+            "hook_event_name": "SubagentStart",
+            "session_id": HOOK_SESSION,
+            "cwd": "/synthetic/workdir",
+            "transcript_path": "/synthetic/transcript.jsonl",
+            "prompt_id": "prompt-synthetic-0001",
+            "agent_id": "agent-synthetic-0001",
+            "agent_type": "general-purpose",
+        }),
+        serde_json::json!({
+            "hook_event_name": "SubagentStop",
+            "session_id": HOOK_SESSION,
+            "cwd": "/synthetic/workdir",
+            "transcript_path": "/synthetic/transcript.jsonl",
+            "agent_transcript_path": "/synthetic/agent-transcript.jsonl",
+            "permission_mode": "manual",
+            "effort": { "level": "synthetic" },
+            "prompt_id": "prompt-synthetic-0001",
+            "agent_id": "agent-synthetic-0001",
+            "agent_type": "general-purpose",
+            "last_assistant_message": "synthetic assistant prose",
+            "background_tasks": [],
+            "session_crons": [],
+            "stop_hook_active": false,
+        }),
+    ]
+}
+
+#[test]
+fn no_parent_identity_arrives_on_the_subagent_hooks() {
+    // dragon:1 held "parent_agent_id never arrived" for two sprints on the
+    // strength of adapter output, which cannot distinguish a field the
+    // integration withheld from one the adapter dropped. Pass 3 put an
+    // independent probe on these hooks and found no parentage in any payload.
+    //
+    // The adapter models both parent fields, so this fixture would carry them if
+    // they existed. It says: the observed payload has no parent identity, and a
+    // recording built from it must not invent one.
+    let [start, stop] = observed_subagent_payloads();
+    for payload in [start, stop] {
+        let object = payload.as_object().expect("object");
+        assert!(!object.contains_key("parent_agent_id"), "{object:?}");
+        assert!(!object.contains_key("parent_agent_type"), "{object:?}");
+    }
+
+    let translation = translate(observed_subagent_payloads()[0].clone());
+    let Event::SubagentStarted(started) = &translation.emissions[0].event else {
+        panic!("expected subagent_started");
+    };
+    assert_eq!(started.parent_agent_id, None);
+    assert_eq!(started.parent_agent_type, None);
+}
+
 #[test]
 fn strict_mode_accepts_the_field_set_the_integration_actually_sends() {
     // This is the canary's calibration. Every key here was observed on the wire;
@@ -1026,6 +1085,15 @@ fn strict_mode_accepts_the_field_set_the_integration_actually_sends() {
     object.insert("error".into(), "synthetic failure".into());
     object.insert("is_interrupt".into(), false.into());
     translate_strict(failure).expect("the failure hook's field set too");
+
+    // The subagent hooks, whose real field set was not seen until pass 3 put a
+    // probe on them. SubagentStop is where the canary fired: four of these keys
+    // were unaccounted for, and `stop_reason` — which the list carried on the
+    // documentation's word alone — was not among them.
+    for payload in observed_subagent_payloads() {
+        let hook = payload["hook_event_name"].clone();
+        translate_strict(payload).unwrap_or_else(|err| panic!("{hook}: {err}"));
+    }
 }
 
 #[test]

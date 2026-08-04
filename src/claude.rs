@@ -81,6 +81,14 @@ const SUPPORTED_HOOKS: &[&str] = &[
 /// payload on `cwd` alone and be useless. Each entry needs a reason, and a field
 /// whose reason has expired should be promoted into the struct rather than left
 /// here.
+///
+/// **A field is added here only after it has been seen in a captured payload,
+/// never from the hooks reference.** The first version of this list broke that
+/// rule twice, adding `model` and `stop_reason` because the documentation
+/// mentioned them. `stop_reason` was then shown not to arrive at all — the
+/// documentation was wrong in the same direction that cost this project two
+/// sprints over `duration`. A documented field that has never been observed
+/// belongs in neither list, so that the canary fires if it ever shows up.
 const DELIBERATELY_UNRECORDED: &[&str] = &[
     // Absolute working directory. Privacy: it names the operator's filesystem on
     // every record (CLAUDE.md §5, dragon:2). Note that dragon:2 also found it
@@ -90,23 +98,36 @@ const DELIBERATELY_UNRECORDED: &[&str] = &[
     // pointer to far more than a recording holds, and to material this project
     // has made no claims about.
     "transcript_path",
+    // A *second* transcript pointer, on SubagentStop: the subagent's own
+    // transcript, distinct from `transcript_path` and also under $HOME. Same
+    // reason as above, and evidence that "the adapter does not capture
+    // transcript paths" is a claim that needs rechecking per hook rather than
+    // once.
+    "agent_transcript_path",
     // The permission mode in force. Not modelled, and dragon:1 argues it should
-    // be: this session's entire denial result is explained by it, and the
-    // recording cannot state it. Promoting it is a schema change and wants a
-    // decision, not a quiet addition here.
+    // be: pass 3's entire denial result is explained by it, and the recording
+    // cannot state it. Promoting it is a schema change and wants a decision, not
+    // a quiet addition here.
     "permission_mode",
     // Reasoning-effort descriptor for the agent. Bears on how the agent thought,
     // not on what the machinery observed it do.
     "effort",
-    // Documented on SessionStart; never observed on this host. Unmodelled rather
-    // than assumed absent.
-    "model",
     // Assistant prose on SubagentStop. This is the reported channel and would
     // need decision:2's treatment rather than a field slot, and it is a large
     // privacy surface for the value it adds.
     "last_assistant_message",
-    // Why a subagent stopped. Unmodelled; nothing derives from it yet.
-    "stop_reason",
+    // Whether a stop hook is already running. State belonging to the hook
+    // machinery itself, not evidence about the session it is observing.
+    "stop_hook_active",
+    // Both observed on SubagentStop, both **empty on every payload seen so far**,
+    // so what they contain when populated is unknown. They are dropped on the
+    // strength of not being tool lifecycle evidence, which is a claim about
+    // their role and not about their contents — an empty array is not a licence
+    // to assume the populated one is harmless. dragon:2 carries them as
+    // unexamined surfaces; if either is ever seen non-empty, look before
+    // deciding this entry still holds.
+    "background_tasks",
+    "session_crons",
 ];
 
 /// What to do about payload fields that are in neither [`HookPayload`] nor
