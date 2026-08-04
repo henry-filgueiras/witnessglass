@@ -209,3 +209,58 @@ dragon:1. Both errors have the same shape: auditing a structure instead of its c
 
 Nothing else changes. No redaction is implemented, no export path exists, and no claim about safe
 sharing may be made. This session was designed to be the exception and it is not one.
+
+## Pass 3: three new payload surfaces, two of which have never been seen populated
+
+Appended 2026-08-04. **Scope: Claude Code 2.1.221, macOS arm64, 16 raw payloads from the five
+hooks the probe was attached to.** Pass 2's probe covered three hooks; this was the first look at
+`SubagentStart` and `SubagentStop`, and the enumeration of sensitive surfaces gets longer as a
+direct result.
+
+### A second transcript pointer
+
+`SubagentStop` carries **`agent_transcript_path`**, distinct from `transcript_path`, also rooted
+under `$HOME`, also a `.jsonl` file. The subagent's own transcript.
+
+The adapter drops it, as it drops `transcript_path`. The finding is not about the field but about
+the shape of the claim: "the adapter does not capture transcript paths" was true when written and
+was a statement about one field name on the hooks that had been examined. A second pointer arrived
+the moment a new hook was looked at. **Claims of the form "we do not capture X" are per-hook and
+per-version, and expire whenever either changes.** This is the same lesson dragon:1 learned about
+absent fields, arriving from the privacy side.
+
+### Two fields whose contents are unknown
+
+`SubagentStop` also carries **`background_tasks`** and **`session_crons`**. Both were **empty
+arrays on every payload observed**, so this project has seen their names and nothing else.
+
+They are dropped, and the reason recorded in the code is deliberately narrow: they are not tool
+lifecycle evidence. That is a claim about their *role*, not about their contents, and it is the
+only claim the evidence supports. An empty array is not evidence that the populated form is
+harmless — the names suggest background process state and scheduled-task configuration, either of
+which could carry commands, prompts, schedules, or paths.
+
+Recorded here so that the next person to see one populated knows it was never examined. If either
+is ever observed non-empty, look at it before deciding the entry still holds.
+
+`stop_hook_active` is the third new field and is uninteresting: a boolean about the hook machinery
+itself.
+
+### What the recording itself exposed
+
+The pass-3 recording is a sandboxed session and the payload content is synthetic scratch data, as
+designed. The two leaks pass 2 identified both recurred exactly as described — the working
+directory inside a `Read` error string, and the repository path inside the subagent prompt because
+the sandbox instruction names the directory it forbids. Neither is new; both confirm the earlier
+finding rather than extending it.
+
+### What this changes about the resolution criteria
+
+The first criterion gains a third session shape and, more usefully, a second *mechanism* by which
+the enumeration goes stale: not only new session activity, but new hooks and new versions. An
+inventory of sensitive surfaces is valid for the hooks it examined, on the version it examined
+them on. Pass 2 taught that a field-level inventory misses content inside values; pass 3 adds that
+a hook-level inventory misses whatever hooks it did not subscribe to.
+
+Nothing else changes. No redaction is implemented, no export path exists, and no claim about safe
+sharing may be made.

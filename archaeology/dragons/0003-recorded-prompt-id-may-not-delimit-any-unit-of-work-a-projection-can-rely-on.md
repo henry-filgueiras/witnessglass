@@ -173,3 +173,87 @@ see the corresponding note in dragon:1. It is tempting as a turn delimiter preci
 sits where a turn ends. Two occurrences, no documentation, no stated semantics, and adopting it
 would mean inferring a unit of work from an event that does not claim to mark one. That is the
 same mistake as segmenting by `prompt_id`, wearing a different hat.
+
+## Pass 3: the turn-boundary result reproduces, and the `session_ended` observation does not
+
+Appended 2026-08-04. **Scope: Claude Code 2.1.221, macOS arm64, one session, two turns submitted
+as two prompts, 39 records.** Pass 2 ran on 2.1.220; this is a different version.
+
+The turn-boundary behaviour reproduces exactly:
+
+| records | `prompt_id` | what was submitted |
+| --- | --- | --- |
+| 1 | *(none)* | `session_started` |
+| 2–29 | `49a7bed5…` | turn 1 (`/hostile-1`) |
+| 30–39 | `ead8e077…` | turn 2 (`/hostile-3`) |
+
+One value per turn, boundary where the human pressed enter, absent before the first input, and
+spanning the parent agent and its subagent alike. Two sessions, two versions, same behaviour. The
+statement written into this dragon after pass 2 stands unchanged, and now has a second
+independent observation behind it.
+
+### The `session_ended` sub-observation does not reproduce, and it was load-bearing
+
+First contact reported two distinct `prompt_id` values across a session its operator understood as
+a single turn: one covering 232 records, and **one on `session_ended` alone**. That second value
+was the entire basis for treating `prompt_id` as an identifier that changes more often than turns
+do — the reason "changes at a turn boundary" was called necessary but not sufficient.
+
+Pass 3's `session_ended` carries **turn 2's** `prompt_id`, not a value of its own. So the two
+sessions disagree about the one record that mattered.
+
+Both recordings were re-read to check this rather than taken from the earlier write-up, and the
+comparison is tighter than expected:
+
+| | first contact | pass 3 |
+| --- | --- | --- |
+| `session_ended` sequence | 234 | 39 |
+| `reason` | `prompt_input_exit` | `prompt_input_exit` |
+| `prompt_id` on it | `8c59ba18…`, **carried by no other record** | `ead8e077…`, **shared with turn 2's other records** |
+
+**The two sessions ended the same way.** `reason` is identical, so "it depends on how the session
+terminated" is not available as an explanation — which was the reading that would have made this a
+harmless quirk. Something else differs.
+
+The most economical account left is that first contact had a further prompt context that produced
+no tool calls at all: a submission answered in prose, or an input begun and abandoned, with
+`session_ended` carrying it because it was simply the current one. That is a softer form of "it
+was more than one turn" — not two turns of work, but a turn that left no tool evidence.
+
+If that is right, `prompt_id` is per-submission in all three sessions, the in-turn change first
+contact appeared to show never happened, and this dragon's central worry is smaller than it looks.
+It would also mean **a recording can contain a turn that is invisible within it**, which is its
+own finding and not a comforting one.
+
+The alternatives are that the behaviour changed between 2.1.220 and 2.1.221, or that
+`session_ended`'s identifier follows a rule nobody here has characterised.
+
+This project cannot choose between them, and the reason is worth stating plainly: first contact
+was not recorded to a protocol, the operator's prompt count was never written down at the time,
+and `UserPromptSubmit` is not captured, so no recording can say how many submissions it contains.
+**The evidence that would settle it existed only while it was being generated.**
+
+### Where this leaves the criteria
+
+The negative statement written after pass 2 still holds and is what the adapter documentation
+should carry:
+
+> A reader may conclude that two records with **different** `prompt_id` values were not produced
+> by the same submission. A reader may **not** conclude that two records sharing one belong to the
+> same turn, that a recording contains as many turns as it has distinct values, or that any span
+> between changes is a unit of work.
+
+What has changed is the reason it holds. After pass 2 the counterexample was first contact's
+apparent in-turn value change; that counterexample is now itself in question, and the honest
+position is that the second sentence rests on an ambiguity rather than on a clean contradiction.
+
+It should not be weakened on that account. An identifier whose behaviour at `session_ended`
+differs between two sessions that ended identically is not one to segment by, and the ambiguity
+argues for caution rather than against it. But the footing has moved and a future reader should
+know which stone it is standing on.
+
+**Resolving this is cheap and nobody has done it.** It needs the operator's submission count
+written down beside the recording, at the time, as a deliberate separate act — because the
+recording provably cannot supply it. Every future pass should do this, and it should be a numbered
+step rather than an instruction in prose, since two passes have now demonstrated that the
+unscripted parts are the ones that get missed.

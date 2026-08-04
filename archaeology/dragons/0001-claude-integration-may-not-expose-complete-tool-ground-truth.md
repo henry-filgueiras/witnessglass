@@ -382,3 +382,95 @@ an absence, which is the condition decision:5 flagged as most likely to break by
 
 Capturing it is a schema change and belongs in its own decision, not in a follow-up. Recorded here
 as an argument for one.
+
+## Pass 3: denial fires nothing, parentage is genuinely absent, and timing lands
+
+Appended 2026-08-04 from the session recorded to `docs/hostile-recording-pass-3.md`, with the
+probe attached to five hooks including both subagent hooks for the first time.
+**Scope: Claude Code 2.1.221, macOS arm64, one session, 39 records, 16 raw payloads.**
+
+Note the version. Pass 2 ran on 2.1.220 and Claude updated between the two, so every pass-2 to
+pass-3 comparison here is cross-version, and nothing below should be read as a change caused by
+the update unless it says so.
+
+### An interactive denial fires no hook at all
+
+The operator was prompted for `rm -rf /tmp/wg-probe/scratch` and refused it. The result:
+
+- **no `PermissionDenied` payload**, on a probe that was armed for it and shares no code with the
+  adapter;
+- **no record of any kind** in the recording after the request;
+- a `PreToolUse` at sequence 37 and its `reported_intent` at 38, then `SessionEnd` at 39.
+
+The arithmetic states it exactly: **14 `tool_requested`, 11 `tool_succeeded`, 2 `tool_failed` —
+one request with no terminal record.** Nothing in the recording says why. From inside the file, a
+denied call is indistinguishable from one that was interrupted, one that crashed the harness, and
+one that is still running.
+
+This answers the question decision:4 recorded as unmeasured, and answers it negatively:
+**`PermissionDenied` does not fire for an interactive refusal.** It is presumably confined to the
+auto-mode classifier path it documents, which no session here has exercised. The adapter's
+`tool_denied` event and the viewer's denial rendering have therefore never been reachable by the
+route a human would take, and the recording of one is a dangling request.
+
+Both halves matter and they are separate:
+
+- The **event** is unobservable. That is the integration's boundary, now measured rather than
+  assumed, and measured upstream of the adapter so it is not our defect.
+- The **absence** is unrenderable. A recording cannot distinguish a denial from an abandonment,
+  and `permission_mode` — the field that would at least tell a reader that denials were possible —
+  is dropped. This strengthens the argument already in this dragon for recording it.
+
+### Denying ends the turn, which cost the interruption
+
+The protocol asked the operator to deny at step 3 and interrupt at step 4. Denying returned
+control to the human immediately; the agent did not proceed to step 4, and the session ended
+(`prompt_input_exit`) before any long-running command started. **Interruption is still
+unmeasured**, for the third time, and for a third distinct reason:
+
+1. pass 1 never provoked one;
+2. pass 2's `sleep 120` was refused by the harness before dispatch, invisibly;
+3. pass 3 never reached the command, because the denial in the same turn ended it.
+
+A denial and an interruption cannot be staged in one turn. Whatever runs next must put them in
+separate turns, and should put the interruption first, since it is the only question left.
+
+### Parentage: the unconfirmed finding is now confirmed
+
+`SubagentStart` on 2.1.221 carries exactly `agent_id`, `agent_type`, `cwd`, `hook_event_name`,
+`prompt_id`, `session_id`, `transcript_path`. **No `parent_agent_id` and no `parent_agent_type`,
+and zero occurrences of either across all 16 captured payloads.**
+
+The correction above downgraded this dragon's parentage finding from established to *unconfirmed*,
+because it had been read off adapter output, which cannot tell a withheld field from a dropped
+one. It is now established the other way: an independent observer, on the hooks where parentage
+would appear, saw none. The standing refusal to infer parentage (CLAUDE.md §6) rests on evidence.
+
+### Timing, in a live recording
+
+`duration_ms` is populated on all 13 completions — 430 ms on the first `Bash`, 3943 ms on the
+`Agent`, and 38 ms and 10 ms on the two deliberate failures. The first recording this project has
+ever written that carries per-call timing. Whether `PermissionDenied` carries one is still
+unknown and now looks unanswerable by this route, since the hook does not fire.
+
+### Four fields nobody had looked at, and a fifth that does not exist
+
+`SubagentStop` carries `agent_transcript_path`, `background_tasks`, `session_crons`, and
+`stop_hook_active` — none of which the adapter could name. The strict canary from task:12 refused
+both `SubagentStop` payloads on its first live session, which is the behaviour it was built for.
+Accounted for in `47c00d2`.
+
+It also removed two entries that had been added from the hooks reference rather than from a
+payload. `stop_reason` is documented on `SubagentStop` and **did not arrive**. That is the same
+class of error as `duration`, inside the list written to prevent it, three commits after writing
+it. The rule now stated in the code is that a field is listed only after being observed.
+
+### Smaller observations, offered as observations
+
+- `SessionEnd` fired for the first time in this project's history, with `reason:
+  "prompt_input_exit"`. This is the first recording that runs boundary to boundary *and* contains
+  failures.
+- `SubagentStop` fired twice against one `SubagentStart`: once for the real subagent, once at the
+  end of turn 1. Turn 2 ended by denial and produced no such record, so the pass-2 pattern of "one
+  per turn end" does not hold for a turn that ends abnormally. Still two sessions, still not a
+  rule, and still not a licence to infer turn boundaries.
