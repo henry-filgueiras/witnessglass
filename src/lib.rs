@@ -65,6 +65,10 @@
 pub mod append;
 pub mod claude;
 pub mod error;
+// A disposable sprint:4 research experiment, not product code. Nothing else in
+// this crate depends on it; deleting the module, `examples/behavioral-signal.rs`,
+// `tests/behavioral_signal.rs`, and its fixture removes it completely.
+pub mod experiment;
 pub mod inspection;
 pub mod record;
 pub mod replay;

@@ -1,0 +1,40 @@
+//! **Disposable research experiment.** sprint:4, task:14.
+//!
+//! Nothing in this module is product code, and nothing outside it — not the
+//! recorder, not the schema, not [`crate::replay`], not [`crate::inspection`],
+//! not [`crate::view`], not the CLI — depends on any of it. It exists to answer
+//! one question and to be deleted if the answer is no:
+//!
+//! > Can a validated WitnessGlass event stream be projected into a regular,
+//! > normalized multivariate behavioral signal that preserves enough observable
+//! > temporal structure for numerical algorithms to recover deliberately
+//! > injected motifs, regime changes, or multiscale behavior?
+//!
+//! It is reachable from `examples/behavioral-signal.rs` and from
+//! `tests/behavioral_signal.rs`, and from nowhere else. `witnessglass --help`
+//! does not mention it. Deleting this module, that example, that test, and
+//! `fixtures/synthetic-behavioral-oracle.ndjson` removes the experiment
+//! completely and leaves the crate exactly as sprint:3 left it.
+//!
+//! # What it is allowed to be
+//!
+//! [`signal`] is a projection in the sense `CLAUDE.md` §3 means, and it is held
+//! to the same conditions as [`crate::inspection`]: derived, disposable,
+//! rebuildable from raw, borrowing rather than owning, reading no file and
+//! consulting no clock. It consumes an already-validated [`crate::Inspection`]
+//! rather than raw NDJSON, because decision:6 puts the meaning of a recording in
+//! exactly one place and a second reader of the raw stream would be a second
+//! opinion about what a recording says.
+//!
+//! # What it is not allowed to be
+//!
+//! No detector. This round produces the numbers a Matrix Profile, a changepoint
+//! search, or a wavelet transform would be handed; it does not run one, and the
+//! arithmetic here goes no further than what validating the substrate needs.
+//!
+//! No semantic classification. See [`signal`]'s own header for the list of
+//! candidate dimensions that were considered and refused, and the specific
+//! evidence each one would have needed.
+
+pub mod oracle;
+pub mod signal;
