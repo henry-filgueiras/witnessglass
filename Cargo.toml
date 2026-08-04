@@ -16,6 +16,29 @@ serde_json = "1"
 # record meant to be read as evidence years later.
 jiff = { version = "0.2", features = ["serde"] }
 
+# Matrix Profile, for the disposable sprint:6 experiment and nothing else.
+#
+# Optional and off by default on purpose. The recorder, the schema, the
+# projection, and the viewer do not use it, and a default build of the product
+# must not pull a numerics stack — this crate brings rustfft and eight
+# transitive dependencies with it. `scripts/check.sh` already builds, lints, and
+# tests with `--all-features`, so the gate exercises it without CI drift and
+# without `cargo build` paying for it.
+#
+# `default-features = false` drops rayon: these series are a few thousand
+# samples, parallelism buys nothing, and a single-threaded reduction keeps the
+# floating point deterministic across runs.
+motif-rs = { version = "0.1.0", default-features = false, optional = true }
+
+[features]
+# The sprint:6 Matrix Profile experiment. Deleting the experiment means deleting
+# this feature, the dependency above, and `src/experiment/matrix_profile.rs`.
+experiment-matrix-profile = ["dep:motif-rs"]
+
 [dev-dependencies]
 # Tests write recordings to throwaway directories outside the repository.
 tempfile = "3"
+
+[[example]]
+name = "matrix-profile"
+required-features = ["experiment-matrix-profile"]
