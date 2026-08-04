@@ -526,3 +526,26 @@ search, no normalization policy change, no wavelet work. No change to the raw fo
 the recorder, `inspection`, the viewer, or the product CLI. No Python. No real recording committed
 or copied. Nothing pushed. sprint:5's result is unedited, including the recommendation this sprint
 declined to follow yet.
+
+### Addendum, 2026-08-04: two corrections to this Result
+
+Written after the Result above, which is left intact.
+
+**The append-then-close friction was cited against a gap that is closed.** §10 says appending a
+Result and an Outcome "is still `cat >>`" and files it under idea:1 and idea:4. The first half is
+accurate about what happened here — the `scarp` on this machine is 0.2.0, `scarp close` offers only
+`--resolved-by`, and both the task Result and the sprint Outcome were appended by hand. The second
+half is wrong: maintenance:1, committed at `575dec2` while this round was running, records that
+upstream Scarp shipped result-on-close, which is what idea:1 asked for. So the workaround here is a
+version lag rather than a missing design, and citing idea:1 as live friction repeated exactly the
+mistake maintenance:1 exists to prevent — reading a parked idea and believing the gap is still open.
+
+idea:5 is unaffected. Sealing a section so a prediction can be shown to predate its result is a
+different guarantee from writing a result at close time, and nothing that shipped provides it.
+
+**`363ac20` is broader than its message.** It is described as committing the preregistration, and it
+also carries `Cargo.toml`, `Cargo.lock`, and a one-line stub `examples/matrix-profile.rs`, swept in
+by `git add -A`. The preregistered material — the ladder, the predictions, the metric, the
+falsification criteria — is in that commit and did not change afterwards, so the claim the commit
+was made to support still holds. The message is narrower than the diff, and that is recorded here
+rather than corrected by rewriting the commit.
