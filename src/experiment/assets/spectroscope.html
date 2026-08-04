@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>WitnessGlass — Behavioral Spectroscope (experimental)</title>
+<link rel="stylesheet" href="/spectroscope.css?c={{CAPABILITY}}">
+</head>
+<body>
+<a class="skip" href="#stage">Skip to the instrument</a>
+
+<header class="masthead">
+  <div class="masthead-row">
+    <span class="wordmark">WitnessGlass</span>
+    <span class="instrument">Behavioral Spectroscope</span>
+    <span class="badge-experimental">experimental</span>
+    <a class="workbench-link" href="/?c={{CAPABILITY}}">the ordinary workbench &rarr;</a>
+  </div>
+
+  <details class="sensitive">
+    <summary>
+      <span class="sensitive-mark" aria-hidden="true">!</span>
+      <span><strong>Not redacted.</strong> Rendering is not redacting.</span>
+    </summary>
+    <p>
+      This recording holds whatever the session put into it — prompts, commands, absolute paths,
+      file contents, tool output, and any credential that passed through any of them. Nothing here
+      is filtered, masked, or omitted. This page being easier to read than the raw file does not
+      make it safer to share, screenshot, or paste, and there is no export, download, or share path
+      anywhere in this tool.
+    </p>
+  </details>
+
+  <dl class="provenance" id="provenance"></dl>
+
+  <div class="legend" aria-label="How to read the three kinds of claim on this page">
+    <span class="key key-planted"><span class="glyph" aria-hidden="true">&#9632;</span> planted</span>
+    <span class="key key-observed"><span class="glyph" aria-hidden="true">&#9650;</span> observed</span>
+    <span class="key key-interpretation"><span class="glyph" aria-hidden="true">&#9679;</span> interpretation</span>
+    <span class="key-note">
+      Planted is known because this project generated the fixture. Observed is computed. Interpretation
+      is a sentence somebody wrote. They are never merged.
+    </span>
+  </div>
+
+  <nav class="perspectives">
+    <div role="tablist" aria-label="Perspective">
+      <button type="button" role="tab" id="tab-overview" aria-controls="panel-overview"
+              aria-selected="true" tabindex="0" data-perspective="overview">Overview</button>
+      <button type="button" role="tab" id="tab-haar" aria-controls="panel-haar"
+              aria-selected="false" tabindex="-1" data-perspective="haar">Haar</button>
+      <button type="button" role="tab" id="tab-profile" aria-controls="panel-profile"
+              aria-selected="false" tabindex="-1" data-perspective="profile">Matrix Profile</button>
+      <button type="button" role="tab" id="tab-raw" aria-controls="panel-raw"
+              aria-selected="false" tabindex="-1" data-perspective="raw">Raw</button>
+    </div>
+  </nav>
+</header>
+
+<noscript>
+  <p class="failure">
+    This page needs JavaScript to draw. The derived document itself is served, unrendered, at
+    <code>/spectroscope.json</code> with the same capability this page was opened with.
+  </p>
+</noscript>
+
+<main id="stage" class="stage">
+  <p class="loading" id="loading">Loading the derived document&hellip;</p>
+
+  <section id="panel-overview" role="tabpanel" aria-labelledby="tab-overview" class="panel">
+    <div class="track-stack" id="overview-stack"></div>
+    <div class="narrative" id="narrative"></div>
+  </section>
+
+  <section id="panel-haar" role="tabpanel" aria-labelledby="tab-haar" class="panel" hidden>
+    <div class="controls">
+      <label class="control">
+        <span>Dimension</span>
+        <select id="haar-dimension"></select>
+      </label>
+      <label class="control control-check">
+        <input type="checkbox" id="haar-null">
+        <span>Fade scales the impulse null explains</span>
+      </label>
+    </div>
+    <p class="prose">
+      Haar compares neighbouring halves of progressively larger time windows. Strong detail means the
+      two halves differ. A repeating figure and a long block therefore leave different signatures
+      across scales — a figure&rsquo;s contrast collapses once a half-window reaches its period, while
+      a block&rsquo;s peaks at the scale straddling its edge. None of this is a frequency.
+    </p>
+    <div class="track-stack" id="haar-stack"></div>
+    <div class="null-panel" id="haar-null-panel"></div>
+  </section>
+
+  <section id="panel-profile" role="tabpanel" aria-labelledby="tab-profile" class="panel" hidden>
+    <div class="controls">
+      <label class="control">
+        <span>Dimension</span>
+        <select id="profile-dimension"></select>
+      </label>
+      <div class="control control-ladder">
+        <span id="ladder-label">Window</span>
+        <div class="ladder" role="group" aria-labelledby="ladder-label" id="profile-ladder"></div>
+      </div>
+    </div>
+    <p class="prose">
+      A Matrix Profile slides a window of fixed length and records, for each position, the distance to
+      its most similar non-overlapping neighbour. Low means &ldquo;something else here looks like
+      this&rdquo;. Distances are normalized per window, so they are blind to amplitude: the same shape
+      at a different intensity is a perfect match.
+    </p>
+    <div class="track-stack" id="profile-stack"></div>
+    <div class="findings" id="profile-findings"></div>
+    <div class="null-table" id="profile-null"></div>
+  </section>
+
+  <section id="panel-raw" role="tabpanel" aria-labelledby="tab-raw" class="panel" hidden>
+    <div class="controls">
+      <label class="control control-scrubber">
+        <span>Display aggregation</span>
+        <input type="range" id="scale-scrubber" min="0" max="0" step="1" value="0"
+               aria-describedby="scale-note">
+        <output id="scale-readout"></output>
+      </label>
+      <label class="control control-check">
+        <input type="checkbox" id="show-all-dimensions">
+        <span>Show dimensions with no activity</span>
+      </label>
+    </div>
+    <p class="prose" id="scale-note">
+      A display choice, not the recording. The canonical recording is a list of records with
+      timestamps; every raster on this page is one way of counting them into buckets. No transform
+      here derived an optimum width, and Haar in particular operates on whatever sampling it is
+      handed.
+    </p>
+    <div class="track-stack" id="raw-stack"></div>
+  </section>
+</main>
+
+<footer class="colophon">
+  <p>
+    Every number on this page was computed in Rust before this document was served. The browser draws
+    it and performs no transform of its own. Derived, disposable, and rebuildable from the raw
+    recording — deleting all of it loses nothing.
+  </p>
+</footer>
+
+<script src="/spectroscope.js?c={{CAPABILITY}}"></script>
+</body>
+</html>

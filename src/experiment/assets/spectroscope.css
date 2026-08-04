@@ -1,0 +1,560 @@
+/* The WitnessGlass Behavioral Spectroscope.
+   Bundled with the example binary. No external font, no remote asset, no network
+   access of any kind.
+
+   Same instrument as the workbench, pointed at a different question: hairline
+   rules, dense monospace evidence, one dominant surface, hierarchy carried by
+   spacing rather than by boxing everything equally. The palette is the
+   workbench's, deliberately, so the two pages read as one tool.
+
+   Colour is decoration here as it is there. The three kinds of claim this page
+   makes — planted, observed, interpretation — each carry a glyph and a word as
+   well as a hue, because a reader who cannot see the colour must still be able
+   to tell what was generated from what was measured. */
+
+:root {
+    color-scheme: dark light;
+
+    --paper: #0f1216;
+    --raised: #161b21;
+    --sunken: #0b0e11;
+    --ink: #e9edf1;
+    --quiet: #98a4b0;
+    --faint: #7b8794;
+    --rule: #262e37;
+    --rule-strong: #39434e;
+
+    --planted: #d8a72c;
+    --observed: #5fb0ea;
+    --interpretation: #a695f5;
+    --derived: #64d0ac;
+    --alarm: #f2896c;
+    --focus: #ffd479;
+
+    --motif: #64d0ac;
+    --regime: #a695f5;
+    --recurrence: #5fb0ea;
+    --baseline: #4d5967;
+
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+    --gutter: 1.5rem;
+    --label-width: 13rem;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --paper: #fbfcfd;
+        --raised: #f2f4f7;
+        --sunken: #ffffff;
+        --ink: #10151a;
+        --quiet: #4a545f;
+        --faint: #616b76;
+        --rule: #dde2e8;
+        --rule-strong: #b9c2cb;
+
+        --planted: #79550a;
+        --observed: #0f527f;
+        --interpretation: #4a37a6;
+        --derived: #06674f;
+        --alarm: #9a3210;
+        --focus: #8a4f00;
+
+        --motif: #06674f;
+        --regime: #4a37a6;
+        --recurrence: #0f527f;
+        --baseline: #97a2ae;
+    }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.55;
+}
+
+.skip {
+    position: absolute;
+    left: -9999px;
+}
+.skip:focus {
+    left: var(--gutter);
+    top: 0.5rem;
+    z-index: 20;
+    padding: 0.4rem 0.7rem;
+    background: var(--raised);
+    border: 1px solid var(--rule-strong);
+}
+
+/* ---- masthead ---------------------------------------------------------- */
+
+.masthead {
+    padding: 1.1rem var(--gutter) 0;
+    border-bottom: 1px solid var(--rule);
+    background: var(--sunken);
+}
+
+.masthead-row {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.wordmark {
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.instrument {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    color: var(--ink);
+}
+
+.badge-experimental {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    padding: 0.1rem 0.45rem;
+    border: 1px solid var(--alarm);
+    color: var(--alarm);
+}
+
+.workbench-link {
+    margin-left: auto;
+    font-size: 0.82rem;
+    color: var(--quiet);
+}
+.workbench-link:hover { color: var(--ink); }
+
+.sensitive {
+    margin-top: 0.6rem;
+    font-size: 0.82rem;
+    color: var(--quiet);
+}
+.sensitive summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+.sensitive summary::-webkit-details-marker { display: none; }
+.sensitive-mark {
+    font-family: var(--mono);
+    color: var(--alarm);
+    border: 1px solid var(--alarm);
+    padding: 0 0.32rem;
+    font-size: 0.72rem;
+}
+.sensitive p {
+    margin: 0.5rem 0 0 1.6rem;
+    max-width: 62ch;
+}
+
+.provenance {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1.6rem;
+    margin: 0.85rem 0 0;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+}
+.provenance div { display: flex; gap: 0.4rem; align-items: baseline; }
+.provenance dt { color: var(--faint); }
+.provenance dd { margin: 0; color: var(--ink); }
+.provenance dd.warn { color: var(--alarm); }
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 1rem;
+    margin-top: 0.8rem;
+    font-size: 0.76rem;
+}
+.key {
+    font-family: var(--mono);
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.35rem;
+}
+.key .glyph { font-size: 0.62rem; }
+.key-planted { color: var(--planted); }
+.key-observed { color: var(--observed); }
+.key-interpretation { color: var(--interpretation); }
+.key-note { color: var(--faint); max-width: 70ch; }
+
+.perspectives { margin-top: 0.9rem; }
+.perspectives [role="tablist"] { display: flex; gap: 0.15rem; }
+.perspectives button {
+    appearance: none;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--quiet);
+    font: inherit;
+    font-size: 0.86rem;
+    padding: 0.45rem 0.8rem;
+    cursor: pointer;
+}
+.perspectives button:hover { color: var(--ink); }
+.perspectives button[aria-selected="true"] {
+    color: var(--ink);
+    border-bottom-color: var(--observed);
+}
+
+/* ---- stage ------------------------------------------------------------- */
+
+.stage { padding: 1.4rem var(--gutter) 3rem; }
+.panel[hidden] { display: none; }
+.loading { color: var(--faint); font-family: var(--mono); font-size: 0.8rem; }
+.failure { padding: 1rem var(--gutter); color: var(--alarm); }
+
+.prose {
+    max-width: 76ch;
+    margin: 0 0 1.1rem;
+    color: var(--quiet);
+    font-size: 0.86rem;
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.4rem;
+    align-items: flex-end;
+    margin-bottom: 1rem;
+}
+.control {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: 0.76rem;
+    color: var(--faint);
+    font-family: var(--mono);
+}
+.control-check {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--quiet);
+}
+.control select {
+    background: var(--raised);
+    color: var(--ink);
+    border: 1px solid var(--rule-strong);
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 0.8rem;
+    padding: 0.25rem 0.4rem;
+    min-width: 18rem;
+}
+.control-scrubber { min-width: 22rem; }
+.control-scrubber input { width: 100%; accent-color: var(--observed); }
+.control-scrubber output { color: var(--ink); font-size: 0.8rem; }
+
+.ladder { display: flex; gap: 0.15rem; }
+.ladder button {
+    appearance: none;
+    background: var(--raised);
+    border: 1px solid var(--rule);
+    color: var(--quiet);
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    padding: 0.28rem 0.6rem;
+    cursor: pointer;
+}
+.ladder button:hover { color: var(--ink); }
+.ladder button[aria-pressed="true"] {
+    color: var(--paper);
+    background: var(--observed);
+    border-color: var(--observed);
+}
+
+/* ---- tracks ------------------------------------------------------------ */
+
+.track-stack { position: relative; }
+
+.track {
+    display: grid;
+    grid-template-columns: var(--label-width) 1fr;
+    align-items: stretch;
+    border-top: 1px solid var(--rule);
+}
+.track:last-child { border-bottom: 1px solid var(--rule); }
+.track-body svg { flex: 1 1 auto; }
+
+.track-label {
+    padding: 0.2rem 0.8rem 0.2rem 0;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    line-height: 1.3;
+    color: var(--faint);
+    border-right: 1px solid var(--rule);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    overflow: hidden;
+}
+.track-label .name {
+    color: var(--quiet);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.track-label .meta {
+    color: var(--faint);
+    font-size: 0.62rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.track-label .class {
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+.class-planted { color: var(--planted); }
+.class-observed { color: var(--observed); }
+.class-interpretation { color: var(--interpretation); }
+
+.track-body { position: relative; min-width: 0; padding: 0.15rem 0; display: flex; align-items: center; }
+.track-body svg { display: block; width: 100%; height: 100%; }
+
+.axis {
+    display: grid;
+    grid-template-columns: var(--label-width) 1fr;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--faint);
+}
+.axis .axis-body { position: relative; height: 1.15rem; }
+.axis .tick { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.axis .tick-first { transform: none; }
+.axis .tick-last { transform: translateX(-100%); }
+
+.section-rule {
+    display: grid;
+    grid-template-columns: var(--label-width) 1fr;
+    gap: 0 0.8rem;
+    align-items: baseline;
+    padding: 0.9rem 0 0.25rem;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+.section-title { color: var(--ink); text-align: right; padding-right: 0.8rem; }
+.section-note {
+    color: var(--faint);
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 0.68rem;
+}
+
+/* The cursor is one absolutely positioned rule over the whole stack, so every
+   track shares it exactly rather than each drawing its own. */
+.cursor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--focus);
+    opacity: 0.85;
+    pointer-events: none;
+    display: none;
+}
+.cursor-readout {
+    position: absolute;
+    top: -1.2rem;
+    left: 0;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    color: var(--focus);
+    white-space: nowrap;
+}
+
+/* ---- narrative --------------------------------------------------------- */
+
+.region-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 1rem;
+    margin: 0.5rem 0 0 var(--label-width);
+    padding-left: 0.8rem;
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    color: var(--faint);
+}
+.region-key span { display: inline-flex; align-items: center; gap: 0.3rem; }
+.region-key i {
+    display: inline-block;
+    width: 0.7rem;
+    height: 0.55rem;
+    font-style: normal;
+}
+
+.narrative {
+    margin-top: 2rem;
+    display: grid;
+    gap: 1.1rem;
+    max-width: 84ch;
+}
+.step {
+    display: grid;
+    grid-template-columns: 1.4rem 1fr;
+    gap: 0.1rem 0.7rem;
+    padding-left: 0.1rem;
+    border-left: 2px solid var(--rule);
+    padding-left: 0.9rem;
+}
+.step-planted { border-left-color: var(--planted); }
+.step-observed { border-left-color: var(--observed); }
+.step-interpretation { border-left-color: var(--interpretation); }
+.step .step-glyph { font-size: 0.62rem; line-height: 1.9; }
+.step h3 {
+    margin: 0;
+    font-size: 0.94rem;
+    font-weight: 600;
+}
+.step .step-class {
+    grid-column: 2;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+}
+.step p { grid-column: 2; margin: 0.25rem 0 0; color: var(--quiet); font-size: 0.88rem; }
+
+/* ---- findings and tables ----------------------------------------------- */
+
+.findings { margin-top: 1.4rem; display: grid; gap: 0.5rem; }
+.finding {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+    border: 1px solid var(--rule);
+    border-left-width: 2px;
+    padding: 0.6rem 0.8rem;
+    background: var(--raised);
+}
+.finding-trivial { border-left-color: var(--alarm); }
+.finding-match { border-left-color: var(--derived); }
+.finding-discord { border-left-color: var(--planted); }
+.finding-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem 0.9rem;
+    align-items: baseline;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+}
+.finding-head .tag {
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    font-size: 0.62rem;
+    color: var(--faint);
+}
+.finding-head .spans { color: var(--ink); }
+.finding-head .metric { color: var(--quiet); }
+.finding p { margin: 0; font-size: 0.82rem; color: var(--quiet); max-width: 78ch; }
+.finding button {
+    justify-self: start;
+    appearance: none;
+    background: none;
+    border: 1px solid var(--rule-strong);
+    color: var(--quiet);
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    cursor: pointer;
+}
+.finding button:hover { color: var(--ink); border-color: var(--observed); }
+.finding button[aria-pressed="true"] { color: var(--paper); background: var(--observed); }
+
+.occupancy {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--quiet);
+    display: flex;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+}
+.occupancy strong { color: var(--alarm); font-weight: 600; }
+
+.null-table, .null-panel { margin-top: 1.4rem; }
+table.grid {
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.76rem;
+    width: 100%;
+    max-width: 60rem;
+}
+table.grid caption {
+    text-align: left;
+    color: var(--faint);
+    font-size: 0.72rem;
+    padding-bottom: 0.4rem;
+}
+table.grid th, table.grid td {
+    text-align: right;
+    padding: 0.28rem 0.7rem 0.28rem 0;
+    border-bottom: 1px solid var(--rule);
+    white-space: nowrap;
+}
+table.grid th { color: var(--faint); font-weight: 400; }
+table.grid td:first-child, table.grid th:first-child { text-align: left; }
+table.grid td.zero { color: var(--alarm); }
+table.grid td.bar-cell { width: 40%; }
+.bar {
+    display: block;
+    height: 0.5rem;
+    background: var(--observed);
+    min-width: 1px;
+}
+.bar-null { background: var(--faint); }
+
+.dimmed { opacity: 0.22; }
+
+.empty-note {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    color: var(--faint);
+    padding: 0.5rem 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .ladder button, .perspectives button, .finding button { transition: color 90ms linear; }
+}
+
+:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+.colophon {
+    border-top: 1px solid var(--rule);
+    padding: 1rem var(--gutter) 2rem;
+    color: var(--faint);
+    font-size: 0.78rem;
+}
+.colophon p { margin: 0; max-width: 84ch; }
+
+@media (max-width: 900px) {
+    :root { --label-width: 9rem; }
+    .control select { min-width: 12rem; }
+}

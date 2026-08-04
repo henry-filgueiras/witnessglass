@@ -44,3 +44,7 @@ pub mod haar;
 pub mod matrix_profile;
 pub mod oracle;
 pub mod signal;
+// sprint:7's Behavioral Spectroscope projection. Behind the same feature as the
+// Matrix Profile it renders, since it cannot be assembled without one.
+#[cfg(feature = "experiment-matrix-profile")]
+pub mod spectroscope;

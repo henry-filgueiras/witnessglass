@@ -169,6 +169,13 @@ pub struct WindowScan {
     /// The library's own top motif, unmasked and unmodified. Usually two
     /// constant subsequences at distance 0; that is the point of showing it.
     pub raw_top: Option<MotifPair>,
+    /// The distance curve after masking, one entry per candidate subsequence.
+    ///
+    /// `None` where the entry was masked — a constant subsequence, or one whose
+    /// nearest neighbour is constant. Kept because a page drawing this curve
+    /// must draw the exclusions as gaps rather than as zeroes, and because
+    /// recomputing the mask elsewhere would be a second definition of it.
+    pub masked_profile: Vec<Option<f64>>,
     /// Top motifs after constant subsequences and constant-partner entries are
     /// masked to infinity.
     pub masked_top: Vec<MotifPair>,
@@ -297,6 +304,12 @@ pub fn scan(column: &[f64], bucket_ms: u64, window_ms: u64, top_k: usize) -> Opt
         }
     }
 
+    let masked_profile = masked
+        .profile
+        .iter()
+        .map(|value| value.is_finite().then_some(*value))
+        .collect();
+
     let masked_top: Vec<MotifPair> = find_motifs(&masked, top_k)
         .into_iter()
         .map(|motif| {
@@ -352,6 +365,7 @@ pub fn scan(column: &[f64], bucket_ms: u64, window_ms: u64, top_k: usize) -> Opt
         exclusion_zone,
         max_distance,
         raw_top,
+        masked_profile,
         masked_top,
         discords,
         null_best_distance,

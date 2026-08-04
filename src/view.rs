@@ -216,6 +216,34 @@ impl Snapshot {
     }
 }
 
+/// One additional document a caller may attach to a viewer.
+///
+/// Exists for exactly one reason: sprint:7 renders a second perspective over the
+/// same immutable snapshot, and building it a second HTTP server would mean a
+/// second implementation of the capability check, the headers, the
+/// not-found equivalence, and the no-logging rule — with `tests/view.rs`
+/// covering only one of them. So the transport carries an extra document instead,
+/// and learns nothing about what is in it.
+///
+/// The route is `'static` because attachments come from compiled-in call sites,
+/// never from a request, a path, or a configuration value. Nothing here maps a
+/// request onto the filesystem, and adding an attachment does not change that.
+/// An attachment cannot shadow a built-in route: [`Viewer::bind_with`] refuses
+/// one that tries.
+#[derive(Debug, Clone)]
+pub struct Attachment {
+    /// Absolute request path, beginning with `/`.
+    pub route: &'static str,
+    /// Content type served with it.
+    pub content_type: &'static str,
+    /// The body. `{{CAPABILITY}}` in it is substituted at bind time, exactly as
+    /// it is in the built-in assets.
+    pub body: String,
+}
+
+/// Routes the viewer answers on its own. An attachment may not take one.
+const BUILT_IN_ROUTES: [&str; 4] = ["/", "/viewer.css", "/viewer.js", "/projection.json"];
+
 /// A bound loopback listener serving one snapshot behind one capability.
 ///
 /// Binding does not start serving. [`Viewer::serve_forever`] does, and it
@@ -229,6 +257,7 @@ pub struct Viewer {
     index: String,
     stylesheet: String,
     script: String,
+    attachments: Vec<Attachment>,
     in_flight: AtomicUsize,
 }
 
@@ -239,6 +268,35 @@ impl Viewer {
     /// variable, or flag anywhere in this crate that changes it. Remote binding
     /// is not a configuration this build can be talked into.
     pub fn bind(snapshot: Snapshot) -> Result<Viewer> {
+        Viewer::bind_with(snapshot, Vec::new())
+    }
+
+    /// Bind, and answer some additional compiled-in documents.
+    ///
+    /// Every property [`Viewer::bind`] has holds here unchanged: loopback only,
+    /// one per-launch capability, authorization decided before routing, the same
+    /// headers on every response, nothing logged, and no request path ever
+    /// reaching the filesystem. An attachment is answered *after* the capability
+    /// check like everything else, so attaching a document does not create a way
+    /// to read one without it.
+    ///
+    /// Refuses an attachment whose route collides with a built-in one or does not
+    /// begin with `/`, so a caller cannot replace the projection or the page by
+    /// accident.
+    pub fn bind_with(snapshot: Snapshot, attachments: Vec<Attachment>) -> Result<Viewer> {
+        for attachment in &attachments {
+            if !attachment.route.starts_with('/') || BUILT_IN_ROUTES.contains(&attachment.route) {
+                return Err(Error::Io(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!(
+                        "attachment route {:?} is not an absolute path outside the built-in \
+                         routes",
+                        attachment.route
+                    ),
+                )));
+            }
+        }
+
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let capability = Capability::generate()?;
 
@@ -257,6 +315,15 @@ impl Viewer {
         let index = VIEWER_HTML.replace(CAPABILITY_PLACEHOLDER, capability.as_str());
         let stylesheet = VIEWER_CSS.replace(CAPABILITY_PLACEHOLDER, capability.as_str());
         let script = VIEWER_JS.replace(CAPABILITY_PLACEHOLDER, capability.as_str());
+        let attachments = attachments
+            .into_iter()
+            .map(|attachment| Attachment {
+                body: attachment
+                    .body
+                    .replace(CAPABILITY_PLACEHOLDER, capability.as_str()),
+                ..attachment
+            })
+            .collect();
 
         Ok(Viewer {
             listener,
@@ -265,6 +332,7 @@ impl Viewer {
             index,
             stylesheet,
             script,
+            attachments,
             in_flight: AtomicUsize::new(0),
         })
     }
@@ -392,14 +460,36 @@ impl Viewer {
                 self.snapshot.projection.as_bytes(),
                 head_only,
             ),
-            _ => respond(
-                &mut stream,
-                Status::NotFound,
-                Some(TEXT),
-                NOT_FOUND,
-                head_only,
-            ),
+            path => match self
+                .attachments
+                .iter()
+                .find(|attachment| attachment.route == path)
+            {
+                Some(attachment) => respond(
+                    &mut stream,
+                    Status::Ok,
+                    Some(attachment.content_type),
+                    attachment.body.as_bytes(),
+                    head_only,
+                ),
+                None => respond(
+                    &mut stream,
+                    Status::NotFound,
+                    Some(TEXT),
+                    NOT_FOUND,
+                    head_only,
+                ),
+            },
         }
+    }
+
+    /// The routes this viewer answers, built-in and attached, for a caller that
+    /// wants to print them.
+    pub fn attachment_routes(&self) -> Vec<&'static str> {
+        self.attachments
+            .iter()
+            .map(|attachment| attachment.route)
+            .collect()
     }
 }
 
