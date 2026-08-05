@@ -25,8 +25,9 @@
 //! names in the same order at similar spacings, and nothing here says more.
 
 use witnessglass::experiment::event_sequence::{
-    ChannelScope, MarkedEvent, align, disjoint, ladder, neighbours, order_null, perturbation,
-    project, timing_null, timing_term, top_pairs, top_pairs_where,
+    ChannelScope, MarkedEvent, align, cross_pairs, dedupe_overlapping, disjoint, ladder,
+    neighbours, order_null, perturbation, project, timing_null, timing_term, top_pairs,
+    top_pairs_where,
 };
 use witnessglass::experiment::oracle;
 use witnessglass::inspection::{EventKind, V2Kind, inspect};
@@ -757,4 +758,264 @@ fn the_degenerate_masked_global_minimum_is_the_planted_figure_without_any_query_
         assert_eq!(best.a.distinct_marks, k, "one mark per event in the figure");
         assert_eq!(best.b.distinct_marks, k);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-recording comparison — sprint:9, task:19
+// ---------------------------------------------------------------------------
+
+mod common;
+
+/// A synthetic two-call recording under a chosen session id, with the gaps a
+/// caller asks for. Obviously fabricated: every name contains `synthetic`.
+fn cross_fixture(session: &str, tools: &[&str], step_ms: u64) -> String {
+    let mut records = Vec::new();
+    let mut at = 0u64;
+    for (index, tool) in tools.iter().enumerate() {
+        let id = format!("toolu_synthetic_cross_{index:04}");
+        let stamp = |ms: u64| {
+            let seconds = ms / 1000;
+            let millis = ms % 1000;
+            format!("2026-05-01T00:00:{seconds:02}.{millis:03}Z")
+        };
+        records.push(common::raw_record(
+            records.len() as u64 + 1,
+            &stamp(at),
+            session,
+            common::ev_tool_requested(&id, tool),
+        ));
+        at += step_ms;
+        records.push(common::raw_record(
+            records.len() as u64 + 1,
+            &stamp(at),
+            session,
+            common::ev_tool_succeeded(&id, tool, None),
+        ));
+        at += step_ms;
+    }
+    common::ndjson(&records)
+}
+
+const CROSS_A: &str = "sess-synthetic-cross-alpha";
+const CROSS_B: &str = "sess-synthetic-cross-beta";
+
+#[test]
+fn identical_sequences_in_two_independent_recordings_rank_at_zero_with_correct_provenance() {
+    let tools = ["SyntheticReader", "SyntheticSearcher", "SyntheticEditor"];
+    let left = cross_fixture(CROSS_A, &tools, 500);
+    let right = cross_fixture(CROSS_B, &tools, 500);
+
+    let (a_replay, b_replay) = (
+        replay_bytes(left.as_bytes()).expect("replay"),
+        replay_bytes(right.as_bytes()).expect("replay"),
+    );
+    let (a_inspection, b_inspection) = (inspect(&a_replay), inspect(&b_replay));
+    let a = project(&a_inspection, ChannelScope::Observed).expect("a sequence");
+    let b = project(&b_inspection, ChannelScope::Observed).expect("a sequence");
+
+    let ranked = cross_pairs(&a, &b, 6, 10).expect("two different sessions");
+    let best = ranked.first().expect("a best pair");
+    assert!(best.comparison.alignment.total.abs() < EPSILON, "{best:?}");
+
+    // Provenance travels on the value, and each side names its own recording.
+    assert_eq!(best.a_session, Some(CROSS_A));
+    assert_eq!(best.b_session, Some(CROSS_B));
+    // And the windows are the ones the sessions say they are.
+    assert!(a.window(best.comparison.a.start, 6).is_some());
+    assert!(b.window(best.comparison.b.start, 6).is_some());
+}
+
+#[test]
+fn an_unrelated_second_recording_ranks_worse_than_an_identical_one() {
+    let tools = ["SyntheticReader", "SyntheticSearcher", "SyntheticEditor"];
+    let other = ["SyntheticShell", "SyntheticShell", "SyntheticShell"];
+    let left = cross_fixture(CROSS_A, &tools, 500);
+    let same = cross_fixture(CROSS_B, &tools, 500);
+    let different = cross_fixture(CROSS_B, &other, 4_000);
+
+    let left_replay = replay_bytes(left.as_bytes()).expect("replay");
+    let same_replay = replay_bytes(same.as_bytes()).expect("replay");
+    let diff_replay = replay_bytes(different.as_bytes()).expect("replay");
+    let (a_i, same_i, diff_i) = (
+        inspect(&left_replay),
+        inspect(&same_replay),
+        inspect(&diff_replay),
+    );
+    let a = project(&a_i, ChannelScope::Observed).expect("a sequence");
+    let same = project(&same_i, ChannelScope::Observed).expect("a sequence");
+    let different = project(&diff_i, ChannelScope::Observed).expect("a sequence");
+
+    let close = cross_pairs(&a, &same, 6, 1).expect("pairs")[0]
+        .comparison
+        .alignment
+        .total;
+    let far = cross_pairs(&a, &different, 6, 1).expect("pairs")[0]
+        .comparison
+        .alignment
+        .total;
+    assert!(close < far, "identical {close} should beat unrelated {far}");
+    assert!(
+        far > 0.3,
+        "an unrelated recording should be clearly worse: {far}"
+    );
+}
+
+#[test]
+fn the_primary_api_refuses_to_compare_a_recording_with_itself() {
+    // "Do independently recorded sessions contain similar figures" is not a
+    // question about one recording, and the API says so rather than quietly
+    // ranking a recording against its own windows.
+    let tools = ["SyntheticReader", "SyntheticSearcher"];
+    let text = cross_fixture(CROSS_A, &tools, 500);
+    let replay = replay_bytes(text.as_bytes()).expect("replay");
+    let inspection = inspect(&replay);
+    let sequence = project(&inspection, ChannelScope::Observed).expect("a sequence");
+
+    assert!(cross_pairs(&sequence, &sequence, 3, 5).is_none());
+
+    // And no cross pair ever puts two windows of one recording together, which
+    // is true by construction and asserted so a future edit cannot break it.
+    let other = cross_fixture(CROSS_B, &tools, 500);
+    let other_replay = replay_bytes(other.as_bytes()).expect("replay");
+    let other_inspection = inspect(&other_replay);
+    let second = project(&other_inspection, ChannelScope::Observed).expect("a sequence");
+    for pair in cross_pairs(&sequence, &second, 3, 20).expect("pairs") {
+        assert_ne!(pair.a_session, pair.b_session);
+    }
+}
+
+#[test]
+fn cross_recording_ranking_and_its_nulls_are_deterministic() {
+    let left = cross_fixture(CROSS_A, &["SyntheticReader", "SyntheticSearcher"], 400);
+    let right = cross_fixture(CROSS_B, &["SyntheticReader", "SyntheticShell"], 900);
+    let left_replay = replay_bytes(left.as_bytes()).expect("replay");
+    let right_replay = replay_bytes(right.as_bytes()).expect("replay");
+    let (a_i, b_i) = (inspect(&left_replay), inspect(&right_replay));
+    let a = project(&a_i, ChannelScope::Observed).expect("a sequence");
+    let b = project(&b_i, ChannelScope::Observed).expect("a sequence");
+
+    assert_eq!(cross_pairs(&a, &b, 3, 8), cross_pairs(&a, &b, 3, 8));
+    assert_eq!(
+        cross_pairs(&order_null(&a), &order_null(&b), 3, 8),
+        cross_pairs(&order_null(&a), &order_null(&b), 3, 8)
+    );
+    assert_eq!(
+        cross_pairs(&timing_null(&a), &timing_null(&b), 3, 8),
+        cross_pairs(&timing_null(&a), &timing_null(&b), 3, 8)
+    );
+}
+
+#[test]
+fn de_duplication_removes_overlap_without_touching_any_distance() {
+    // task:19 §4. The policy is about which candidates are reported, and it must
+    // not become a policy about what anything scores.
+    let replay = replay_bytes(oracle::ndjson().as_bytes()).expect("replay");
+    let sparse = replay_bytes(oracle::sparse::ndjson().as_bytes()).expect("replay");
+    let (a_i, b_i) = (inspect(&replay), inspect(&sparse));
+    let a = project(&a_i, ChannelScope::Observed).expect("a sequence");
+    let b = project(&b_i, ChannelScope::Observed).expect("a sequence");
+
+    let ranked = cross_pairs(&a, &b, 4, usize::MAX).expect("two different sessions");
+    let kept = dedupe_overlapping(&ranked, 5);
+    assert!(kept.len() <= 5);
+    assert_eq!(
+        kept.first().map(|pair| pair.comparison),
+        ranked.first().map(|pair| pair.comparison),
+        "the best candidate is always kept"
+    );
+
+    // Every kept candidate is a candidate that was ranked, with its distance
+    // unchanged, and no two kept candidates overlap on either side.
+    for candidate in &kept {
+        assert!(
+            ranked.iter().any(|pair| pair == candidate),
+            "de-duplication invented a candidate: {candidate:?}"
+        );
+    }
+    for (index, left) in kept.iter().enumerate() {
+        for right in kept.iter().skip(index + 1) {
+            assert!(
+                left.comparison.a.start.abs_diff(right.comparison.a.start) >= 4,
+                "two kept candidates overlap on the A side"
+            );
+            assert!(
+                left.comparison.b.start.abs_diff(right.comparison.b.start) >= 4,
+                "two kept candidates overlap on the B side"
+            );
+        }
+    }
+    // Ranking order survives de-duplication.
+    for window in kept.windows(2) {
+        assert!(window[0].comparison.alignment.total <= window[1].comparison.alignment.total);
+    }
+}
+
+#[test]
+fn a_distinct_mark_stratum_selects_from_the_ranking_without_changing_it() {
+    // The strata are diagnostic slices. Filtering by distinct marks must pick a
+    // pair out of the ranking exactly as computed — never rescore one.
+    let replay = replay_bytes(oracle::ndjson().as_bytes()).expect("replay");
+    let sparse = replay_bytes(oracle::sparse::ndjson().as_bytes()).expect("replay");
+    let (a_i, b_i) = (inspect(&replay), inspect(&sparse));
+    let a = project(&a_i, ChannelScope::Observed).expect("a sequence");
+    let b = project(&b_i, ChannelScope::Observed).expect("a sequence");
+    let ranked = cross_pairs(&a, &b, 4, usize::MAX).expect("pairs");
+
+    for floor in [2usize, 3, 4] {
+        let Some(picked) = ranked.iter().find(|pair| {
+            pair.comparison
+                .a
+                .distinct_marks
+                .min(pair.comparison.b.distinct_marks)
+                >= floor
+        }) else {
+            continue;
+        };
+        // It is a member of the ranking, byte for byte.
+        assert!(ranked.iter().any(|pair| pair == picked));
+        // And recomputing its alignment from the windows gives the same numbers,
+        // so nothing was rescored on the way through the filter.
+        let recomputed = align(
+            a.window(picked.comparison.a.start, 4).expect("a window"),
+            b.window(picked.comparison.b.start, 4).expect("a window"),
+        );
+        assert_eq!(recomputed, picked.comparison.alignment);
+        assert!(picked.comparison.alignment.total >= ranked[0].comparison.alignment.total);
+    }
+}
+
+#[test]
+fn serialized_cross_pairs_carry_the_numbers_that_were_computed() {
+    // The example prints and can emit JSON; this asserts the serialized form is
+    // the computed form rather than a second opinion about it.
+    let left = cross_fixture(CROSS_A, &["SyntheticReader", "SyntheticSearcher"], 700);
+    let right = cross_fixture(CROSS_B, &["SyntheticReader", "SyntheticEditor"], 1_500);
+    let left_replay = replay_bytes(left.as_bytes()).expect("replay");
+    let right_replay = replay_bytes(right.as_bytes()).expect("replay");
+    let (a_i, b_i) = (inspect(&left_replay), inspect(&right_replay));
+    let a = project(&a_i, ChannelScope::Observed).expect("a sequence");
+    let b = project(&b_i, ChannelScope::Observed).expect("a sequence");
+    let pair = cross_pairs(&a, &b, 4, 1).expect("pairs").remove(0);
+
+    let json: serde_json::Value =
+        serde_json::from_str(&serde_json::to_string(&pair).expect("serialize")).expect("parse");
+    assert_eq!(json["a_session"], CROSS_A);
+    assert_eq!(json["b_session"], CROSS_B);
+    let alignment = &json["comparison"]["alignment"];
+    assert_eq!(
+        alignment["total"].as_f64().expect("a number"),
+        pair.comparison.alignment.total
+    );
+    assert_eq!(
+        alignment["event_norm"].as_f64().expect("a number"),
+        pair.comparison.alignment.event_norm
+    );
+    assert_eq!(
+        alignment["timing_norm"].as_f64().expect("a number"),
+        pair.comparison.alignment.timing_norm
+    );
+    assert_eq!(
+        json["comparison"]["a"]["start"].as_u64().expect("a number"),
+        pair.comparison.a.start as u64
+    );
 }

@@ -22,8 +22,8 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use witnessglass::experiment::event_sequence::{
-    ChannelScope, Comparison, EventSequence, ladder, neighbours, order_null, perturbation, project,
-    timing_null, top_pairs, top_pairs_where,
+    ChannelScope, Comparison, CrossPair, EventSequence, cross_pairs, dedupe_overlapping, ladder,
+    neighbours, order_null, perturbation, project, timing_null, top_pairs, top_pairs_where,
 };
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
@@ -57,6 +57,13 @@ USAGE:
     --perturbation       Print the controlled perturbation sweep and exit. Needs
                          no recording: the base figure is hand-built from the
                          legible oracle's own generator constants.
+    --against <PATH>     Cross-recording mode, sprint:9. Ranks only
+                         (A-window, B-window) pairs between two different
+                         recordings; same-recording pairs are a different
+                         question and are not ranked here. Needs explicit --k.
+    --blind              Cross-recording mode only: print the candidate packet
+                         with distances withheld, so a classification can be
+                         recorded before they are seen.
 
 WHAT A WINDOW IS HERE:
     A fixed number of *events*, not a fixed wall-clock width. A window of k
@@ -111,6 +118,8 @@ struct Options {
     detail: bool,
     json: bool,
     perturbation: bool,
+    against: Option<PathBuf>,
+    blind: bool,
 }
 
 fn run() -> Result<ExitCode, String> {
@@ -137,6 +146,10 @@ fn run() -> Result<ExitCode, String> {
         eprintln!("no records in the examined scope, so there is no origin and no sequence.");
         return Ok(ExitCode::from(2));
     };
+
+    if let Some(other) = options.against.clone() {
+        return cross_recording(&path, &sequence, &other, &options);
+    }
 
     let lengths = if !options.lengths.is_empty() {
         options.lengths.clone()
@@ -289,6 +302,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut detail = false;
     let mut json = false;
     let mut perturbation = false;
+    let mut against = None;
+    let mut blind = false;
 
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -315,6 +330,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--detail" => detail = true,
             "--json" => json = true,
             "--perturbation" => perturbation = true,
+            "--against" => against = Some(PathBuf::from(value("--against")?)),
+            "--blind" => blind = true,
             other => return Err(format!("unexpected argument {other:?}\n\n{USAGE}")),
         }
     }
@@ -332,6 +349,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
         detail,
         json,
         perturbation,
+        against,
+        blind,
     })
 }
 
@@ -573,5 +592,296 @@ fn print_perturbation() {
             alignment.deletions,
             alignment.timed_pairs,
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-recording mode — sprint:9, task:19
+// ---------------------------------------------------------------------------
+
+/// Distinct-mark strata, reported beside the unrestricted ranking.
+///
+/// **Diagnostic slices, not definitions of motifhood.** task:18 was explicit
+/// that its degenerate-window diagnostic fits those fixtures rather than stating
+/// a principle, and task:19 §6 forbids reading a verdict off whichever slice
+/// looks best. They are here so a reader can see whether the top of the
+/// unrestricted ranking is one mark repeating.
+const STRATA: [usize; 3] = [2, 3, 4];
+
+/// Candidates inspected per rung, fixed by task:19 §8.
+const INSPECTED: usize = 3;
+
+/// Everything one rung of the cross-recording ladder produced.
+struct Rung<'a> {
+    k: usize,
+    /// Every cross pair, ranked. Unrestricted: task:19 §6's view A.
+    ranked: Vec<CrossPair<'a>>,
+    /// The same ranking after §4's de-duplication.
+    kept: Vec<CrossPair<'a>>,
+    /// Best cross pair with both sides order-nulled.
+    null_order: Option<f64>,
+    /// Best cross pair with both sides timing-nulled.
+    null_timing: Option<f64>,
+}
+
+fn cross_recording(
+    a_path: &std::path::Path,
+    a: &EventSequence<'_>,
+    b_path: &std::path::Path,
+    options: &Options,
+) -> Result<ExitCode, String> {
+    let replay = replay_file(b_path)
+        .map_err(|err| format!("could not replay {}: {err}", b_path.display()))?;
+    let inspection = inspect(&replay);
+    let Some(b) = project(&inspection, options.scope) else {
+        eprintln!("no records in the examined scope of the second recording.");
+        return Ok(ExitCode::from(2));
+    };
+
+    if options.lengths.is_empty() {
+        return Err(
+            "cross-recording mode needs the preregistered ladder: --k 3 --k 4 ...".to_owned(),
+        );
+    }
+
+    // Nulled copies of both sides, computed once. task:19 §5 nulls both,
+    // because the coherent control for "do two recordings share a figure" is
+    // "neither recording's ordering carries information".
+    let (a_order, b_order) = (order_null(a), order_null(&b));
+    let (a_timing, b_timing) = (timing_null(a), timing_null(&b));
+
+    println!("event-motif — cross-recording reality check; sprint:9, task:19");
+    println!("the metric is task:18's, unchanged. Nothing here is tuned against these recordings.");
+    println!("output derived from a real recording is exactly as sensitive as that recording;");
+    println!("nothing here redacts anything.");
+    println!();
+    describe("A", a_path, a);
+    describe("B", b_path, &b);
+    println!();
+    frequencies("A", a);
+    frequencies("B", &b);
+    println!();
+
+    let mut rungs: Vec<Rung<'_>> = Vec::new();
+    for &k in &options.lengths {
+        let ranked = cross_pairs(a, &b, k, usize::MAX).ok_or_else(|| {
+            "both recordings carry the same session id; that is not a cross-recording question"
+                .to_owned()
+        })?;
+        let kept = dedupe_overlapping(&ranked, INSPECTED.max(options.top_k));
+        let null_of = |left: &EventSequence<'_>, right: &EventSequence<'_>| {
+            cross_pairs(left, right, k, 1)
+                .and_then(|pairs| pairs.first().map(|pair| pair.comparison.alignment.total))
+        };
+        rungs.push(Rung {
+            k,
+            ranked,
+            kept,
+            null_order: null_of(&a_order, &b_order),
+            null_timing: null_of(&a_timing, &b_timing),
+        });
+    }
+
+    if options.blind {
+        print_blind(a, &b, &rungs);
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    print_cross_table(a, &b, &rungs);
+    for rung in &rungs {
+        let k = rung.k;
+        println!("  -- k = {k}, top {INSPECTED} de-duplicated candidates --");
+        for (rank, pair) in rung.kept.iter().take(INSPECTED).enumerate() {
+            print_candidate(a, &b, k, rank, pair, true);
+        }
+        println!("     (unrestricted rank 1 before de-duplication:)");
+        if let Some(first) = rung.ranked.first() {
+            print_candidate(a, &b, k, 0, first, true);
+        }
+        println!();
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Aggregate characterization. No path content, no payload, no prompt.
+fn describe(name: &str, path: &std::path::Path, sequence: &EventSequence<'_>) {
+    let span = sequence
+        .events
+        .last()
+        .map(|last| last.offset_ms)
+        .unwrap_or(0);
+    println!(
+        "{name}: {} — session {}, {} retained {} events, {} filtered by channel, span {:.1} s",
+        path.display(),
+        sequence.session_id.unwrap_or("<none>"),
+        sequence.len(),
+        sequence.channels.label(),
+        sequence.filtered_out,
+        span as f64 / 1000.0,
+    );
+}
+
+/// Marginal mark frequencies, so task:19 §7's hypothesis can be judged: are the
+/// strongest matches produced by common vocabulary alone?
+fn frequencies(name: &str, sequence: &EventSequence<'_>) {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for event in &sequence.events {
+        let label = event.mark.label();
+        match counts.iter_mut().find(|(seen, _)| *seen == label) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((label, 1)),
+        }
+    }
+    counts.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+    let total = sequence.len().max(1);
+    println!("{name} marginal marks ({} distinct):", counts.len());
+    for (label, count) in &counts {
+        println!(
+            "    {:>4}  {:>5.1}%  {}",
+            count,
+            100.0 * *count as f64 / total as f64,
+            label
+        );
+    }
+}
+
+fn smaller_distinct(pair: &CrossPair<'_>) -> usize {
+    pair.comparison
+        .a
+        .distinct_marks
+        .min(pair.comparison.b.distinct_marks)
+}
+
+fn print_cross_table(a: &EventSequence<'_>, b: &EventSequence<'_>, rungs: &[Rung<'_>]) {
+    println!(
+        "  view A unrestricted, and view B stratified by distinct marks in the smaller window:"
+    );
+    println!(
+        "  {:>3} {:>6} {:>6} {:>7} {:>8} {:>8} {:>8} {:>8} {:>9} {:>9} {:>8} {:>8}",
+        "k",
+        "A win",
+        "B win",
+        "pairs",
+        "best",
+        ">=2",
+        ">=3",
+        ">=4",
+        "null-ord",
+        "null-tim",
+        "sep-ord",
+        "sep-tim"
+    );
+    for rung in rungs {
+        let (k, ranked) = (&rung.k, &rung.ranked);
+        let (null_order, null_timing) = (&rung.null_order, &rung.null_timing);
+        let best = ranked.first().map(|p| p.comparison.alignment.total);
+        let stratum = |floor: usize| {
+            ranked
+                .iter()
+                .find(|pair| smaller_distinct(pair) >= floor)
+                .map(|pair| pair.comparison.alignment.total)
+        };
+        let separation = |null: Option<f64>| match (null, best) {
+            (Some(null), Some(best)) => format!("{:+.3}", null - best),
+            _ => "-".to_owned(),
+        };
+        println!(
+            "  {:>3} {:>6} {:>6} {:>7} {:>8} {:>8} {:>8} {:>8} {:>9} {:>9} {:>8} {:>8}",
+            k,
+            a.window_count(*k),
+            b.window_count(*k),
+            ranked.len(),
+            show(best),
+            show(stratum(STRATA[0])),
+            show(stratum(STRATA[1])),
+            show(stratum(STRATA[2])),
+            show(*null_order),
+            show(*null_timing),
+            separation(*null_order),
+            separation(*null_timing),
+        );
+    }
+    println!();
+}
+
+/// One candidate, with both verbatim mark sequences and their gaps.
+///
+/// `reveal` is false in blind mode, which withholds the distances so a
+/// classification can be recorded before they are seen. task:19 §9.
+fn print_candidate(
+    a: &EventSequence<'_>,
+    b: &EventSequence<'_>,
+    k: usize,
+    rank: usize,
+    pair: &CrossPair<'_>,
+    reveal: bool,
+) {
+    let alignment = &pair.comparison.alignment;
+    let scores = if reveal {
+        format!(
+            "ev {:.3} tm {:.3} tot {:.3}  sub {} ins {} del {}",
+            alignment.event_norm,
+            alignment.timing_norm,
+            alignment.total,
+            alignment.substitutions,
+            alignment.insertions,
+            alignment.deletions
+        )
+    } else {
+        "[withheld]".to_owned()
+    };
+    println!(
+        "     k{k}-c{}  A idx {} [{:.1}s +{:.1}s] marks {} · B idx {} [{:.1}s +{:.1}s] marks {}  {}",
+        rank + 1,
+        pair.comparison.a.start,
+        pair.comparison.a.start_ms as f64 / 1000.0,
+        pair.comparison.a.extent_ms() as f64 / 1000.0,
+        pair.comparison.a.distinct_marks,
+        pair.comparison.b.start,
+        pair.comparison.b.start_ms as f64 / 1000.0,
+        pair.comparison.b.extent_ms() as f64 / 1000.0,
+        pair.comparison.b.distinct_marks,
+        scores,
+    );
+    render_side(a, pair.a_session, pair.comparison.a.start, k, "A");
+    render_side(b, pair.b_session, pair.comparison.b.start, k, "B");
+}
+
+fn render_side(
+    sequence: &EventSequence<'_>,
+    session: Option<&str>,
+    start: usize,
+    k: usize,
+    side: &str,
+) {
+    let Some(events) = sequence.window(start, k) else {
+        return;
+    };
+    let session = session.unwrap_or("<none>");
+    let short = session.get(0..8).unwrap_or(session);
+    let mut line = String::new();
+    for (index, event) in events.iter().enumerate() {
+        if index > 0 {
+            let gap = event.gap_from_previous_ms.unwrap_or(0);
+            line.push_str(&format!(" --{:.1}s-> ", gap as f64 / 1000.0));
+        }
+        line.push_str(&event.mark.label());
+    }
+    println!("        {side}[{short}] {line}");
+}
+
+/// The blind packet: sequences and timing, no distance and no rank ordering
+/// beyond the label. task:19 §9 — cheap, and honest about being self-blinding.
+fn print_blind(a: &EventSequence<'_>, b: &EventSequence<'_>, rungs: &[Rung<'_>]) {
+    println!("event-motif — blind candidate packet; distances withheld");
+    println!("classify each as TRIVIAL / STRUCTURALLY SIMILAR / AMBIGUOUS / NOT SIMILAR before");
+    println!("re-running without --blind. One agent blinding itself is weak evidence and the");
+    println!("Result says so.");
+    println!();
+    for rung in rungs {
+        for (rank, pair) in rung.kept.iter().take(INSPECTED).enumerate() {
+            print_candidate(a, b, rung.k, rank, pair, false);
+            println!();
+        }
     }
 }

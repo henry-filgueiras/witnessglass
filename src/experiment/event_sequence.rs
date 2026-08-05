@@ -614,6 +614,112 @@ pub fn top_pairs_where(
     found
 }
 
+/// One window from each of two different recordings, and the alignment between
+/// them.
+///
+/// **Disposable.** sprint:9, task:19. The provenance is carried on the value
+/// rather than held by the caller, because a cross-recording candidate that does
+/// not say which recording each side came from is not a candidate — it is two
+/// numbers. Nothing here is a corpus schema: it names two sessions and holds a
+/// [`Comparison`], and it is deleted with the experiment.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct CrossPair<'a> {
+    /// Session the `a` window's recording belongs to.
+    pub a_session: Option<&'a str>,
+    /// Session the `b` window's recording belongs to.
+    pub b_session: Option<&'a str>,
+    /// The two windows and their alignment. `a` is always from the first
+    /// sequence and `b` always from the second.
+    pub comparison: Comparison,
+}
+
+/// Rank every (A-window, B-window) pair between two different recordings.
+///
+/// **Only across.** No pair here has both windows from one sequence, which is
+/// the whole question sprint:9 asks: whether *independently recorded* sessions
+/// contain similar figures. Same-recording ranking is [`top_pairs`] and is a
+/// different question with a different answer.
+///
+/// Returns `None` when both sequences carry the same session id, because a
+/// cross-recording comparison over one recording is not one. Two sequences with
+/// no session id cannot be told apart and are compared; a caller holding
+/// anonymous sequences is responsible for knowing they differ.
+///
+/// task:18's exclusion policy does not apply and is not needed: two windows from
+/// different recordings share no event by construction, whatever their indices.
+pub fn cross_pairs<'a>(
+    first: &EventSequence<'a>,
+    second: &EventSequence<'a>,
+    k: usize,
+    top: usize,
+) -> Option<Vec<CrossPair<'a>>> {
+    if let (Some(left), Some(right)) = (first.session_id, second.session_id)
+        && left == right
+    {
+        return None;
+    }
+
+    let mut found: Vec<Comparison> = Vec::new();
+    for a_start in 0..first.window_count(k) {
+        let (Some(a_events), Some(a)) = (first.window(a_start, k), first.window_ref(a_start, k))
+        else {
+            continue;
+        };
+        for b_start in 0..second.window_count(k) {
+            let (Some(b_events), Some(b)) =
+                (second.window(b_start, k), second.window_ref(b_start, k))
+            else {
+                continue;
+            };
+            found.push(Comparison {
+                a,
+                b,
+                alignment: align(a_events, b_events),
+            });
+        }
+    }
+    sort_comparisons(&mut found);
+    found.truncate(top);
+
+    Some(
+        found
+            .into_iter()
+            .map(|comparison| CrossPair {
+                a_session: first.session_id,
+                b_session: second.session_id,
+                comparison,
+            })
+            .collect(),
+    )
+}
+
+/// Keep only candidates whose windows overlap nothing already kept.
+///
+/// A reporting policy, preregistered by task:19 §4 before any ranking was
+/// computed, and it changes no distance. Windows `i↔j` and `i+1↔j+1` share
+/// `k − 1` events on both sides and score almost identically, so an undeduplicated
+/// "top three" is one candidate printed three times. Greedy over the ranking, so
+/// the best candidate is always kept and later near-copies of it are not.
+pub fn dedupe_overlapping<'a>(ranked: &[CrossPair<'a>], keep: usize) -> Vec<CrossPair<'a>> {
+    let overlaps = |left: &WindowRef, right: &WindowRef| {
+        left.start.abs_diff(right.start) < left.k.max(right.k)
+    };
+    let mut kept: Vec<CrossPair<'a>> = Vec::new();
+    for candidate in ranked {
+        let clashes = kept.iter().any(|already| {
+            overlaps(&already.comparison.a, &candidate.comparison.a)
+                || overlaps(&already.comparison.b, &candidate.comparison.b)
+        });
+        if !clashes {
+            kept.push(*candidate);
+        }
+        if kept.len() >= keep {
+            break;
+        }
+    }
+    kept
+}
+
 /// Best total first, then by window position, so the order is total.
 fn sort_comparisons(found: &mut [Comparison]) {
     found.sort_by(|left, right| {
