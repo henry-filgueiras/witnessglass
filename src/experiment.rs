@@ -36,6 +36,10 @@
 //! candidate dimensions that were considered and refused, and the specific
 //! evidence each one would have needed.
 
+// sprint:8's event-native motif experiment. No dependency and no feature gate:
+// it is a few hundred lines of arithmetic over the projection everything else
+// here reads.
+pub mod event_sequence;
 pub mod haar;
 // sprint:6's Matrix Profile experiment. Behind a non-default feature because it
 // is the one part of this experiment with a third-party dependency, and a
