@@ -410,6 +410,179 @@ fn null_sections(
     )
 }
 
+/// The gauntlet scorecard, scatter, and counterexample tables.
+///
+/// Selected when a document carries `families` rather than a `refinement`.
+/// Every number is read from the computed report; nothing here scores anything.
+fn gauntlet_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let families = document["families"].as_array().unwrap_or(&empty);
+
+    let mut scorecard = String::new();
+    for family in families {
+        let verdict = family["verdict"].as_str().unwrap_or("");
+        scorecard.push_str(&format!(
+            "<tr class=\"{}\"><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.3}</td>\
+             <td>{:+.3}</td><td>{:+.3}</td><td class=\"strong\">{}</td></tr>",
+            verdict.to_lowercase(),
+            escape(family["family"].as_str().unwrap_or("")),
+            escape(family["expectation"].as_str().unwrap_or("")),
+            as_integer(&family["trials"]),
+            as_integer(&family["undefined"]),
+            as_number(&family["expected_fraction"]),
+            as_number(&family["median"]),
+            as_number(&family["median_delta_total"]),
+            escape(&verdict.to_uppercase()),
+        ));
+    }
+
+    let mut panels = String::new();
+    for family in families {
+        let points: Vec<(f64, f64)> = family["scored"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| {
+                let outcome = &entry["outcome"];
+                let delta_z = outcome["delta_z"].as_f64()?;
+                Some((as_number(&outcome["delta_total"]), delta_z))
+            })
+            .filter(|(x, y)| x.is_finite() && y.is_finite())
+            .collect();
+        if points.is_empty() {
+            continue;
+        }
+        panels.push_str(&quadrant(
+            family["family"].as_str().unwrap_or(""),
+            &family["verdict"].as_str().unwrap_or("").to_uppercase(),
+            &points,
+        ));
+    }
+
+    let mut counterexamples = String::new();
+    for family in families {
+        let rows: String = family["counterexamples"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|entry| {
+                let outcome = &entry["outcome"];
+                let trial = &outcome["trial"];
+                format!(
+                    "<tr><td>{:+.4}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td>\
+                     <td>{:+.4}</td><td class=\"marks\">{}<br>{}</td></tr>",
+                    as_number(&entry["value"]),
+                    as_integer(&trial["seed"]),
+                    as_integer(&trial["core_len"]),
+                    as_integer(&trial["context_len"]),
+                    as_integer(&trial["gap_ratio"]),
+                    as_number(&outcome["delta_total"]),
+                    escape(&join_marks(&outcome["a_marks"])),
+                    escape(&join_marks(&outcome["b_marks"])),
+                )
+            })
+            .collect();
+        counterexamples.push_str(&format!(
+            "<h3>{} &mdash; worst counterexamples <span class=\"axis\">{}</span></h3>\
+             <table><thead><tr><th>value</th><th>seed</th><th>core</th><th>context</th>\
+             <th>ratio</th><th>&Delta;total</th><th>spans</th></tr></thead><tbody>{rows}</tbody>\
+             </table>",
+            escape(family["family"].as_str().unwrap_or("")),
+            escape(family["quantity"].as_str().unwrap_or("")),
+        ));
+    }
+
+    format!(
+        "<section class=\"card\">\
+         <h2>Controlled synthetic validation</h2>\
+         <p class=\"role\">{}</p>\
+         <p class=\"meta\">{} trials, {} order-null realizations each. The metric, the null, and \
+         the boundary search are frozen; the gauntlet only calls them. Scoring is one rule applied \
+         to every family alike: PASS when the median has the expected sign and at least two thirds \
+         of trials agree.</p>\
+         <table><thead><tr><th>family</th><th>expectation</th><th>trials</th><th>undef</th>\
+         <th>frac</th><th>median</th><th>median &Delta;total</th><th>result</th></tr></thead>\
+         <tbody>{scorecard}</tbody></table>\
+         <p class=\"meta\">Each panel below plots &Delta; raw distance against &Delta; surprise. \
+         The shaded quadrant is the phenomenon under test: <strong>raw agreement worsens while \
+         surprise improves</strong>.</p>\
+         <div class=\"panels\">{panels}</div>\
+         {counterexamples}\
+         </section>",
+        escape(document["role"].as_str().unwrap_or("")),
+        as_integer(&document["trials"]),
+        as_integer(&document["realizations"]),
+    )
+}
+
+fn join_marks(value: &serde_json::Value) -> String {
+    value
+        .as_array()
+        .map(|marks| {
+            marks
+                .iter()
+                .filter_map(|mark| mark.as_str())
+                .map(|mark| mark.rsplit('/').next().unwrap_or(mark))
+                .collect::<Vec<_>>()
+                .join(" · ")
+        })
+        .unwrap_or_default()
+}
+
+/// A Δraw-against-Δsurprise scatter with the four quadrants distinguished.
+fn quadrant(title: &str, verdict: &str, points: &[(f64, f64)]) -> String {
+    let extent = |values: Vec<f64>| {
+        let low = values
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min)
+            .min(0.0);
+        let high = values
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0);
+        let pad = ((high - low) * 0.08).max(1e-6);
+        (low - pad, high + pad)
+    };
+    let (x0, x1) = extent(points.iter().map(|(x, _)| *x).collect());
+    let (y0, y1) = extent(points.iter().map(|(_, y)| *y).collect());
+    let px = |x: f64| 6.0 + 88.0 * (x - x0) / (x1 - x0);
+    let py = |y: f64| 92.0 - 84.0 * (y - y0) / (y1 - y0);
+
+    let (zero_x, zero_y) = (px(0.0), py(0.0));
+    let marks: String = points
+        .iter()
+        .map(|(x, y)| {
+            let class = if *x > 0.0 && *y > 0.0 { "hit" } else { "miss" };
+            format!(
+                "<circle class=\"{class}\" cx=\"{:.2}\" cy=\"{:.2}\" r=\"1.1\"/>",
+                px(*x),
+                py(*y)
+            )
+        })
+        .collect();
+
+    format!(
+        "<figure class=\"panel\"><figcaption>{} <span class=\"axis\">{} &middot; x \
+         &Delta;total {:+.3} to {:+.3} &middot; y &Delta;z {:+.3} to {:+.3}</span></figcaption>\
+         <svg viewBox=\"0 0 100 100\" preserveAspectRatio=\"none\" role=\"img\">\
+         <rect class=\"interesting\" x=\"{:.2}\" y=\"8\" width=\"{:.2}\" height=\"{:.2}\"/>\
+         <line class=\"rule\" x1=\"6\" y1=\"{zero_y:.2}\" x2=\"94\" y2=\"{zero_y:.2}\"/>\
+         <line class=\"rule\" x1=\"{zero_x:.2}\" y1=\"8\" x2=\"{zero_x:.2}\" y2=\"92\"/>\
+         {marks}</svg></figure>",
+        escape(title),
+        escape(verdict),
+        x0,
+        x1,
+        y0,
+        y1,
+        zero_x,
+        (94.0 - zero_x).max(0.0),
+        (zero_y - 8.0).max(0.0),
+    )
+}
+
 fn specimen_card(document: &serde_json::Value) -> String {
     let refinement = &document["refinement"];
     let seed = &refinement["seed"];
@@ -571,21 +744,42 @@ line.observed { stroke: #d1495b; stroke-width: 1; }
 tr.planted td { color: var(--truth); }
 tr.noted td { color: #2ea043; }
 tr.rawbest td { color: #d1495b; }
+circle.hit { fill: #2ea043; }
+circle.miss { fill: var(--ink); opacity: .3; }
+rect.interesting { fill: #2ea043; opacity: .07; }
+tr.pass td { color: #2ea043; }
+tr.mixed td { color: var(--truth); }
+tr.fail td { color: #d1495b; }
+h3 { font-size: .95rem; margin: 1.2rem 0 .3rem; }
+td.marks { font-size: .78em; opacity: .8; text-align: left; }
 ";
 
 /// Render one page from specimen documents.
 pub fn render(documents: &[serde_json::Value]) -> String {
-    let cards: String = documents.iter().map(specimen_card).collect();
+    let cards: String = documents
+        .iter()
+        .map(|document| {
+            if document.get("families").is_some() {
+                gauntlet_card(document)
+            } else {
+                specimen_card(document)
+            }
+        })
+        .collect();
     format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
          <title>WitnessGlass — boundary refinement (experimental)</title>\
          <style>{PAGE_STYLE}</style></head><body>\
-         <h1>WitnessGlass — local boundary refinement</h1>\
+         <h1>WitnessGlass — boundary evidence</h1>\
          <div class=\"intro\">\
-         <p>sprint:10, task:20. A disposable experiment, not a product surface. Every number on \
-         this page was computed by <code>event-motif --refine</code> and read from its JSON; \
-         nothing here measures anything.</p>\
+         <p>sprint:10 to sprint:12. A disposable experiment, not a product surface. Every number on \
+         this page was computed by <code>event-motif</code> and read from its JSON; nothing here \
+         measures anything.</p>\
+         <p>A <strong>controlled synthetic validation</strong> card, where the answer is known by \
+         construction, is scored against expectations recorded before any trial ran. Cards below it \
+         are <strong>observations on real specimens</strong>, which carry no ground truth about \
+         boundary correctness and cannot be scored.</p>\
          <p>Each specimen shows the seed boundaries, the designated pick, the planted boundaries \
          where a fixture has them, and the Pareto frontier over retained events against total \
          distance. A row on the frontier retains fewer events than the row above it and scores \

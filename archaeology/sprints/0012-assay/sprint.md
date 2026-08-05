@@ -2,8 +2,9 @@
 id: spr_01KZ9ZARCM0SDS94AQQ54DQYCS
 sequence: 12
 kind: sprint
-status: active
+status: closed
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Assay
@@ -88,3 +89,77 @@ fails, the failure is preserved prominently and the machinery stays as it was.
 - New similarity facets, variable-length discovery, motif families, corpus accumulation, a fourth real
   specimen, a product CLI surface, a new page, or a dependency.
 - Committing a real recording, or any prompt, response, command, file content, or sensitive path.
+
+## Outcome
+
+One task, closed. **WEAK / FRAGILE.** The phenomenon survived; its interpretation did not.
+
+The sprint set out to break sprint:11's result and half succeeded, which is the outcome it was
+commissioned for.
+
+**What survived, unanimously.** Adding a shared informative boundary made raw agreement worse and
+surprise better in **60 of 60** trials. Adding an unrelated one helped in **0 of 60**. A genuine
+planted core out-scored the best a coincidence between two independent streams could manage in **29 of
+30**. The surprising region stayed on the planted motif at every context length from 10 to 80, **40 of
+40**. A longer imperfect core of rare marks beat a shorter exact core of common ones, **20 of 20**. The
+3→4 transition that motivated the round is not an anecdote; it reproduces on demand.
+
+**What broke.** The statistic cannot distinguish a **novel** rare mark from one the core **already
+carries**: median `−0.003` over 30 matched pairs, 14 of 30 in the expected direction. Not a weak
+effect — no effect. Mechanically it could not have gone otherwise: an order null permutes marks
+globally, so the chance of a specific mark landing in a specific slot depends only on its global
+prevalence, never on what the span already contains. "Surprise" here means *unlikely under a
+permutation*, which is strictly weaker than *informative about a shared figure*.
+
+**And the mechanism is weaker than advertised.** Rare against common — identical raw agreement by
+construction, differing only in background prevalence — passes at 0.700 with a median of `+0.073` and a
+first quartile below zero. Prevalence moves the statistic in the predicted direction and does so
+unreliably at the scale of one boundary event.
+
+### Success criteria, against evidence
+
+- **The metric frozen**, and the diff over `event_sequence.rs` is empty. A test recomputes a trial's
+  raw distance with `align` directly and asserts the gauntlet reported the same number.
+- **Eight families, 300 trials, every seed recorded**, re-runnable in 3.2 seconds including 300 000
+  null realizations.
+- **One rule scored every family alike**, written before any trial ran and applied without amendment.
+- **Counterexamples surfaced, not averaged away** — three worst per family, with their seeds,
+  parameters, and verbatim spans, in the terminal and on the page.
+- **The planted-boundary splinter explained**: the planted span is dominated by three candidates, all
+  agreeing exactly on marks, one of them the same length shifted one event right. In a fixture that
+  repeats every eight events the planted boundary is not identifiable from agreement alone. Neither the
+  fixture nor the metric was touched.
+- **A report with a scorecard and a Δraw-against-Δsurprise scatter**, the interesting quadrant shaded,
+  with controlled synthetic validation separated from observations on real specimens.
+
+### What the sprint found that it was not looking for
+
+**A defect in its own gauntlet, caught by reading counterexamples rather than aggregates.** The first
+run scored the noise family at 0.667 — a real-looking weakness. The counterexample table showed the
+same background mark on *both* sides of a "different marks" trial: the generator drew them
+independently and collided in 20 of 60 trials, making a third of the noise family silently informative.
+Split by contamination the pre-fix numbers are stark — all 20 contaminated trials helped, none of the
+40 genuine ones did. The generator was corrected, both sets of numbers are in the Result, and the
+change is recorded as one made after seeing results, justified because it is a specification violation
+provable without reference to any outcome and because it touches the specimen builder rather than the
+metric or the null.
+
+**The verdict ladder did not tile.** One FAIL and zero MIXED is a cell the rungs' counts do not cover.
+The verdict rests on the WEAK/FRAGILE gloss rather than its clause. Sixth criterion defect in seven
+rounds, and a new shape: not a wrong criterion but an incomplete cover.
+
+### What this sprint deliberately leaves open
+
+A selection policy, which the verdict forbids and which would select redundant boundaries if built on
+this statistic as it stands.
+
+The one recommended next experiment: replace the order null with a within-span-preserving null and ask
+whether redundancy becomes visible — with the prediction, recorded in advance, that it may not, in which
+case the next lever is the representation rather than the statistic.
+
+The adapter-emission question, which family E makes worse rather than better: a mark that is rare
+because of how events are written down is exactly as surprising to this null as one that is rare because
+of what an agent did.
+
+Nothing here changed the raw format, the schema, the recorder, `inspection`, the viewer, the workbench,
+the Spectroscope, or the product CLI's verbs, and no dependency was added.

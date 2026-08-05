@@ -21,13 +21,13 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use witnessglass::experiment::boundary_page;
 use witnessglass::experiment::event_sequence::{
     ChannelScope, Comparison, CrossPair, EventSequence, LENGTH_FLOOR, REFINE_RADIUS,
     RefinedCandidate, Refinement, cross_pairs, dedupe_overlapping, enumerate_candidates, ladder,
     neighbours, null_ensemble, null_evidence, order_null, perturbation, project, refine,
     timing_null, top_pairs, top_pairs_where,
 };
+use witnessglass::experiment::{boundary_page, gauntlet};
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
 
@@ -91,6 +91,10 @@ USAGE:
     --note-a <S..E>      A span to mark on the page beside the planted one, for
     --note-b <S..E>      a specimen with no ground truth. Supplied by the caller.
     --note-label <TEXT>  What to call it. Not a workflow name.
+    --gauntlet           sprint:12. Run the adversarial gauntlet: eight families
+                         of controlled synthetic specimen pairs, scored against
+                         expectations task:22 recorded before any trial ran.
+                         Needs no recording.
 
 WHAT A WINDOW IS HERE:
     A fixed number of *events*, not a fixed wall-clock width. A window of k
@@ -158,6 +162,7 @@ struct Options {
     role: Option<String>,
     render: Option<PathBuf>,
     from: Vec<PathBuf>,
+    gauntlet: bool,
     nulls: usize,
     frontier_nulls: usize,
     note_a: Option<(usize, usize)>,
@@ -180,6 +185,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.render.is_some() {
         return render_mode(&options);
+    }
+
+    if options.gauntlet {
+        return gauntlet_mode(&options);
     }
 
     let path = options
@@ -366,6 +375,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut role = None;
     let mut render = None;
     let mut from = Vec::new();
+    let mut gauntlet = false;
     let mut nulls = 0usize;
     let mut frontier_nulls = 0usize;
     let mut note_a = None;
@@ -413,6 +423,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--note-a" => note_a = Some(span(&value("--note-a")?)?),
             "--note-b" => note_b = Some(span(&value("--note-b")?)?),
             "--note-label" => note_label = Some(value("--note-label")?),
+            "--gauntlet" => gauntlet = true,
             "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
             "--frontier-nulls" => {
                 frontier_nulls = number(&value("--frontier-nulls")?, "--frontier-nulls")?
@@ -447,6 +458,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         role,
         render,
         from,
+        gauntlet,
         nulls,
         frontier_nulls,
         note_a,
@@ -1439,4 +1451,85 @@ fn print_null_frontier(
         1.0 / (1 + options.frontier_nulls) as f64
     );
     println!();
+}
+
+// ---------------------------------------------------------------------------
+// The adversarial gauntlet — sprint:12, task:22
+// ---------------------------------------------------------------------------
+
+fn gauntlet_mode(options: &Options) -> Result<ExitCode, String> {
+    let (outcomes, reports) = gauntlet::report();
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "gauntlet",
+            "role": "controlled synthetic validation — sprint:12, task:22",
+            "realizations": gauntlet::REALIZATIONS,
+            "trials": outcomes.len(),
+            "families": reports,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document)
+                .map_err(|err| format!("could not render JSON: {err}"))?
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    println!("event-motif — the sprint:12 adversarial gauntlet");
+    println!(
+        "{} trials, {} order-null realizations each. The metric, the null, and the boundary search \
+         are frozen; this only calls them.",
+        outcomes.len(),
+        gauntlet::REALIZATIONS
+    );
+    println!(
+        "Scoring is task:22's single rule: PASS when the median has the expected sign and at least \
+         two thirds of trials agree."
+    );
+    println!();
+    println!(
+        "  {:<13} {:>7} {:>6} {:>9} {:>9} {:>9} {:>9} {:>7}",
+        "family", "trials", "undef", "frac", "q1", "median", "q3", "verdict"
+    );
+    for report in &reports {
+        println!(
+            "  {:<13} {:>7} {:>6} {:>9.3} {:>9.3} {:>9.3} {:>9.3} {:>7}",
+            report.family.label(),
+            report.trials,
+            report.undefined,
+            report.expected_fraction,
+            report.q1,
+            report.median,
+            report.q3,
+            report.verdict.label(),
+        );
+    }
+    println!();
+    for report in &reports {
+        println!("  -- {} --", report.family.label());
+        println!("     quantity:    {}", report.quantity);
+        println!("     expectation: {}", report.expectation);
+        println!(
+            "     median Δtotal beside it: {:+.4}",
+            report.median_delta_total
+        );
+        println!("     worst counterexamples:");
+        for entry in &report.counterexamples {
+            let trial = &entry.outcome.trial;
+            println!(
+                "       value {:+.4}  seed {} core {} context {} ratio {}  Δtotal {:+.4}",
+                entry.value,
+                trial.seed,
+                trial.core_len,
+                trial.context_len,
+                trial.gap_ratio,
+                entry.outcome.delta_total,
+            );
+            println!("         A {}", entry.outcome.a_marks.join(" · "));
+            println!("         B {}", entry.outcome.b_marks.join(" · "));
+        }
+        println!();
+    }
+    Ok(ExitCode::SUCCESS)
 }

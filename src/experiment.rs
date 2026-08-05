@@ -43,6 +43,9 @@ pub mod boundary_page;
 // it is a few hundred lines of arithmetic over the projection everything else
 // here reads.
 pub mod event_sequence;
+// sprint:12's adversarial gauntlet against sprint:11's statistic. Calls the
+// machinery and changes none of it; deleting the attack is deleting this file.
+pub mod gauntlet;
 pub mod haar;
 // sprint:6's Matrix Profile experiment. Behind a non-default feature because it
 // is the one part of this experiment with a third-party dependency, and a
