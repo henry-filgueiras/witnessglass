@@ -2,9 +2,10 @@
 id: tsk_01KZ9VQEE3FZ6MEG639Z03QP7B
 sequence: 20
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZ9VQEDS3B4Z66483RNNRFKN
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Refine motif candidate boundaries by small exhaustive local search
@@ -271,3 +272,348 @@ intent, or embedding facet. No timing-policy change, no mark change, no adapter-
 visualization framework, no Spectroscope change. No real recording committed, copied, or reproduced.
 The pre-existing `cargo build --examples` / `spectroscope.rs` `required-features` defect is unrelated
 and is not repaired here. Nothing pushed.
+
+## Result
+
+Delivered. **Falsified** by the letter of the preregistered criteria — and the reason is not that the
+search failed. The search recovered every answer it was pointed at. What failed is the rule for
+choosing a point off the frontier, and the criterion that assumed the planted answer would be on one.
+
+The one-sentence finding, which is worth more than the verdict:
+
+> Local boundary refinement finds the right core on every specimen, and this metric has no scale at
+> which a figure is complete — every frontier improves monotonically down to the floor, so nothing in
+> the objective ever says *stop here*.
+
+### 1. The metric did not move
+
+`git diff 246a4e8..1982ba5 -- src/experiment/event_sequence.rs` adds `refine`, `RefinedCandidate`,
+`Refinement`, `BoundaryDelta`, `pareto_frontier`, and two constants. `align`, `timing_term`,
+`SUBSTITUTION`, `GAP`, `TIMING_WEIGHT`, `TIMING_FLOOR_MS`, `TIMING_RATIO_FULL`, `event_norm`,
+`timing_norm`, `total`, `Mark`, `MarkedEvent`, and `project` are byte-identical to task:18. The
+`Agent → subagent_started` adapter-emission question is deferred as preregistered, `distinct_marks`
+stayed a diagnostic, and timing stayed in.
+
+### 2. The search
+
+Four independent boundary offsets in `[−3, +3]`; `7⁴ = 2401` combinations per seed, each an `O(k²)`
+alignment; invalid combinations skipped rather than clamped. Enumeration cost is microseconds, which
+is why brute force is the right shape here and not a compromise.
+
+| specimen | scored | rejected |
+|---|---|---|
+| A synthetic | 2401 | 0 |
+| B positive control | 1764 | 637 |
+| C independent real | 2304 | 97 |
+
+### 3. Specimen A — synthetic, known answer
+
+Legible oracle, both spans from one fixture. Seed contaminated by two events on each side of each
+span.
+
+```text
+  seed      A[18..30) len 12   B[160..172) len 12    ev 0.167  tm 0.165  tot 0.166
+  pick      A[18..33) len 15   B[160..175) len 15    ev 0.133  tm 0.151  tot 0.139
+  truth     A[20..28)          B[162..170)           on frontier: NO
+
+   retained       A span       B span      ev      tm     tot   deltas
+         18     [15..33)   [157..175)   0.278   0.276   0.277   -3 +3 -3 +3
+         17     [16..33)   [158..175)   0.235   0.230   0.234   -2 +3 -2 +3
+         16     [17..33)   [159..175)   0.188   0.208   0.194   -1 +3 -1 +3
+         15     [18..33)   [160..175)   0.133   0.151   0.139   +0 +3 +0 +3   <- pick
+         14     [19..33)   [161..175)   0.071   0.122   0.088   +1 +3 +1 +3
+         13     [20..33)   [162..175)   0.000   0.091   0.029   +2 +3 +2 +3
+         12     [20..32)   [162..174)   0.000   0.084   0.026   +2 +2 +2 +2
+          9     [20..29)   [162..171)   0.000   0.078   0.024   +2 -1 +2 -1
+```
+
+**The planted left boundary is recovered exactly.** Between retained 14 and retained 13 the A start
+moves from index 19 to index 20 — the planted boundary — and the event component drops from 0.071 to
+**0.000** while the total falls by two thirds. Every frontier point from there down starts at exactly
+20 on the A side and exactly 162 on the B side. The search found the left edge of the planted figure
+without being told it existed.
+
+**The planted pair is nevertheless absent from the frontier, and legitimately so.** Scored directly:
+
+```text
+  A[20..28) B[162..170)   the planted figure       ev 0.000  tm 0.087  tot 0.026
+  A[20..29) B[162..171)   the same, plus one event ev 0.000  tm 0.078  tot 0.024
+```
+
+One more matching event scores strictly better, so the planted pair is dominated on both axes and is
+correctly excluded. This is exactly the mechanism §5 of the preregistration derived — `new < old` iff
+the added event's timing term is below `1.5 × old total` — applied to a fixture whose figure repeats
+every eight events. Extension went in the *repeated* direction, as P1 predicted, and never into the
+baseline.
+
+**The pick is bad.** `A[18..33)` still carries both contaminating baseline events. The rule chose it
+because it was the longest span scoring at or below the seed's 0.166, and the seed was bad enough to
+make that bar meaningless.
+
+### 4. Specimen B — positive control
+
+Two executions of one runbook, seeded across their single known divergence at positions 2–4.
+
+```text
+  seed      A[2..12) len 10   B[2..12) len 10    ev 0.300  tm 0.251  tot 0.285
+  pick      A[1..15) len 14   B[2..15) len 13    ev 0.214  tm 0.360  tot 0.243
+
+   retained       A span      B span      ev      tm     tot   deltas
+         15      [0..15)     [0..15)   0.267   0.393   0.289   -2 +3 -2 +3
+         14      [0..14)     [0..14)   0.286   0.338   0.286   -2 +2 -2 +2
+         13      [1..15)     [2..15)   0.214   0.360   0.243   -1 +3 +0 +3   <- pick
+         12      [1..15)     [3..15)   0.143   0.360   0.194   -1 +3 +1 +3
+         11      [4..15)     [4..15)   0.091   0.296   0.155   +2 +3 +2 +3
+         10      [5..15)     [5..15)   0.000   0.319   0.099   +3 +3 +3 +3
+          9      [5..14)     [5..14)   0.000   0.234   0.072   +3 +2 +3 +2
+```
+
+**P2 confirmed exactly.** Both starts move to index 5 — the first position at which the two runbook
+executions agree — and the event component reaches **0.000** and stays there. Retained 12 is also
+worth reading: it is the first point where the two sides take *different* starts (`A[1..)`, `B[3..)`),
+which is the alignment absorbing the offset the divergence introduced. Refinement did not collapse:
+the answer it converges on is a nine-to-ten-event figure with eight or nine distinct marks.
+
+**The pick is bad again**, and for the same reason: 0.243 clears the seed's 0.285, so the longest such
+point wins and the divergence stays in.
+
+### 5. Specimen C — independent real
+
+task:19's `k8-c3`, the seed whose core persisted while larger `k` degraded it.
+
+```text
+  seed      A[51..59) len 8   B[15..23) len 8    ev 0.500  tm 0.431  tot 0.479
+  pick      A[48..60) len 12  B[12..24) len 12   ev 0.500  tm 0.391  tot 0.466
+
+   retained       A span       B span      ev      tm     tot   deltas
+         14     [48..62)     [12..26)   0.571   0.485   0.544   -3 +3 -3 +3
+         13     [48..61)     [12..25)   0.538   0.442   0.508   -3 +2 -3 +2
+         12     [48..60)     [12..24)   0.500   0.391   0.466   -3 +1 -3 +1   <- pick
+         11     [48..59)     [12..23)   0.455   0.427   0.446   -3 +0 -3 +0
+         10     [48..58)     [12..22)   0.400   0.461   0.419   -3 -1 -3 -1
+          9     [48..57)     [12..21)   0.333   0.459   0.372   -3 -2 -3 -2
+          7     [50..57)     [12..21)   0.333   0.435   0.331   -1 -2 -3 -2
+          5     [53..58)     [17..22)   0.200   0.431   0.266   +2 -1 +2 -1
+          4     [53..57)     [17..21)   0.000   0.416   0.113   +2 -2 +2 -2   <- the persistent core
+          3     [54..57)     [18..21)   0.000   0.124   0.031   +3 -2 +3 -2
+```
+
+**P3 confirmed exactly, to the index.** Retained 4 is `A[53..57)` ↔ `B[17..21)` at `ev 0.000`,
+`tot 0.113` — the four-event core task:19 observed persisting across its whole fixed-`k` ladder,
+recovered from a seed at 0.479 by a search that was never told the core existed. The prediction named
+those spans and that distance in advance.
+
+**And the frontier does not stop there.** Retained 3, `A[54..57)` ↔ `B[18..21)`, scores **0.031** —
+3.6 times better than the core — by discarding `tool_requested/Agent`, which is the rarest mark in
+recording A at one occurrence in 169 events and the single most distinctive thing about the match.
+The remaining three events are `subagent_started → tool_requested/Bash → tool_succeeded/Bash`, whose
+gaps happen to agree closely.
+
+That is the round's central finding, and it is a finding about the **objective**, not the search. The
+metric has no notion of how much a mark is worth, so it will always trade away a rare mark for better
+timing agreement among common ones.
+
+### 6. The negative control, and a feasibility miss inside it
+
+**P4 was unreachable as written, and the geometry says so.** From an 8-event seed at radius 3 the
+shortest achievable span is `8 − 6 = 2` events, so the one-event collapse P4 predicted cannot occur
+for specimen C at all. The preregistration's cardinality check counted combinations and did not check
+the *reachable length range*. Recorded as a miss.
+
+Demonstrated properly from a three-event seed, where length 1 is reachable:
+
+```text
+floor 1                                                floor 3 (preregistered)
+   retained    A span      B span      tot                retained    tot
+          3  [54..57)   [18..21)    0.031                        3  0.031
+          2  [57..59)   [19..21)    0.002                        — removed
+          1  [53..54)   [17..18)    0.000                        — removed
+```
+
+Retained 1 is a single `tool_requested/Agent` matched against a single `tool_requested/Agent`, at
+distance **exactly zero**. The floor is load-bearing and the arithmetic collapse is real rather than
+hypothetical. `tests/event_sequence.rs` pins both halves.
+
+### 7. Stability probe
+
+Four seeds for specimen C, differing by one event:
+
+```text
+  seed A[51..59)  ->  frontier terminal  A[54..57)  B[18..21)  tot 0.031
+  seed A[52..59)  ->                     A[54..57)  B[18..21)  tot 0.031
+  seed A[54..59)  ->                     A[54..57)  B[18..21)  tot 0.031
+  seed A[51..60)  ->                     A[54..57)  B[18..21)  tot 0.031
+```
+
+Identical, to the index, from every perturbed seed. **P5 holds with room to spare** — the prediction
+asked for 3-of-4 overlap and got exact agreement. Whatever else is wrong here, the search is not
+fragile.
+
+### 8. Verdict: **Falsified**
+
+Against the criteria fixed at `246a4e8`:
+
+| clause | outcome |
+|---|---|
+| **A** — planted pair on the frontier | **NO** — dominated by a nine-event extension, §3 |
+| **A** — pick contains the planted figure | yes, `A[18..33) ⊇ [20..28)` |
+| **A** — pick total below seed | yes, 0.139 < 0.166 |
+| **B** — pick ≥ 3 distinct marks per side, total ≤ seed | yes, 9 and 10 marks, 0.243 ≤ 0.285 |
+| **C** — pick overlaps the core, total below seed | yes, and 0.466 < 0.479 |
+| no pick at the floor with ≤ 2 marks | yes, none |
+
+Supported fails on A's first clause. And the Falsified clause **"specimen A's planted boundaries are
+absent from the frontier"** fires directly. Neither the categories nor the clauses have been altered.
+
+**What Falsified does and does not mean here.** It does not mean local boundary adjustment buys
+nothing — §3, §4, and §5 are three recoveries of an intended answer that a fixed window could not
+reach. It means the round's own criterion for "recovered" was written against an object, the frontier,
+that provably cannot contain the planted pair whenever an adjacent event matches well enough. The
+verdict is correct as a verdict on what was asked; the finding is in the sections above it.
+
+### 9. The criterion defect, which is the fourth and the most instructive
+
+sprint:6 §4 set a rank cutoff fixture combinatorics made unreachable. sprint:8 §9 did it again.
+sprint:9 §9 imported a threshold from a round whose distances were an order of magnitude smaller. This
+round did something worse and more interesting.
+
+**The feasibility check derived the exact mechanism that invalidates the criterion, and the criterion
+was written anyway.** §5 of the preregistration states, before anything ran, that appending a matching
+event improves the total whenever its timing cost is below `1.5 ×` the current total. On a fixture
+whose figure repeats every eight events, that implies the planted span is dominated by the planted
+span plus one event — which implies it cannot be on the frontier. The check produced the disproof and
+the conclusion drawn from it was "so do not require the pick to *equal* the truth" rather than "so the
+truth will not be *on the frontier* either".
+
+The reusable step is one line, and it is the missing end of the procedure this project has now run
+four times: **after identifying a mechanism, apply it to every criterion already written, including
+the ones the mechanism was not raised about.** Recorded as friction in §12. Not built into machinery.
+
+### 10. The pick rule is wrong, and the frontier is why we can tell
+
+The designated pick — *the longest span scoring no worse than the seed* — failed on all three
+specimens, and failed the same way each time: a bad seed sets a low bar, so the longest barely-passing
+span wins.
+
+```text
+              seed    pick    best on frontier    the answer the frontier contains
+  A          0.166   0.139   0.024               planted left boundary at retained 13
+  B          0.285   0.243   0.072               both starts at index 5, ev 0.000
+  C          0.479   0.466   0.031               the persistent core at retained 4
+```
+
+The pick is between four and fifteen times worse than the frontier's own best on every specimen.
+
+**This is the round's methodological result and it vindicates the design decision.** Reporting a
+frontier instead of a scalar is what makes "the search works" and "the selection rule does not"
+separable claims. A round that had reported `score = distance + λ · discarded` would have reported one
+number per specimen, all three of them wrong, with no way to see that the search underneath was
+finding exactly the right spans.
+
+**Every frontier here is monotone to the floor.** There is no knee, no interior optimum, nothing that
+distinguishes "the figure ends here" from "we have not thrown away enough yet". That is not a property
+of these three specimens; it follows from the normalization, which divides by length and therefore
+always pays for a badly-matching event and always rewards removing one.
+
+### 11. Deliberately excluded, and visible in the failure
+
+**Marginal mark frequency.** Specimen C's frontier trades `tool_requested/Agent` — one occurrence in
+169 events — for closer timing agreement among `Bash` marks that occur 64 times each. An objective
+that knew how surprising a mark is would not make that trade. This is *not* a new facet: mark
+frequency is computed from the same marks the representation already carries, and task:19 already
+reports it. It is the obvious next lever and it was not pulled.
+
+**Deferred as preregistered:** the `Agent → subagent_started` adapter emission, which is two of the
+four events in specimen C's recovered core. It is still half an artefact, and this round did not fix
+it. Paths, payload sizes, edit magnitude, and intent were not consulted.
+
+### 12. Desire-path friction
+
+**Fifth consecutive round with the preregistration in a `###` subsection of `Acceptance criteria`.**
+The evidence it predates the run is `246a4e8`, a commit containing nothing else. **idea:5**, fifth
+occurrence.
+
+**The criterion-feasibility check needs a closing step, and that is new.** The four previous defects
+were *missing* checks or *mis-scaled* thresholds. This one is a check that succeeded and was then not
+applied to its own siblings. The affordance that would have caught it is procedural rather than
+tooling: the check should end by re-reading every criterion against each mechanism it found. Recorded
+here rather than promoted, because it is a research-process discipline and no Scarp feature — sealed
+sections included — would have caught it.
+
+**Appending a Result is still `cat >>`** on this machine: `scarp` 0.2.0, version lag, maintenance:1
+records upstream shipped result-on-close.
+
+### 13. Strongest limitation
+
+**The objective has no stopping rule, and this round has no candidate for one.** Every frontier
+descends to the floor, and the floor is a guard chosen from the metric's structure rather than a
+statement about where figures end. Refinement can therefore *propose* boundaries but cannot *choose*
+them, which is exactly one half of the capability the round set out to acquire:
+
+```text
+"these two k-event windows look similar"                          <- had this
+"there appears to be a recurring figure here"                     <- have this now, from the frontier
+"and these may be its boundaries"                                 <- still missing
+```
+
+Secondly: three specimens, one of them synthetic and one a runbook pair, is an existence demonstration
+and not a rate.
+
+### 14. Recommendation: exactly one next experiment
+
+**Evaluate the existing order null at every boundary combination, and ask whether a null-referenced
+objective has an interior optimum where the raw one does not.**
+
+The reason is §10: the frontier has no knee because `total` measures agreement without asking how
+surprising that agreement is. A three-event span of two common marks agreeing well is unremarkable; a
+four-event span containing a mark that occurs once in 169 events is not, and the current objective
+cannot tell them apart. task:19's `order_null` already answers exactly that question — *what would a
+span like this score if the ordering carried no information* — and running it per candidate turns the
+frontier's y-axis from "distance" into "distance relative to chance".
+
+It is the smallest possible next step: no new facet, no coefficient, no tuning, no new machinery — the
+null already exists, the specimens already exist, and the same three seeds and the same frontier
+reporting answer it. The falsifiable question is whether a null-referenced frontier has an interior
+optimum at the planted boundaries on specimen A and at the four-event core on specimen C. If it does,
+this project has a stopping rule. If it does not, boundary discovery needs richer marks, and that is
+worth knowing before variable-length search is attempted at any scale.
+
+**Not recommended yet:** general variable-length discovery. This round shows the search half is easy
+and the deciding half is not, and mining arbitrary subsequences with an objective that cannot say when
+to stop would produce a great many confident, wrong boundaries.
+
+### 15. The visualization
+
+Built, and small. `src/experiment/boundary_page.rs` renders one self-contained static page from the
+specimen documents `event-motif --refine --json` produces. It holds no measurement: the fidelity test
+runs a real refinement, serializes it, renders the page, and asserts every frontier total and both
+spans appear in the output.
+
+```text
+cargo run --example event-motif -- --refine --recording <A> --against <B> \
+    --seed-a 51..59 --seed-b 15..23 --label C --role "independent real" --json > c.json
+cargo run --example event-motif -- --render out.html --from a.json --from b.json --from c.json
+```
+
+Seed, pick, and planted boundaries are three distinguishable bands against a shared event-index scale;
+the frontier is a table with the pick and the planted row marked; marks are the delivered kind and
+tool-name string, verbatim; each specimen is labelled synthetic, positive control, or independent
+real; and no figure is given a workflow name. The Behavioral Spectroscope was not touched and nothing
+is served.
+
+**The generator is committed and its output is not.** A page over specimens B and C carries a real
+recording's delivered marks and timings, and while task:19's policy permits that information in a
+Result, a rendered file is a different kind of object. Regenerating it is one command. A
+synthetic-only snapshot could be committed later if a rendered artifact in the repository is ever
+wanted; that is a decision, not an oversight.
+
+### What this task did not do
+
+No global variable-length discovery, no arbitrary subsequence mining, no motif families, no corpus
+accumulation, no hierarchical motifs, no semantic naming. No path, file, payload, edit-intensity,
+intent, or embedding facet. No timing-policy change, no mark change, no adapter-ontology change. No
+`MotifDiscoveryEngine`, no product CLI surface, no recording-format change, no dependency, no
+visualization framework, no Spectroscope change. No existing test altered and no check weakened. No
+real recording committed, copied, or reproduced; no absolute path, prompt, response, command, or file
+content in this artifact. The pre-existing `cargo build --examples` / `spectroscope.rs`
+`required-features` defect did not obstruct validation and was left alone. Nothing pushed.
