@@ -2,8 +2,9 @@
 id: spr_01KZ9TDVC2YRR1SK15MTGT5DTG
 sequence: 9
 kind: sprint
-status: active
+status: closed
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Field
@@ -95,3 +96,75 @@ condition under which "matching" can mean nothing at all. The round has to be ab
   the inspection protocol.
 - Committing a real recording, or putting an absolute path, prompt text, response text, command
   content, or file content into archaeology.
+
+## Outcome
+
+One task, closed. **Supported**, weakly, and the round's most useful output is not the verdict.
+
+sprint:8 recovered a planted figure from two fixtures built to contain one. This sprint took that
+metric, changed nothing in it, and pointed it at two real recordings two days apart with no shared
+prompt. Something survived: two candidates clear every preregistered condition, the strongest of them
+anchored by the *rarest* mark in the larger recording rather than the commonest. Above `k = 3` the top
+matches are not one- or two-mark vocabulary, which is the specific failure this round most expected.
+
+**The positive control is what keeps that honest.** Two executions of one runbook score five to twenty
+times better and separate from the null four to thirteen times more strongly. That is what "these two
+recordings really do share a figure" looks like through this metric, and the primary result is nowhere
+near it. The detector is not the limiting factor; the recordings are.
+
+### Success criteria, against evidence
+
+- **Two real recordings, independence argued.** Four existed; one holds a single record, and two are
+  executions of the same runbook agreeing in 27 of 32 observed marks. The rejected sibling became the
+  positive control rather than being discarded.
+- **The metric used unchanged**, verifiable by diff: the alignment, the timing policy, the five
+  constants, and the normalization are byte-identical to task:18. The additions decide which pairs get
+  compared and what gets printed.
+- **Cross-recording only.** `cross_pairs` ranks nothing but (A-window, B-window) pairs, refuses two
+  sequences carrying the same session id, and carries provenance on the value.
+- **A ladder chosen and justified in advance** — `k = 3, 4, 6, 8, 12` — with every rung's reason
+  recorded, and nothing outside it scanned.
+- **A deterministic order null on both sides**, with separation reported per rung rather than a low
+  absolute distance treated as a discovery. The timing null went along for one line and turned out to
+  say something: timing helps when two sequences really are the same figure and hurts when they are
+  not.
+- **Marginal mark frequencies for both recordings**, which is how the frequency hypothesis got tested
+  instead of waved at. A is 75.8% one tool name.
+- **A four-category rubric recorded before any candidate was seen**, classifications written to disk
+  from a distance-withheld packet, and the self-blinding disclosed as weak rather than presented as a
+  protocol.
+- **A criterion-feasibility check on cardinalities alone**, which caught one defect in advance and
+  missed one. Both are recorded.
+- **`scripts/check.sh` passes unweakened**, no existing test changed, no dependency added.
+
+### What the sprint found that it was not looking for
+
+**Fixed window boundaries are the dominant failure mode, and now it is measured.** One four-event core
+recurred as the anchor of a top candidate at every rung of the ladder. At `k = 4` it is the whole
+window. At 6, 8, and 12 the same core is present with divergent context attached on both sides, and
+the distance degrades monotonically as the window forces more rubbish in. The metric found the figure
+five times and was made to carry the surroundings each time. That is the evidence the next round was
+supposed to be looking for, and it arrived as a by-product.
+
+**The strongest persistent match is half an adapter artefact.** `tool_requested/Agent` is always
+followed by `subagent_started` because that is how the Claude adapter emits a subagent launch. Two of
+the four events in the round's best-anchored figure are therefore a property of the integration, not
+of anything an agent chose. This was written down in the blind classification before any distance was
+revealed, which is the only reason it is a finding rather than an embarrassment.
+
+**A preregistered threshold can be reachable and still be weak.** The feasibility check this sprint was
+asked to perform caught the rank-cutoff problem that spoiled two previous rounds and produced a
+de-duplication policy before any output existed. It then missed a threshold imported from a round whose
+distances were an order of magnitude smaller. Third criterion defect in four rounds, third distinct
+shape.
+
+### What this sprint deliberately leaves open
+
+Variable-length boundary discovery, which is now the one recommended next experiment and has evidence
+behind it rather than a hunch. The excluded similarity facets, three of which looked genuinely useful
+during inspection and are logged with the claim each would actually be making. And the sample-size
+problem: two recordings, one of them 32 events long, is not a rate, a distribution, or a base
+expectation — only an existence proof above a null.
+
+Nothing here changed the raw format, the schema, the recorder, `inspection`, the viewer, the workbench,
+the Spectroscope, or the product CLI's verbs, and no dependency was added.
