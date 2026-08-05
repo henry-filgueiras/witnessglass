@@ -101,6 +101,315 @@ fn distances(alignment: &serde_json::Value) -> String {
     )
 }
 
+/// A point in one of the two panels: a candidate's retained length against a
+/// value. Every coordinate comes from the computed document.
+fn plot_point(
+    retained: f64,
+    value: f64,
+    lower: f64,
+    upper: f64,
+    span: (f64, f64),
+    class: &str,
+    radius: f64,
+) -> String {
+    // Longest span on the left, shortest on the right, so the page reads in the
+    // direction the argument does: "raw agreement keeps improving as spans
+    // shorten". The caption states the same order.
+    let x = 6.0 + 88.0 * (span.1 - retained) / (span.1 - span.0).max(1.0);
+    let y = 92.0 - 84.0 * (value - lower) / (upper - lower).max(1e-9);
+    format!("<circle class=\"{class}\" cx=\"{x:.2}\" cy=\"{y:.2}\" r=\"{radius}\"/>")
+}
+
+/// One panel: a scatter of every evaluated candidate, with the frontier and any
+/// marked spans drawn on top.
+///
+/// The visual question task:21 exists to answer is whether raw agreement keeps
+/// improving as spans shorten while surprise peaks somewhere richer, so the two
+/// panels share an x axis and are stacked.
+fn panel(
+    title: &str,
+    cloud: &[(f64, f64)],
+    frontier: &[(f64, f64)],
+    marked: &[(f64, f64, &str)],
+    span: (f64, f64),
+) -> String {
+    let values: Vec<f64> = cloud
+        .iter()
+        .chain(frontier.iter())
+        .map(|(_, value)| *value)
+        .filter(|value| value.is_finite())
+        .collect();
+    if values.is_empty() {
+        return String::new();
+    }
+    let lower = values
+        .iter()
+        .copied()
+        .fold(f64::INFINITY, f64::min)
+        .min(0.0);
+    let upper = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
+    let mut marks = String::new();
+    for (retained, value) in cloud {
+        marks.push_str(&plot_point(
+            *retained, *value, lower, upper, span, "cloud", 0.55,
+        ));
+    }
+    for (retained, value) in frontier {
+        marks.push_str(&plot_point(
+            *retained, *value, lower, upper, span, "front", 1.3,
+        ));
+    }
+    for (retained, value, class) in marked {
+        marks.push_str(&plot_point(
+            *retained, *value, lower, upper, span, class, 2.2,
+        ));
+    }
+    format!(
+        "<figure class=\"panel\"><figcaption>{}  <span class=\"axis\">y {:.3} to {:.3} · x retained {} (long) to {} (short)</span></figcaption>\
+         <svg viewBox=\"0 0 100 100\" preserveAspectRatio=\"none\" role=\"img\">\
+         <line class=\"rule\" x1=\"6\" y1=\"92\" x2=\"94\" y2=\"92\"/>\
+         <line class=\"rule\" x1=\"6\" y1=\"8\" x2=\"6\" y2=\"92\"/>{marks}</svg></figure>",
+        escape(title),
+        lower,
+        upper,
+        span.1 as i64,
+        span.0 as i64,
+    )
+}
+
+/// A candidate's null distribution, drawn rather than summarized.
+fn histogram(evidence: &serde_json::Value, label: &str) -> String {
+    let Some(bins) = evidence["histogram"].as_array() else {
+        return String::new();
+    };
+    let counts: Vec<f64> = bins.iter().map(as_number).collect();
+    let peak = counts.iter().copied().fold(0.0f64, f64::max).max(1.0);
+    let width = 100.0 / counts.len().max(1) as f64;
+    let mut bars = String::new();
+    for (index, count) in counts.iter().enumerate() {
+        let height = 74.0 * count / peak;
+        bars.push_str(&format!(
+            "<rect class=\"bin\" x=\"{:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{:.2}\"/>",
+            index as f64 * width,
+            80.0 - height,
+            width * 0.86,
+            height
+        ));
+    }
+    let observed = as_number(&evidence["observed"]).clamp(0.0, 1.0) * 100.0;
+    format!(
+        "<figure class=\"hist\"><figcaption>{} · null distance distribution over {} realizations, \
+         observed marked</figcaption>\
+         <svg viewBox=\"0 0 100 92\" preserveAspectRatio=\"none\" role=\"img\">{bars}\
+         <line class=\"observed\" x1=\"{observed:.2}\" y1=\"2\" x2=\"{observed:.2}\" y2=\"86\"/>\
+         <line class=\"rule\" x1=\"0\" y1=\"80\" x2=\"100\" y2=\"80\"/></svg>\
+         <p class=\"axis\">0.0 &mdash; distance &mdash; 1.0</p></figure>",
+        escape(label),
+        as_integer(&evidence["realizations"]),
+    )
+}
+
+/// `[start, end)` of a document's `a`/`b` array, if it has one.
+fn point_bounds(point: &serde_json::Value, side: &str) -> Option<(i64, i64)> {
+    let pair = point[side].as_array()?;
+    Some((as_integer(pair.first()?), as_integer(pair.get(1)?)))
+}
+
+/// The three null-referenced sections, or empty strings when a document carries
+/// no null evidence. Everything is read from the document; nothing is measured.
+fn null_sections(
+    document: &serde_json::Value,
+    truth_a: Option<(i64, i64)>,
+    truth_b: Option<(i64, i64)>,
+) -> (String, String, String) {
+    let evidence = &document["null"];
+    if evidence.is_null() {
+        return (String::new(), String::new(), String::new());
+    }
+    let note_a = document["note_a"]
+        .as_array()
+        .map(|pair| (as_integer(&pair[0]), as_integer(&pair[1])));
+    let note_b = document["note_b"]
+        .as_array()
+        .map(|pair| (as_integer(&pair[0]), as_integer(&pair[1])));
+    let note_label = document["note_label"]
+        .as_str()
+        .unwrap_or("previously observed span");
+
+    let empty = Vec::new();
+    let cloud_points = evidence["geometry"]["points"].as_array().unwrap_or(&empty);
+    let front_points = evidence["frontier"]["points"].as_array().unwrap_or(&empty);
+
+    let is_marked = |point: &serde_json::Value, a: Option<(i64, i64)>, b: Option<(i64, i64)>| {
+        matches!((a, b), (Some(a), Some(b))
+            if point_bounds(point, "a") == Some(a) && point_bounds(point, "b") == Some(b))
+    };
+    // The raw-distance winner is identified from the data rather than named by a
+    // caller: it is simply the lowest total on the frontier.
+    let raw_best = front_points.iter().min_by(|left, right| {
+        as_number(&left["total"])
+            .partial_cmp(&as_number(&right["total"]))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    let series = |points: &[serde_json::Value], key: &str| -> Vec<(f64, f64)> {
+        points
+            .iter()
+            .filter_map(|point| {
+                let value = if key == "total" {
+                    as_number(&point["total"])
+                } else {
+                    point["null"]["total"]["standardized_separation"].as_f64()?
+                };
+                value
+                    .is_finite()
+                    .then(|| (as_number(&point["retained"]), value))
+            })
+            .collect()
+    };
+    let marked = |points: &[serde_json::Value], key: &str| -> Vec<(f64, f64, &'static str)> {
+        points
+            .iter()
+            .filter_map(|point| {
+                let value = if key == "total" {
+                    as_number(&point["total"])
+                } else {
+                    point["null"]["total"]["standardized_separation"].as_f64()?
+                };
+                let class = if is_marked(point, truth_a, truth_b) {
+                    "truthmark"
+                } else if is_marked(point, note_a, note_b) {
+                    "notemark"
+                } else if raw_best.map(|best| best["retained"] == point["retained"]) == Some(true) {
+                    "rawmark"
+                } else {
+                    return None;
+                };
+                value
+                    .is_finite()
+                    .then_some((as_number(&point["retained"]), value, class))
+            })
+            .collect()
+    };
+
+    let lengths: Vec<f64> = cloud_points
+        .iter()
+        .chain(front_points.iter())
+        .map(|point| as_number(&point["retained"]))
+        .collect();
+    let span = (
+        lengths.iter().copied().fold(f64::INFINITY, f64::min),
+        lengths.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    );
+    if !span.0.is_finite() || !span.1.is_finite() {
+        return (String::new(), String::new(), String::new());
+    }
+
+    let panels = format!(
+        "<div class=\"panels\">{}{}</div>\
+         <p class=\"legend\"><span class=\"key cloud\"></span> every candidate \
+         <span class=\"key front\"></span> Pareto frontier \
+         <span class=\"key truthmark\"></span> planted figure \
+         <span class=\"key notemark\"></span> {} \
+         <span class=\"key rawmark\"></span> raw-distance-preferred span</p>",
+        panel(
+            "raw agreement — total distance, lower is closer",
+            &series(cloud_points, "total"),
+            &series(front_points, "total"),
+            &marked(front_points, "total"),
+            span,
+        ),
+        panel(
+            "null-relative surprise — standardized separation, higher is more exceptional",
+            &series(cloud_points, "z"),
+            &series(front_points, "z"),
+            &marked(front_points, "z"),
+            span,
+        ),
+        escape(note_label),
+    );
+
+    let mut rows = String::new();
+    for point in front_points {
+        let total = &point["null"]["total"];
+        let label = if is_marked(point, truth_a, truth_b) {
+            "planted figure"
+        } else if is_marked(point, note_a, note_b) {
+            note_label
+        } else if raw_best.map(|best| best["retained"] == point["retained"]) == Some(true) {
+            "raw-distance-preferred"
+        } else {
+            ""
+        };
+        rows.push_str(&format!(
+            "<tr class=\"{}\"><td>{}</td><td>A[{}..{})</td><td>B[{}..{})</td><td>{:.3}</td>\
+             <td>{:.3}</td><td>{:.3}</td><td>{:.2e}</td><td>{:.3}</td><td>{}</td><td>{}</td></tr>",
+            match label {
+                "planted figure" => "planted",
+                "" => "",
+                other if other == note_label => "noted",
+                _ => "rawbest",
+            },
+            as_integer(&point["retained"]),
+            point_bounds(point, "a").map(|(from, _)| from).unwrap_or(0),
+            point_bounds(point, "a").map(|(_, to)| to).unwrap_or(0),
+            point_bounds(point, "b").map(|(from, _)| from).unwrap_or(0),
+            point_bounds(point, "b").map(|(_, to)| to).unwrap_or(0),
+            as_number(&point["total"]),
+            as_number(&total["null_mean"]),
+            as_number(&total["null_stddev"]),
+            as_number(&total["empirical_p"]),
+            as_number(&total["separation"]),
+            match total["standardized_separation"].as_f64() {
+                Some(z) => format!("{z:.2}"),
+                None => "&mdash;".to_owned(),
+            },
+            escape(label),
+        ));
+    }
+    let evidence_table = if rows.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<p class=\"meta\">null-referenced evidence over the frontier, {} order-null \
+             realizations of both recordings. The empirical tail floor is {:.1e}; a candidate at \
+             the floor is rarer than this ensemble can resolve.</p>\
+             <table><thead><tr><th>retained</th><th>A span</th><th>B span</th><th>total</th>\
+             <th>null mean</th><th>null sd</th><th>emp p</th><th>separation</th><th>z</th>\
+             <th></th></tr></thead><tbody>{rows}</tbody></table>",
+            as_integer(&evidence["frontier"]["realizations"]),
+            1.0 / (1 + as_integer(&evidence["frontier"]["realizations"])) as f64,
+        )
+    };
+
+    let histograms: String = front_points
+        .iter()
+        .filter(|point| {
+            is_marked(point, truth_a, truth_b)
+                || is_marked(point, note_a, note_b)
+                || raw_best.map(|best| best["retained"] == point["retained"]) == Some(true)
+        })
+        .map(|point| {
+            let label = format!(
+                "A[{}..{}) B[{}..{}), {} events",
+                point_bounds(point, "a").map(|(from, _)| from).unwrap_or(0),
+                point_bounds(point, "a").map(|(_, to)| to).unwrap_or(0),
+                point_bounds(point, "b").map(|(from, _)| from).unwrap_or(0),
+                point_bounds(point, "b").map(|(_, to)| to).unwrap_or(0),
+                as_integer(&point["retained"]),
+            );
+            histogram(&point["null"]["total"], &label)
+        })
+        .collect();
+
+    (
+        panels,
+        evidence_table,
+        format!("<div class=\"hists\">{histograms}</div>"),
+    )
+}
+
 fn specimen_card(document: &serde_json::Value) -> String {
     let refinement = &document["refinement"];
     let seed = &refinement["seed"];
@@ -176,6 +485,8 @@ fn specimen_card(document: &serde_json::Value) -> String {
             .to_owned(),
     };
 
+    let (panels, evidence_table, histograms) = null_sections(document, truth_a, truth_b);
+
     format!(
         "<section class=\"card\">\
          <h2>{}</h2><p class=\"role\">{}</p>\
@@ -186,6 +497,7 @@ fn specimen_card(document: &serde_json::Value) -> String {
          <table><thead><tr><th>retained</th><th>A span</th><th>B span</th><th>A marks</th>\
          <th>B marks</th><th>event</th><th>timing</th><th>total</th><th></th></tr></thead>\
          <tbody>{rows}</tbody></table>\
+         {panels}{evidence_table}{histograms}\
          </section>",
         escape(document["label"].as_str().unwrap_or("specimen")),
         escape(document["role"].as_str().unwrap_or("unlabelled")),
@@ -234,6 +546,31 @@ th:nth-child(2), td:nth-child(2), th:nth-child(3), td:nth-child(3) { text-align:
 tr.planted td { color: var(--truth); }
 tr.pick td { color: var(--pick); }
 tr.planted.pick td { color: var(--pick); }
+.panels { display: grid; gap: .8rem; margin-top: 1rem; }
+.panel, .hist { margin: 0; }
+figcaption { font-size: .85em; opacity: .8; margin-bottom: .25rem; }
+.panel svg { width: 100%; height: 9rem; border: 1px solid var(--line); border-radius: 3px; }
+.hist svg { width: 100%; height: 6rem; border: 1px solid var(--line); border-radius: 3px; }
+.hists { display: grid; gap: .8rem; margin-top: 1rem; }
+circle.cloud { fill: var(--ink); opacity: .18; }
+circle.front { fill: var(--pick); }
+circle.truthmark { fill: var(--truth); stroke: var(--paper); stroke-width: .5; }
+circle.notemark { fill: #2ea043; stroke: var(--paper); stroke-width: .5; }
+circle.rawmark { fill: #d1495b; stroke: var(--paper); stroke-width: .5; }
+line.rule { stroke: var(--line); stroke-width: .4; }
+rect.bin { fill: var(--ink); opacity: .45; }
+line.observed { stroke: #d1495b; stroke-width: 1; }
+.legend { font-size: .85em; opacity: .85; }
+.key { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin: 0 .2rem 0 .8rem;
+       vertical-align: -1px; }
+.key.cloud { background: var(--ink); opacity: .25; }
+.key.front { background: var(--pick); }
+.key.truthmark { background: var(--truth); }
+.key.notemark { background: #2ea043; }
+.key.rawmark { background: #d1495b; }
+tr.planted td { color: var(--truth); }
+tr.noted td { color: #2ea043; }
+tr.rawbest td { color: #d1495b; }
 ";
 
 /// Render one page from specimen documents.

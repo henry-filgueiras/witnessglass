@@ -25,9 +25,10 @@
 //! names in the same order at similar spacings, and nothing here says more.
 
 use witnessglass::experiment::event_sequence::{
-    ChannelScope, LENGTH_FLOOR, MarkedEvent, REFINE_RADIUS, align, cross_pairs, dedupe_overlapping,
-    disjoint, ladder, neighbours, order_null, perturbation, project, refine, timing_null,
-    timing_term, top_pairs, top_pairs_where,
+    Alignment, ChannelScope, LENGTH_FLOOR, MarkedEvent, NULL_HISTOGRAM_BINS, ORDER_NULL_SEED,
+    REFINE_RADIUS, align, cross_pairs, dedupe_overlapping, disjoint, ladder, neighbours,
+    null_ensemble, null_evidence, null_seed, order_null, order_null_seeded, perturbation, project,
+    refine, timing_null, timing_term, top_pairs, top_pairs_where,
 };
 use witnessglass::experiment::oracle;
 use witnessglass::inspection::{EventKind, V2Kind, inspect};
@@ -796,6 +797,26 @@ fn cross_fixture(session: &str, tools: &[&str], step_ms: u64) -> String {
     common::ndjson(&records)
 }
 
+/// A recording whose every observed record carries one identical mark, so
+/// permuting it changes nothing. Used to exercise the degenerate-null path.
+fn single_mark_fixture(session: &str, events: usize) -> String {
+    let records: Vec<_> = (0..events)
+        .map(|index| {
+            let seconds = index as u64;
+            common::raw_record(
+                index as u64 + 1,
+                &format!("2026-05-01T00:00:{seconds:02}.000Z"),
+                session,
+                common::ev_tool_requested(
+                    &format!("toolu_synthetic_flat_{index:04}"),
+                    "SyntheticOnlyTool",
+                ),
+            )
+        })
+        .collect();
+    common::ndjson(&records)
+}
+
 const CROSS_A: &str = "sess-synthetic-cross-alpha";
 const CROSS_B: &str = "sess-synthetic-cross-beta";
 
@@ -1327,4 +1348,324 @@ fn the_specimen_page_renders_the_numbers_the_experiment_computed() {
 
     // A page that invented a number would have to invent this one too.
     assert!(!page.contains("0.999"));
+}
+
+// ---------------------------------------------------------------------------
+// Null-referenced evidence — sprint:11, task:21
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_seeded_null_is_task_19s_null_at_its_own_seed() {
+    // The seed became a parameter. That must not have changed what task:19's
+    // null means, and this is the assertion that says so.
+    legible!(replay, inspection, sequence);
+    assert_eq!(
+        order_null(&sequence),
+        order_null_seeded(&sequence, ORDER_NULL_SEED)
+    );
+    // And a different seed is a different realization, not the same one.
+    assert_ne!(
+        order_null(&sequence),
+        order_null_seeded(&sequence, ORDER_NULL_SEED ^ 0xFF)
+    );
+}
+
+#[test]
+fn null_seeds_are_derived_deterministically_and_differ_across_realizations_and_sides() {
+    assert_eq!(null_seed(0, 0), ORDER_NULL_SEED);
+    assert_eq!(null_seed(7, 1), null_seed(7, 1));
+    assert_ne!(null_seed(7, 0), null_seed(7, 1), "the two sides differ");
+    assert_ne!(null_seed(7, 0), null_seed(8, 0), "realizations differ");
+    let mut seen: Vec<u64> = (0..64)
+        .flat_map(|r| [null_seed(r, 0), null_seed(r, 1)])
+        .collect();
+    seen.sort_unstable();
+    let count = seen.len();
+    seen.dedup();
+    assert_eq!(seen.len(), count, "no two derived seeds collide");
+}
+
+#[test]
+fn each_realization_preserves_the_marginals_and_destroys_the_ordering() {
+    legible!(replay, inspection, sequence);
+    let ensemble = null_ensemble(&sequence, &sequence, 8);
+    assert_eq!(ensemble.len(), 8);
+
+    let mut expected: Vec<String> = sequence.events.iter().map(|e| e.mark.label()).collect();
+    let real_order = expected.clone();
+    expected.sort();
+
+    let mut destroyed = 0usize;
+    for (left, right) in &ensemble.realizations {
+        for nulled in [left, right] {
+            assert_eq!(nulled.len(), sequence.len(), "length is preserved");
+            let mut marks: Vec<String> = nulled.events.iter().map(|e| e.mark.label()).collect();
+            if marks != real_order {
+                destroyed += 1;
+            }
+            marks.sort();
+            assert_eq!(marks, expected, "the mark multiset is preserved");
+            for (before, after) in sequence.events.iter().zip(&nulled.events) {
+                assert_eq!(before.gap_from_previous_ms, after.gap_from_previous_ms);
+                assert_eq!(before.offset_ms, after.offset_ms);
+            }
+            assert!(nulled.events.iter().all(|e| e.sequence.is_none()));
+        }
+        // The two sides of one realization get different permutations.
+        assert_ne!(
+            left.events
+                .iter()
+                .map(|e| e.mark.label())
+                .collect::<Vec<_>>(),
+            right
+                .events
+                .iter()
+                .map(|e| e.mark.label())
+                .collect::<Vec<_>>()
+        );
+    }
+    assert_eq!(destroyed, 16, "every realization reorders the marks");
+}
+
+#[test]
+fn evidence_is_reproducible_and_leaves_the_candidate_and_its_sequences_alone() {
+    legible!(replay, inspection, sequence);
+    let before = sequence.clone();
+    let (span_a, span_b) = ((20, 28), (162, 170));
+    let observed = align(
+        sequence.window(span_a.0, 8).expect("a window"),
+        sequence.window(span_b.0, 8).expect("a window"),
+    );
+
+    let ensemble = null_ensemble(&sequence, &sequence, 64);
+    let first = null_evidence(&ensemble, span_a, span_b, &observed).expect("evidence");
+    let second = null_evidence(&ensemble, span_a, span_b, &observed).expect("evidence");
+    assert_eq!(first, second);
+
+    // A freshly built ensemble of the same size gives the same answer, so
+    // nothing depends on ensemble identity or on call order.
+    let rebuilt = null_ensemble(&sequence, &sequence, 64);
+    assert_eq!(
+        null_evidence(&rebuilt, span_a, span_b, &observed).expect("evidence"),
+        first
+    );
+
+    assert_eq!(sequence, before, "the null borrows and rewrites nothing");
+    // The observed distance travelling with the evidence is exactly the one
+    // task:20 computes for these spans — the null adds evidence, it does not
+    // restate the measurement.
+    assert_eq!(first.total.observed, observed.total);
+    assert_eq!(first.event.observed, observed.event_norm);
+}
+
+#[test]
+fn the_tail_estimator_handles_both_finite_sample_edges_and_never_leaks_nan() {
+    legible!(replay, inspection, sequence);
+    let realizations = 32usize;
+    let ensemble = null_ensemble(&sequence, &sequence, realizations);
+    let (span_a, span_b) = ((20, 28), (162, 170));
+    let a = sequence.window(span_a.0, 8).expect("a window");
+    let b = sequence.window(span_b.0, 8).expect("a window");
+    let observed = align(a, b);
+
+    // A distance nothing can beat: the floor, not zero.
+    let unreachable = Alignment {
+        total: -1.0,
+        ..observed
+    };
+    let low = null_evidence(&ensemble, span_a, span_b, &unreachable).expect("evidence");
+    assert_eq!(low.total.at_or_below, 0);
+    assert!((low.total.empirical_p - 1.0 / (1 + realizations) as f64).abs() < EPSILON);
+
+    // A distance everything beats: exactly one.
+    let trivial = Alignment {
+        total: 2.0,
+        ..observed
+    };
+    let high = null_evidence(&ensemble, span_a, span_b, &trivial).expect("evidence");
+    assert_eq!(high.total.at_or_below, realizations);
+    assert!((high.total.empirical_p - 1.0).abs() < EPSILON);
+
+    // Nothing anywhere is NaN or infinite, including through serialization.
+    for evidence in [&low, &high] {
+        for value in [
+            evidence.total.null_mean,
+            evidence.total.null_stddev,
+            evidence.total.null_min,
+            evidence.total.null_max,
+            evidence.total.empirical_p,
+            evidence.total.separation,
+        ] {
+            assert!(value.is_finite(), "{value} is not finite");
+        }
+        let text = serde_json::to_string(evidence).expect("serialize");
+        assert!(
+            !text.contains("null_mean\":null"),
+            "a NaN leaked as JSON null"
+        );
+        assert!(!text.contains("inf"), "an infinity leaked into JSON");
+        assert_eq!(evidence.total.histogram.len(), NULL_HISTOGRAM_BINS);
+        assert_eq!(
+            evidence.total.histogram.iter().sum::<usize>(),
+            realizations,
+            "every realization lands in exactly one bin"
+        );
+    }
+}
+
+#[test]
+fn a_null_with_no_variance_reports_no_standardized_separation_rather_than_infinity() {
+    // A recording whose every observed event carries the same mark cannot be
+    // permuted into anything else, so its null distribution is a point mass.
+    let text = single_mark_fixture(CROSS_A, 12);
+    let replay = replay_bytes(text.as_bytes()).expect("replay");
+    let inspection = inspect(&replay);
+    let sequence = project(&inspection, ChannelScope::Observed).expect("a sequence");
+
+    let ensemble = null_ensemble(&sequence, &sequence, 16);
+    let observed = align(
+        sequence.window(0, 4).expect("a window"),
+        sequence.window(6, 4).expect("a window"),
+    );
+    let evidence = null_evidence(&ensemble, (0, 4), (6, 10), &observed).expect("evidence");
+
+    assert!(evidence.total.null_stddev.abs() < EPSILON, "a point mass");
+    assert!(
+        evidence.total.standardized_separation.is_none(),
+        "a degenerate null must be reported as absent, not as infinity"
+    );
+    let text = serde_json::to_string(&evidence).expect("serialize");
+    assert!(!text.contains("inf") && !text.contains("NaN"));
+}
+
+#[test]
+fn a_rare_ordered_sequence_is_more_exceptional_than_a_commonplace_one() {
+    // The known-answer microcase, built without tuning: two recordings whose
+    // vocabulary is dominated by one tool name, with a second name appearing
+    // once. Two spans agree exactly in both cases; only the vocabulary differs.
+    let mut tools = vec!["SyntheticCommon"; 20];
+    tools[4] = "SyntheticRare";
+    tools[14] = "SyntheticRare";
+    let text = cross_fixture(CROSS_A, &tools, 400);
+    let other = cross_fixture(CROSS_B, &tools, 400);
+    let a_replay = replay_bytes(text.as_bytes()).expect("replay");
+    let b_replay = replay_bytes(other.as_bytes()).expect("replay");
+    let (a_i, b_i) = (inspect(&a_replay), inspect(&b_replay));
+    let a = project(&a_i, ChannelScope::Observed).expect("a sequence");
+    let b = project(&b_i, ChannelScope::Observed).expect("a sequence");
+
+    // `cross_fixture` writes a request and a success per tool, so tool index 4
+    // occupies events 8 and 9, and tool index 14 occupies events 28 and 29.
+    let rare = ((8usize, 10usize), (28usize, 30usize));
+    let common = ((0usize, 2usize), (20usize, 22usize));
+    let ensemble = null_ensemble(&a, &b, 2000);
+
+    let evidence = |span: ((usize, usize), (usize, usize))| {
+        let observed = align(
+            a.window(span.0.0, span.0.1 - span.0.0).expect("a window"),
+            b.window(span.1.0, span.1.1 - span.1.0).expect("a window"),
+        );
+        assert!(
+            observed.event_norm.abs() < EPSILON,
+            "both spans must agree exactly, or this compares two different things"
+        );
+        null_evidence(&ensemble, span.0, span.1, &observed).expect("evidence")
+    };
+
+    let rare_evidence = evidence(rare);
+    let common_evidence = evidence(common);
+    assert!(
+        rare_evidence.event.empirical_p < common_evidence.event.empirical_p,
+        "a span carrying a rare mark should be rarer under the null: {} vs {}",
+        rare_evidence.event.empirical_p,
+        common_evidence.event.empirical_p
+    );
+}
+
+#[test]
+fn the_page_renders_the_null_evidence_the_experiment_computed() {
+    // Fidelity for sprint:11's additions: the panels, the evidence table, and
+    // the histogram must all come out of the computed document.
+    legible!(replay, inspection, sequence);
+    let refined = refine(
+        &sequence,
+        CONTAMINATED_A,
+        &sequence,
+        CONTAMINATED_B,
+        REFINE_RADIUS,
+        LENGTH_FLOOR,
+    )
+    .expect("a valid seed");
+    let realizations = 128usize;
+    let ensemble = null_ensemble(&sequence, &sequence, realizations);
+
+    let points: Vec<serde_json::Value> = refined
+        .frontier
+        .iter()
+        .map(|candidate| {
+            let (a, b) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+            let spans = ((a.start, a.start + a.k), (b.start, b.start + b.k));
+            let evidence = null_evidence(
+                &ensemble,
+                spans.0,
+                spans.1,
+                &candidate.pair.comparison.alignment,
+            )
+            .expect("evidence");
+            serde_json::json!({
+                "retained": candidate.retained,
+                "a": [spans.0.0, spans.0.1],
+                "b": [spans.1.0, spans.1.1],
+                "a_marks": a.distinct_marks,
+                "b_marks": b.distinct_marks,
+                "event_norm": candidate.pair.comparison.alignment.event_norm,
+                "timing_norm": candidate.pair.comparison.alignment.timing_norm,
+                "total": candidate.pair.comparison.alignment.total,
+                "null": { "total": evidence.total, "event": evidence.event },
+            })
+        })
+        .collect();
+
+    let document = serde_json::json!({
+        "label": "A",
+        "role": "synthetic",
+        "truth_a": [PLANTED_A.0, PLANTED_A.1],
+        "truth_b": [PLANTED_B.0, PLANTED_B.1],
+        "refinement": refined,
+        "null": {
+            "geometry": serde_json::Value::Null,
+            "frontier": { "realizations": realizations, "points": points.clone() },
+        },
+    });
+    let page = witnessglass::experiment::boundary_page::render(&[document]);
+
+    assert!(page.contains(&format!("{realizations} order-null")));
+    for point in &points {
+        let total = &point["null"]["total"];
+        // Every computed statistic reaches the page at the precision it prints.
+        for (value, precision) in [
+            (total["null_mean"].as_f64().expect("a number"), 3usize),
+            (total["null_stddev"].as_f64().expect("a number"), 3),
+            (total["separation"].as_f64().expect("a number"), 3),
+        ] {
+            let rendered = format!("{value:.*}", precision);
+            assert!(page.contains(&rendered), "the page omits {rendered}");
+        }
+        let p = total["empirical_p"].as_f64().expect("a number");
+        assert!(
+            page.contains(&format!("{p:.2e}")),
+            "the page omits emp-p {p:.2e}"
+        );
+        // And the histogram is drawn, bar by bar, from the computed counts.
+        let bins = total["histogram"].as_array().expect("bins");
+        assert_eq!(bins.len(), NULL_HISTOGRAM_BINS);
+    }
+    assert!(page.contains("class=\"bin\""), "no histogram was drawn");
+    assert!(
+        page.contains("standardized separation"),
+        "no surprise panel"
+    );
+
+    // A page inventing a statistic would have to invent this one.
+    assert!(!page.contains("9.999e0"));
 }

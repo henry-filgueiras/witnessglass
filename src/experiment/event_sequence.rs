@@ -858,7 +858,23 @@ impl Lcg {
 ///
 /// It answers one question: **does event order carry information?**
 pub fn order_null<'a>(sequence: &EventSequence<'a>) -> EventSequence<'a> {
-    let mut generator = Lcg::new(0x4F52_4445_524E_554C);
+    order_null_seeded(sequence, ORDER_NULL_SEED)
+}
+
+/// task:19's order null seed. `order_null` is realization zero of
+/// [`order_null_seeded`], and a test asserts the two agree, so the seed becoming
+/// a parameter does not change what task:19's null means.
+pub const ORDER_NULL_SEED: u64 = 0x4F52_4445_524E_554C;
+
+/// The same order null, with the seed supplied by the caller.
+///
+/// **The whole of sprint:11's extension to task:19's machinery.** One shuffled
+/// realization cannot say whether a distance is surprising; a distribution can,
+/// and a distribution needs more than one seed. Nothing else about the null
+/// moves: marks are permuted, gaps and offsets stay exactly where they are, the
+/// mark multiset and the length survive, and receipts are dropped.
+pub fn order_null_seeded<'a>(sequence: &EventSequence<'a>, seed: u64) -> EventSequence<'a> {
+    let mut generator = Lcg::new(seed);
     let order = generator.permutation(sequence.events.len());
     let mut shuffled = sequence.clone();
     for (position, source) in order.into_iter().enumerate() {
@@ -1175,6 +1191,55 @@ pub fn refine<'a>(
     radius: usize,
     floor: usize,
 ) -> Option<Refinement<'a>> {
+    let (seed, scored, rejected) =
+        enumerate_candidates(first, seed_a, second, seed_b, radius, floor)?;
+
+    let frontier = pareto_frontier(&scored);
+    let seed_total = seed.pair.comparison.alignment.total;
+    let pick = frontier
+        .iter()
+        .filter(|candidate| candidate.pair.comparison.alignment.total <= seed_total)
+        .max_by_key(|candidate| candidate.retained)
+        .or_else(|| {
+            frontier.iter().min_by(|left, right| {
+                left.pair
+                    .comparison
+                    .alignment
+                    .total
+                    .partial_cmp(&right.pair.comparison.alignment.total)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
+        .copied();
+
+    Some(Refinement {
+        seed,
+        evaluated: scored.len(),
+        rejected,
+        radius,
+        floor,
+        frontier,
+        pick,
+    })
+}
+
+/// Every valid boundary combination in the neighbourhood, scored, with the seed
+/// and the rejection count beside them.
+///
+/// Split out of [`refine`] rather than duplicated: sprint:11 needs the whole
+/// enumeration to evaluate null evidence over it, and a second copy of the
+/// enumeration would be a second definition of what the neighbourhood is.
+/// [`refine`]'s behaviour is unchanged — it is this function plus the frontier
+/// and the pick.
+#[allow(clippy::type_complexity)]
+pub fn enumerate_candidates<'a>(
+    first: &EventSequence<'a>,
+    seed_a: (usize, usize),
+    second: &EventSequence<'a>,
+    seed_b: (usize, usize),
+    radius: usize,
+    floor: usize,
+) -> Option<(RefinedCandidate<'a>, Vec<RefinedCandidate<'a>>, usize)> {
     let score = |a: (usize, usize), b: (usize, usize)| -> Option<CrossPair<'a>> {
         let (a_len, b_len) = (a.1.checked_sub(a.0)?, b.1.checked_sub(b.0)?);
         if a_len < floor || b_len < floor {
@@ -1250,33 +1315,7 @@ pub fn refine<'a>(
         }
     }
 
-    let frontier = pareto_frontier(&scored);
-    let seed_total = seed.pair.comparison.alignment.total;
-    let pick = frontier
-        .iter()
-        .filter(|candidate| candidate.pair.comparison.alignment.total <= seed_total)
-        .max_by_key(|candidate| candidate.retained)
-        .or_else(|| {
-            frontier.iter().min_by(|left, right| {
-                left.pair
-                    .comparison
-                    .alignment
-                    .total
-                    .partial_cmp(&right.pair.comparison.alignment.total)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-        })
-        .copied();
-
-    Some(Refinement {
-        seed,
-        evaluated: scored.len(),
-        rejected,
-        radius,
-        floor,
-        frontier,
-        pick,
-    })
+    Some((seed, scored, rejected))
 }
 
 /// The non-dominated set over `(total ↓, retained ↑)`.
@@ -1336,4 +1375,200 @@ fn pareto_frontier<'a>(scored: &[RefinedCandidate<'a>]) -> Vec<RefinedCandidate<
         }
     }
     frontier
+}
+
+// ---------------------------------------------------------------------------
+// Null-referenced evidence — sprint:11, task:21
+// ---------------------------------------------------------------------------
+
+/// Bins in a candidate's null histogram, over `[0, 1]`.
+///
+/// Distances are normalized into that interval, so a fixed grid needs no scale
+/// negotiation and a page can draw the distribution rather than summarize it.
+pub const NULL_HISTOGRAM_BINS: usize = 20;
+
+/// Mixed into the seed per realization. An odd 64-bit constant; nothing about
+/// the value matters except that it is fixed and not a small integer.
+const REALIZATION_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
+
+/// Mixed into the seed per side, so the two sequences of a pair are never given
+/// the same permutation.
+const SIDE_STRIDE: u64 = 0xD1B5_4A32_D192_ED03;
+
+/// The seed for realization `r` of side `s`.
+///
+/// Derived from task:19's own constant, with no ambient RNG, no clock, and no
+/// thread state anywhere in the path. task:21 §3 fixes this and a test pins it.
+pub fn null_seed(realization: usize, side: usize) -> u64 {
+    ORDER_NULL_SEED
+        ^ (realization as u64).wrapping_mul(REALIZATION_STRIDE)
+        ^ (side as u64).wrapping_mul(SIDE_STRIDE)
+}
+
+/// A fixed set of order-null realizations of one pair of recordings.
+///
+/// Materialized once and shared across every candidate of a specimen, which is
+/// what makes comprehensive evaluation affordable and what makes candidates
+/// within a specimen comparable: they are held against the same null world
+/// rather than against one each.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NullEnsemble<'a> {
+    /// One `(A, B)` pair per realization, each side permuted independently.
+    pub realizations: Vec<(EventSequence<'a>, EventSequence<'a>)>,
+}
+
+impl NullEnsemble<'_> {
+    /// How many realizations the ensemble holds.
+    pub fn len(&self) -> usize {
+        self.realizations.len()
+    }
+
+    /// Whether the ensemble is empty, which makes every statistic undefined.
+    pub fn is_empty(&self) -> bool {
+        self.realizations.is_empty()
+    }
+}
+
+/// Build `realizations` independent order nulls of both sequences.
+pub fn null_ensemble<'a>(
+    first: &EventSequence<'a>,
+    second: &EventSequence<'a>,
+    realizations: usize,
+) -> NullEnsemble<'a> {
+    NullEnsemble {
+        realizations: (0..realizations)
+            .map(|index| {
+                (
+                    order_null_seeded(first, null_seed(index, 0)),
+                    order_null_seeded(second, null_seed(index, 1)),
+                )
+            })
+            .collect(),
+    }
+}
+
+/// What a null distribution says about one observed distance.
+///
+/// **None of these is a motif score.** task:21 reports them side by side
+/// precisely so that whether any of them has useful geometry can be looked at
+/// rather than assumed, and it forbids ranking candidates by one alone.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NullEvidence {
+    /// The distance actually observed for this candidate.
+    pub observed: f64,
+    /// Realizations the distribution was estimated from.
+    pub realizations: usize,
+    /// Mean of the null distances.
+    pub null_mean: f64,
+    /// Population standard deviation of the null distances.
+    pub null_stddev: f64,
+    /// Smallest null distance seen.
+    pub null_min: f64,
+    /// Largest null distance seen.
+    pub null_max: f64,
+    /// Realizations whose distance was no greater than the observed one.
+    pub at_or_below: usize,
+    /// `(1 + at_or_below) / (1 + realizations)`.
+    ///
+    /// The conservative finite-sample estimator, so a candidate no realization
+    /// reached is reported at the floor `1/(1 + N)` rather than at zero — an
+    /// estimate of "rarer than this ensemble can resolve", which is what the
+    /// evidence actually supports.
+    pub empirical_p: f64,
+    /// `null_mean − observed`. Positive means the real pair agrees better than
+    /// the null typically manages.
+    pub separation: f64,
+    /// `separation / null_stddev`, or `None` when the null has no variance.
+    ///
+    /// Absent rather than infinite: a degenerate null is a fact to report, and
+    /// an infinity in a statistic is a fact hidden behind a symbol.
+    pub standardized_separation: Option<f64>,
+    /// Counts over [`NULL_HISTOGRAM_BINS`] equal bins spanning `[0, 1]`, so the
+    /// distribution can be drawn instead of described.
+    pub histogram: Vec<usize>,
+}
+
+/// Both null-referenced views of one candidate.
+///
+/// Two, because task:18's lesson was that collapsing identity and timing into
+/// one number hides which of them is doing the work — and sprint:11's mechanism
+/// lives in identity agreement.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CandidateNull {
+    /// Evidence about the combined ranking distance.
+    pub total: NullEvidence,
+    /// Evidence about the event-identity component alone.
+    pub event: NullEvidence,
+}
+
+/// Score one candidate's spans against every realization of an ensemble.
+///
+/// Reads the same spans out of each nulled pair, so the candidate's boundaries,
+/// lengths, and observed gaps are held fixed and only identity is randomized.
+/// Returns `None` when the spans do not exist or the ensemble is empty.
+pub fn null_evidence(
+    ensemble: &NullEnsemble<'_>,
+    a_span: (usize, usize),
+    b_span: (usize, usize),
+    observed: &Alignment,
+) -> Option<CandidateNull> {
+    if ensemble.is_empty() {
+        return None;
+    }
+    let (a_len, b_len) = (
+        a_span.1.checked_sub(a_span.0)?,
+        b_span.1.checked_sub(b_span.0)?,
+    );
+
+    let mut totals = Vec::with_capacity(ensemble.len());
+    let mut events = Vec::with_capacity(ensemble.len());
+    for (a, b) in &ensemble.realizations {
+        let alignment = align(a.window(a_span.0, a_len)?, b.window(b_span.0, b_len)?);
+        totals.push(alignment.total);
+        events.push(alignment.event_norm);
+    }
+
+    Some(CandidateNull {
+        total: summarize(&totals, observed.total),
+        event: summarize(&events, observed.event_norm),
+    })
+}
+
+/// Reduce one null sample to the statistics task:21 §6 fixed.
+fn summarize(samples: &[f64], observed: f64) -> NullEvidence {
+    let realizations = samples.len();
+    let count = realizations.max(1) as f64;
+    let mean = samples.iter().sum::<f64>() / count;
+    let variance = samples
+        .iter()
+        .map(|value| {
+            let deviation = value - mean;
+            deviation * deviation
+        })
+        .sum::<f64>()
+        / count;
+    let stddev = variance.sqrt();
+    let at_or_below = samples.iter().filter(|value| **value <= observed).count();
+
+    let mut histogram = vec![0usize; NULL_HISTOGRAM_BINS];
+    for value in samples {
+        // Distances are normalized into [0, 1]; the clamp keeps a rounding
+        // artefact at either end inside the grid rather than dropping it.
+        let bin = ((value * NULL_HISTOGRAM_BINS as f64) as usize).min(NULL_HISTOGRAM_BINS - 1);
+        histogram[bin] += 1;
+    }
+
+    NullEvidence {
+        observed,
+        realizations,
+        null_mean: mean,
+        null_stddev: stddev,
+        null_min: samples.iter().copied().fold(f64::INFINITY, f64::min),
+        null_max: samples.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+        at_or_below,
+        empirical_p: (1 + at_or_below) as f64 / (1 + realizations) as f64,
+        separation: mean - observed,
+        standardized_separation: (stddev > 0.0).then(|| (mean - observed) / stddev),
+        histogram,
+    }
 }

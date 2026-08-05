@@ -24,8 +24,9 @@ use std::process::ExitCode;
 use witnessglass::experiment::boundary_page;
 use witnessglass::experiment::event_sequence::{
     ChannelScope, Comparison, CrossPair, EventSequence, LENGTH_FLOOR, REFINE_RADIUS,
-    RefinedCandidate, Refinement, cross_pairs, dedupe_overlapping, ladder, neighbours, order_null,
-    perturbation, project, refine, timing_null, top_pairs, top_pairs_where,
+    RefinedCandidate, Refinement, cross_pairs, dedupe_overlapping, enumerate_candidates, ladder,
+    neighbours, null_ensemble, null_evidence, order_null, perturbation, project, refine,
+    timing_null, top_pairs, top_pairs_where,
 };
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
@@ -82,6 +83,14 @@ USAGE:
     --render <OUT.html>  Write one static page from specimen JSON documents.
     --from <IN.json>     A specimen document, from `--refine --json`. Repeatable.
                          The page holds no measurement of its own.
+    --nulls <N>          sprint:11. Evaluate every enumerated boundary candidate
+                         against N deterministic order-null realizations of both
+                         recordings. The geometry scope.
+    --frontier-nulls <N> The same over the Pareto frontier only, at a larger N,
+                         where the tail needs finer resolution.
+    --note-a <S..E>      A span to mark on the page beside the planted one, for
+    --note-b <S..E>      a specimen with no ground truth. Supplied by the caller.
+    --note-label <TEXT>  What to call it. Not a workflow name.
 
 WHAT A WINDOW IS HERE:
     A fixed number of *events*, not a fixed wall-clock width. A window of k
@@ -149,6 +158,11 @@ struct Options {
     role: Option<String>,
     render: Option<PathBuf>,
     from: Vec<PathBuf>,
+    nulls: usize,
+    frontier_nulls: usize,
+    note_a: Option<(usize, usize)>,
+    note_b: Option<(usize, usize)>,
+    note_label: Option<String>,
 }
 
 fn run() -> Result<ExitCode, String> {
@@ -352,6 +366,11 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut role = None;
     let mut render = None;
     let mut from = Vec::new();
+    let mut nulls = 0usize;
+    let mut frontier_nulls = 0usize;
+    let mut note_a = None;
+    let mut note_b = None;
+    let mut note_label = None;
 
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -391,6 +410,13 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--role" => role = Some(value("--role")?),
             "--render" => render = Some(PathBuf::from(value("--render")?)),
             "--from" => from.push(PathBuf::from(value("--from")?)),
+            "--note-a" => note_a = Some(span(&value("--note-a")?)?),
+            "--note-b" => note_b = Some(span(&value("--note-b")?)?),
+            "--note-label" => note_label = Some(value("--note-label")?),
+            "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
+            "--frontier-nulls" => {
+                frontier_nulls = number(&value("--frontier-nulls")?, "--frontier-nulls")?
+            }
             other => return Err(format!("unexpected argument {other:?}\n\n{USAGE}")),
         }
     }
@@ -421,6 +447,11 @@ fn parse(args: &[String]) -> Result<Options, String> {
         role,
         render,
         from,
+        nulls,
+        frontier_nulls,
+        note_a,
+        note_b,
+        note_label,
     })
 }
 
@@ -1005,15 +1036,20 @@ fn refinement_mode(
         .ok_or_else(|| "the seed is not a valid pair of spans in these recordings".to_owned())?;
 
     if options.json {
+        let mut document = specimen_json(options, a_path, &b_path, &refinement);
+        if let Some(nulls) = null_scopes(a, &b, options, &refinement) {
+            document["null"] = nulls;
+        }
         println!(
             "{}",
-            serde_json::to_string_pretty(&specimen_json(options, a_path, &b_path, &refinement))
+            serde_json::to_string_pretty(&document)
                 .map_err(|err| format!("could not render JSON: {err}"))?
         );
         return Ok(ExitCode::SUCCESS);
     }
 
     print_refinement(a, &b, options, &refinement);
+    print_null_frontier(a, &b, options, &refinement);
     Ok(ExitCode::SUCCESS)
 }
 
@@ -1032,6 +1068,9 @@ fn specimen_json(
         "b_recording": b_path.display().to_string(),
         "truth_a": options.truth_a,
         "truth_b": options.truth_b,
+        "note_a": options.note_a,
+        "note_b": options.note_b,
+        "note_label": options.note_label,
         "refinement": refinement,
     })
 }
@@ -1242,4 +1281,162 @@ fn render_mode(options: &Options) -> Result<ExitCode, String> {
     );
     println!("output derived from a real recording is as sensitive as that recording.");
     Ok(ExitCode::SUCCESS)
+}
+
+// ---------------------------------------------------------------------------
+// Null-referenced evidence — sprint:11, task:21
+// ---------------------------------------------------------------------------
+
+/// A candidate's spans, as the half-open pairs the evidence call wants.
+fn candidate_spans(candidate: &RefinedCandidate<'_>) -> ((usize, usize), (usize, usize)) {
+    let (a, b) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+    ((a.start, a.start + a.k), (b.start, b.start + b.k))
+}
+
+/// One candidate as the page consumes it: the raw numbers task:20 already had,
+/// plus whatever null evidence was computed for it.
+fn candidate_json(
+    candidate: &RefinedCandidate<'_>,
+    evidence: Option<&witnessglass::experiment::event_sequence::CandidateNull>,
+    with_histogram: bool,
+) -> serde_json::Value {
+    let (a, b) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+    let alignment = &candidate.pair.comparison.alignment;
+    let mut node = serde_json::json!({
+        "retained": candidate.retained,
+        "a": [a.start, a.start + a.k],
+        "b": [b.start, b.start + b.k],
+        "a_marks": a.distinct_marks,
+        "b_marks": b.distinct_marks,
+        "event_norm": alignment.event_norm,
+        "timing_norm": alignment.timing_norm,
+        "total": alignment.total,
+        "delta": candidate.delta,
+    });
+    if let Some(evidence) = evidence {
+        let mut total = serde_json::to_value(&evidence.total).unwrap_or(serde_json::Value::Null);
+        let mut event = serde_json::to_value(&evidence.event).unwrap_or(serde_json::Value::Null);
+        if !with_histogram {
+            // 2400 candidates x 20 bins is noise in a document nobody reads at
+            // that granularity; the frontier carries the distributions.
+            for value in [&mut total, &mut event] {
+                if let Some(object) = value.as_object_mut() {
+                    object.remove("histogram");
+                }
+            }
+        }
+        node["null"] = serde_json::json!({ "total": total, "event": event });
+    }
+    node
+}
+
+/// Compute both preregistered scopes and attach them to the specimen document.
+fn null_scopes(
+    a: &EventSequence<'_>,
+    b: &EventSequence<'_>,
+    options: &Options,
+    refinement: &Refinement<'_>,
+) -> Option<serde_json::Value> {
+    if options.nulls == 0 && options.frontier_nulls == 0 {
+        return None;
+    }
+    let seed_a = candidate_spans(&refinement.seed).0;
+    let seed_b = candidate_spans(&refinement.seed).1;
+
+    let geometry = (options.nulls > 0).then(|| {
+        let ensemble = null_ensemble(a, b, options.nulls);
+        let scored =
+            enumerate_candidates(a, seed_a, b, seed_b, refinement.radius, refinement.floor)
+                .map(|(_, scored, _)| scored)
+                .unwrap_or_default();
+        let points: Vec<serde_json::Value> = scored
+            .iter()
+            .map(|candidate| {
+                let (span_a, span_b) = candidate_spans(candidate);
+                let evidence = null_evidence(
+                    &ensemble,
+                    span_a,
+                    span_b,
+                    &candidate.pair.comparison.alignment,
+                );
+                candidate_json(candidate, evidence.as_ref(), false)
+            })
+            .collect();
+        serde_json::json!({ "realizations": options.nulls, "points": points })
+    });
+
+    let frontier = (options.frontier_nulls > 0).then(|| {
+        let ensemble = null_ensemble(a, b, options.frontier_nulls);
+        let points: Vec<serde_json::Value> = refinement
+            .frontier
+            .iter()
+            .map(|candidate| {
+                let (span_a, span_b) = candidate_spans(candidate);
+                let evidence = null_evidence(
+                    &ensemble,
+                    span_a,
+                    span_b,
+                    &candidate.pair.comparison.alignment,
+                );
+                candidate_json(candidate, evidence.as_ref(), true)
+            })
+            .collect();
+        serde_json::json!({ "realizations": options.frontier_nulls, "points": points })
+    });
+
+    Some(serde_json::json!({ "geometry": geometry, "frontier": frontier }))
+}
+
+/// The frontier's null evidence, in the terminal.
+fn print_null_frontier(
+    a: &EventSequence<'_>,
+    b: &EventSequence<'_>,
+    options: &Options,
+    refinement: &Refinement<'_>,
+) {
+    if options.frontier_nulls == 0 {
+        return;
+    }
+    let ensemble = null_ensemble(a, b, options.frontier_nulls);
+    println!(
+        "  null-referenced evidence over the frontier, {} order-null realizations of both sides:",
+        options.frontier_nulls
+    );
+    println!(
+        "  {:>9} {:>12} {:>12} {:>7} {:>8} {:>8} {:>8} {:>8} {:>8}",
+        "retained", "A span", "B span", "tot", "null-mu", "null-sd", "emp-p", "sep", "z"
+    );
+    for candidate in &refinement.frontier {
+        let (span_a, span_b) = candidate_spans(candidate);
+        let Some(evidence) = null_evidence(
+            &ensemble,
+            span_a,
+            span_b,
+            &candidate.pair.comparison.alignment,
+        ) else {
+            continue;
+        };
+        let (ca, cb) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+        println!(
+            "  {:>9} {:>12} {:>12} {:>7.3} {:>8.3} {:>8.3} {:>8} {:>8.3} {:>8}",
+            candidate.retained,
+            format!("[{}..{})", ca.start, ca.start + ca.k),
+            format!("[{}..{})", cb.start, cb.start + cb.k),
+            candidate.pair.comparison.alignment.total,
+            evidence.total.null_mean,
+            evidence.total.null_stddev,
+            format!("{:.2e}", evidence.total.empirical_p),
+            evidence.total.separation,
+            match evidence.total.standardized_separation {
+                Some(z) => format!("{z:.2}"),
+                None => "-".to_owned(),
+            },
+        );
+    }
+    println!(
+        "  emp-p is (1 + realizations at or below observed) / (1 + realizations); its floor here is \
+         {:.1e}",
+        1.0 / (1 + options.frontier_nulls) as f64
+    );
+    println!();
 }
