@@ -2,9 +2,10 @@
 id: tsk_01KZA3K3N4ABJAZM31CXSH5SZM
 sequence: 25
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZA3K3MQ3KS31VSN2QGQAZER
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Commission rarity_of_agreements against an adversarial gauntlet built for it
@@ -257,3 +258,233 @@ re-run against a repaired version, no enumeration of replacements. No richer obs
 any existing expectation. No corpus, no variable-length discovery, no fourth real specimen, no product
 CLI surface, no dependency, no Spectroscope change. No real recording committed, copied, or reproduced.
 Nothing pushed.
+
+## Result
+
+Delivered. **B — a specific failure mode, banked, with the repair deferred.** Two of them, in fact, and
+the larger one has a single mechanical cause that explains six of the ten families at once.
+
+The headline:
+
+> `rarity_of_agreements` scores a candidate at `k·ln N − Σ ln cᵢ`. The `k·ln N` term means **the
+> ordering of two candidates with different numbers of agreements is a function of corpus size**, and
+> nothing about either candidate. Six families break on that one fact. A seventh breaks on a separate
+> defect: the statistic never reads the second recording's marginals at all.
+
+### 1. Results, against predictions fixed before running
+
+| family | predicted | result | first failing point |
+|---|---|---|---|
+| AG1 singleton vs motif | MIXED | **MIXED** | `N=100 c=50` |
+| AG2 rarity explosion | FAIL | **MIXED** | `N=1000000` |
+| AG3 rare disagreement | PASS | **PASS** | — |
+| AG3b one-sided rarity | FAIL | **FAIL** | `count_B=1` |
+| AG4 common but structural | MIXED | **MIXED** | `N=1000 p=35%` |
+| AG5 vocabulary growth | FAIL | **MIXED** | `M=10000` |
+| AG6a whole-corpus duplication | PASS | **PASS** | — |
+| AG6b background duplication | FAIL | **MIXED** | `+10000 background` |
+| AG7 sample-size stability | PASS | **PASS** | — |
+| AG8 coincidence vs repetition | MIXED | **MIXED** | `N=100 c=50` |
+
+Three PASS, six MIXED, one FAIL. Seven of ten predictions exact; three (AG2, AG5, AG6b) predicted FAIL
+and came out MIXED — see §6, which is a defect in how I wrote the predictions and not in what happened.
+
+### 2. The one mechanism behind six families
+
+Every agreement contributes `−ln(c/N) = ln N − ln c`. So a candidate with `k` agreements scores
+
+```text
+k · ln N  −  Σ ln cᵢ
+```
+
+and two candidates are ordered by
+
+```text
+(k_X − k_Y) · ln N  +  (Σ ln c_Y − Σ ln c_X)
+```
+
+which **changes sign at a corpus size determined entirely by the marks' counts**. The statistic is not
+scale-free across candidates of different length: whichever candidate has more agreements eventually
+wins as `N` grows, and whichever has fewer eventually wins as `N` shrinks — regardless of what either
+candidate contains.
+
+Every boundary the sweep found matches the closed form exactly:
+
+| family | comparison | analytic boundary | observed |
+|---|---|---|---|
+| AG1, AG8 | `k=1` against `k=4`, counts fixed | `c = N^{3/4}` | `N=100` fails at `c≥50` (`N^{3/4}=31.6`); `N=1000` fails at `c=200` (`177.8`); `N=10⁴` holds to `c=200` (`1000`) |
+| AG2 | `k=1` against `k=4` at fixed frequency `p=0.05` | `N = p^{−4} = 1.6×10⁵` | holds at `10⁵` (11.513 < 11.983), fails at `10⁶` |
+| AG4 | `k=1` against `k=6` at fixed frequency `p` | `N = p^{−6}` | `p=0.35 → 544`, fails from `N=10³`; `p=0.20 → 15 625`, fails at `10⁵`; `p=0.10 → 10⁶`, fails at `10⁶` |
+| AG5, AG6b | `k=1` (`c=2`) against `k=3` (`c=300`) | `N = 3 674` | holds at `N=2 000`, fails at `N=11 000` |
+
+**This is one finding seen six ways, not six findings.** It also explains the two invariance PASSes:
+AG6a and AG7 are exactly the transformations that hold every `c/N` fixed, and under those the statistic
+is exactly invariant. **`rarity_of_agreements` is invariant under transformations preserving all relative
+frequencies, and unstable under any that move the denominator without moving a candidate's counts.**
+
+### 3. The separate defect: AG3b, the only outright FAIL
+
+The statistic reads `a_counts` and `a_total` and never `b_counts` or `b_total`. So an agreement on a
+mark that occurs **once in A and five hundred times in B** — trivially easy for B to supply — scores
+identically to an agreement on a mark that occurs once in both.
+
+```text
+rare in both       ā = (m), ĉ_A(m) = 1, ĉ_B(m) = 1      score = ln 1000 = 6.908
+ubiquitous in B    ā = (m), ĉ_A(m) = 1, ĉ_B(m) = 500    score = ln 1000 = 6.908
+```
+
+Exactly equal, at every swept value of B's count. `counterexample_ag3b_one_sided_rarity_is_exactly_
+blind_to_the_other_side` pins it.
+
+This one is **cheaply repairable** — sprint:13's `surprisal` already symmetrizes over both directions,
+and the same move applies here. The repair is not made, per task:25.
+
+### 4. What passed, and why it is worth stating
+
+**AG3 — rarity that does not agree contributes nothing.** Exact equality at every point. The statistic
+sums over *agreeing* positions, so a rare mark sitting at a disagreeing position is correctly worth zero.
+A naïve "sum the span's rarity" would have failed this, and it is the one adversarial family aimed at a
+mistake the statistic does not make.
+
+**AG6a — whole-corpus duplication is exactly invariant.** Multiplying every count and `N` by 2, 4, or 10
+leaves every score unchanged to `1e-9`. The statistic depends on frequencies, not on absolute counts,
+which is the right dependence and is not automatic.
+
+**AG7 — sample-size stability.** A candidate whose marks hold a fixed relative frequency is stable to
+well inside the preregistered `0.1` nats per agreement across sample-size ratios from 1.5 to 10. The
+same row reports the singleton's drift beside it, which is `ln(N′/N)` by construction and is the same
+unboundedness AG2 measures.
+
+### 5. Minimized counterexamples, banked
+
+Three, each reduced to a line and pinned by test so a later round cannot lose them.
+
+```text
+AG3b   A: (m) with ĉ_A(m)=1, N=1000        B-count 1 → 6.908
+                                            B-count 500 → 6.908        exactly equal
+
+AG1    N=100.  one agreement on a count-1 mark          = ln 100      = 4.605
+               four agreements on count-50 marks        = 4·ln 2      = 2.773
+               the singleton wins by 66%
+
+AG5    two candidates, neither changed in any way:
+               X: one agreement,  count 2       at N=1 000  → 6.215   X leads
+               Y: three agreements, count 300   at N=1 000  → 3.612
+               X: one agreement,  count 2       at N=11 000 → 8.613   Y leads
+               Y: three agreements, count 300   at N=11 000 → 10.806
+               only unrelated events were appended
+```
+
+### 6. My predictions were imprecise in a way worth recording
+
+Three families (AG2, AG5, AG6b) were predicted **FAIL** and came out **MIXED**. The predictions
+reasoned about *whether the invariant breaks anywhere in the sweep* — it does, in all three — while §2.2's
+rule keys FAIL to the **nominal point**, which held in all three. The mechanism was predicted correctly
+every time; the label was not.
+
+That is the **ninth** defect in ten rounds and it is the same family as sprint:11's: a criterion and a
+prediction that name different quantities without noticing. sprint:11's was *"which computed quantity
+does this sentence name?"*; this one is *"which point of the sweep does this prediction refer to?"*. The
+step that would have caught it: **write each prediction in the same vocabulary as the rule that will
+score it.** Recorded, not built.
+
+### 7. Regression: the old gauntlets are unchanged
+
+sprint:12's gauntlet, all seven families under both `z` and `surprisal` — every number identical to
+sprint:13's, including the pinned incumbent rows to `5e-4`. sprint:14's ten-function matrix — identical,
+including `rarity_of_agreements` and `novel_rarity` clean across all seven.
+
+**Those results are not counted toward this round's conclusion**, per §1.4. They show only that nothing
+broke. The contrast is the point: the statistic passes seven-for-seven on the suite that discovered it
+and fails or wobbles on seven of ten families built against it.
+
+### 8. Is the old prohibition justified, overbroad, or unresolved?
+
+**Vindicated in its caution and overbroad in its stated reason.**
+
+sprint:12 forbade *"information-theoretic weighting of any kind"*. This round shows the specific
+candidate has two real defects, so the caution was warranted — a round that had adopted it on the
+strength of sprint:14 would have adopted a statistic whose orderings move with corpus size.
+
+But the defects are **not** "rarity weighting is wrong". AG3 and AG6a show the rarity part behaving
+exactly as it should. The failures are (a) summing an unbounded per-position surprisal across candidates
+with different numbers of terms, without any correction for the differing number of opportunities, and
+(b) a one-sided likelihood. Neither is about inverse frequency; the first is about **comparing sums of
+different lengths** and would afflict any additive per-position score, and the second is a plain
+asymmetry.
+
+So the prohibition caught the right candidate for the wrong reason. Its own wording — *"candidates for a
+later round"* — anticipated exactly this, and the round it anticipated has now happened.
+
+### 9. Conclusion: **B**, narrowly
+
+> `rarity_of_agreements` exposes **two specific failure modes**, both mechanically understood, both with
+> minimized counterexamples banked, and both repairable in principle — the asymmetry cheaply, the
+> length-dependence not cheaply. It **does not** survive the adversarial gauntlet built for it, and it
+> **is not** rejected outright: the rarity mechanism itself passes the families aimed at it, and the
+> failures are about how per-position scores are combined rather than about what a position is worth.
+
+Not **A**: six of ten families wobble and one fails, so it has not earned a head-to-head adoption
+experiment yet. Not **C**: the failures are localized to the combination rule and one missing argument,
+and AG3, AG6a, and AG7 show the underlying idea behaving correctly where it is aimed at directly.
+
+**And nothing here says the statistic is generally correct**, which §2.6 forbids and which passing a
+synthetic round could not establish anyway.
+
+### 10. Desire-path friction
+
+**Tenth consecutive round with the preregistration in a `###` subsection.** `ec44550` contains nothing
+else. **idea:5**.
+
+**A prediction vocabulary that did not match its scoring rule.** §6. Third occurrence of the general
+shape — sprint:11's under-specified statistic, sprint:12's non-tiling ladder, this round's
+nominal-versus-sweep mismatch — and all three would have been caught by the same discipline: read each
+criterion and each prediction against the exact quantity the code will compute.
+
+**Appending a Result is still `cat >>`** — `scarp` 0.2.0, version lag, maintenance:1.
+
+**One thing that went well.** Building the specimens directly as representation values rather than
+generating recordings made every counterexample a single readable line and every phase boundary
+analytically checkable. sprint:12 lost a whole family to a generator confound; this round had no
+generator to be confounded by.
+
+### 11. Strongest limitation
+
+**Ten families is a gauntlet, not a proof.** It was built against the failure modes I could anticipate
+for inverse-frequency weighting, and a mode I did not anticipate would not appear in it — which is the
+same objection this round levels at sprint:12's gauntlet, and it applies here with equal force.
+
+Secondly, **every family is synthetic and constructed at the representation level.** The sweeps show
+where the orderings flip in corpus size and mark frequency, but nothing here says where real recordings
+sit relative to those boundaries. The 234-record session has `N ≈ 169` and marks at frequencies from
+`0.006` to `0.379` — inside the region where AG1's boundary `c = N^{3/4} ≈ 47` bites, since its commonest
+mark occurs 64 times. That is a suggestive coincidence and not a measurement, and this round did not
+make it one.
+
+### 12. Is another experiment warranted, and what exactly should it ask?
+
+**Yes, one, and it is not a repair.**
+
+> Do the failure boundaries this round located analytically actually bite at the corpus sizes and mark
+> frequencies of the real recordings — or are they asymptotic curiosities outside the operating range?
+
+§11's arithmetic suggests they may bite: the real session's commonest mark sits above AG1's boundary at
+that corpus size. If the boundaries are outside the operating range, both defects are acceptable
+consequences of the statistic's semantics and the next question is adoption. If they are inside it, the
+length-dependence must be addressed before adoption is discussable, and *that* is the round to propose a
+repair in.
+
+It needs no new statistic, no new representation, and no new gauntlet — only the boundaries already
+derived, evaluated at the three real specimens' actual `N` and mark frequencies. **This round does not
+implement it.**
+
+### What this task did not do
+
+No adoption of `rarity_of_agreements`, no change to the incumbent selector or any production behaviour,
+no repair of the statistic, no re-run against a repaired version, no enumeration of replacements. No
+richer observable, and the representation-sufficiency question was not reopened. No existing expectation
+weakened, reinterpreted, or rewritten; sprint:12's gauntlet and sprint:14's enumeration both reproduce
+identically, pinned rows included. The `probe` flag and its test remain, and no history was rewritten.
+The `k = 0` regression coverage is intact. No corpus, no variable-length discovery, no fourth real
+specimen, no product CLI surface, no dependency, no Spectroscope change. No real recording committed,
+copied, or reproduced. Nothing pushed.

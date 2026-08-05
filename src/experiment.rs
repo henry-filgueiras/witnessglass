@@ -38,6 +38,9 @@
 
 // sprint:10's one small static page over the boundary-refinement specimens.
 // Deleting the visualization is deleting this file.
+// sprint:15's adversarial gauntlet, built against inverse-frequency weighting
+// rather than against the permutation null. Commissioning evidence, not a search.
+pub mod adversarial;
 pub mod boundary_page;
 // sprint:8's event-native motif experiment. No dependency and no feature gate:
 // it is a few hundred lines of arithmetic over the projection everything else

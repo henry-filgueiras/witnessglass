@@ -599,6 +599,84 @@ fn quadrant(title: &str, verdict: &str, points: &[(f64, f64)]) -> String {
     )
 }
 
+/// The sprint:15 adversarial commissioning card.
+///
+/// Selected when a document carries `adversarial_families`. Every number is read
+/// from the computed result; the page scores nothing.
+fn adversarial_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let families = document["adversarial_families"]
+        .as_array()
+        .unwrap_or(&empty);
+
+    let mut scorecard = String::new();
+    for family in families {
+        let verdict = family["verdict"].as_str().unwrap_or("");
+        scorecard.push_str(&format!(
+            "<tr class=\"{}\"><td>{}</td><td class=\"stat\">{}</td>\
+             <td class=\"strong\">{}</td><td>{}</td><td class=\"marks\">{}</td></tr>",
+            verdict.to_lowercase(),
+            escape(family["name"].as_str().unwrap_or("")),
+            escape(&family["predicted"].as_str().unwrap_or("").to_uppercase()),
+            escape(&verdict.to_uppercase()),
+            family["points"].as_array().map(|p| p.len()).unwrap_or(0),
+            escape(family["boundary"].as_str().unwrap_or("—")),
+        ));
+    }
+
+    let mut detail = String::new();
+    for family in families {
+        let rows: String = family["points"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|point| {
+                format!(
+                    "<tr class=\"{}\"><td class=\"marks\">{}</td><td>{:.3}</td><td>{:.3}</td>\
+                     <td>{}</td></tr>",
+                    if point["holds"].as_bool() == Some(true) {
+                        ""
+                    } else {
+                        "fail"
+                    },
+                    escape(point["params"].as_str().unwrap_or("")),
+                    as_number(&point["weaker"]),
+                    as_number(&point["stronger"]),
+                    if point["holds"].as_bool() == Some(true) {
+                        "yes"
+                    } else {
+                        "NO"
+                    },
+                )
+            })
+            .collect();
+        detail.push_str(&format!(
+            "<h3>{}</h3><p class=\"meta\">{}</p><p class=\"truth\">invariant: {}</p>\
+             <p class=\"meta\">risk: {}</p>\
+             <table><thead><tr><th>point</th><th>weaker</th><th>stronger</th><th>holds</th>\
+             </tr></thead><tbody>{rows}</tbody></table>",
+            escape(family["name"].as_str().unwrap_or("")),
+            escape(family["construction"].as_str().unwrap_or("")),
+            escape(family["invariant"].as_str().unwrap_or("")),
+            escape(family["mechanism"].as_str().unwrap_or("")),
+        ));
+    }
+
+    format!(
+        "<section class=\"card\"><h2>Adversarial commissioning</h2>\
+         <p class=\"role\">{}</p>\
+         <p class=\"meta\">Statistic under test: <code>{}</code>. Frozen for the round and not \
+         adopted by it. sprint:12's gauntlet is discovery evidence and runs as regression; these \
+         families are the fresh evidence, built against inverse-frequency weighting's own failure \
+         modes. Every expectation, sweep, and prediction was fixed before any family ran.</p>\
+         <table><thead><tr><th>family</th><th>predicted</th><th>result</th><th>points</th>\
+         <th>first failing point</th></tr></thead><tbody>{scorecard}</tbody></table>\
+         {detail}</section>",
+        escape(document["role"].as_str().unwrap_or("")),
+        escape(document["under_test"].as_str().unwrap_or("")),
+    )
+}
+
 fn specimen_card(document: &serde_json::Value) -> String {
     let refinement = &document["refinement"];
     let seed = &refinement["seed"];
@@ -769,6 +847,7 @@ tr.fail td { color: #d1495b; }
 h3 { font-size: .95rem; margin: 1.2rem 0 .3rem; }
 td.marks { font-size: .78em; opacity: .8; text-align: left; }
 td.stat { opacity: .7; }
+tr.fail td { color: #d1495b; }
 ";
 
 /// Render one page from specimen documents.
@@ -776,7 +855,9 @@ pub fn render(documents: &[serde_json::Value]) -> String {
     let cards: String = documents
         .iter()
         .map(|document| {
-            if document.get("families").is_some() {
+            if document.get("adversarial_families").is_some() {
+                adversarial_card(document)
+            } else if document.get("families").is_some() {
                 gauntlet_card(document)
             } else {
                 specimen_card(document)

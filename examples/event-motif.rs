@@ -27,7 +27,7 @@ use witnessglass::experiment::event_sequence::{
     neighbours, null_ensemble, null_evidence, order_null, perturbation, project, refine,
     timing_null, top_pairs, top_pairs_where,
 };
-use witnessglass::experiment::{boundary_page, gauntlet, identifiability};
+use witnessglass::experiment::{adversarial, boundary_page, gauntlet, identifiability};
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
 
@@ -98,6 +98,9 @@ USAGE:
     --enumerate          sprint:14. Score the same gauntlet under every
                          preregistered function of the mark-only representation,
                          as a representation audit. Not a search for a scorer.
+    --adversarial        sprint:15. Commission `rarity_of_agreements` against a
+                         gauntlet built for its own failure modes. The statistic
+                         is frozen and is not adopted by this mode.
 
 WHAT A WINDOW IS HERE:
     A fixed number of *events*, not a fixed wall-clock width. A window of k
@@ -167,6 +170,7 @@ struct Options {
     from: Vec<PathBuf>,
     gauntlet: bool,
     enumerate_scorers: bool,
+    adversarial: bool,
     nulls: usize,
     frontier_nulls: usize,
     note_a: Option<(usize, usize)>,
@@ -189,6 +193,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.render.is_some() {
         return render_mode(&options);
+    }
+
+    if options.adversarial {
+        return adversarial_mode(&options);
     }
 
     if options.enumerate_scorers {
@@ -385,6 +393,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut from = Vec::new();
     let mut gauntlet = false;
     let mut enumerate_scorers = false;
+    let mut adversarial_mode_on = false;
     let mut nulls = 0usize;
     let mut frontier_nulls = 0usize;
     let mut note_a = None;
@@ -434,6 +443,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--note-label" => note_label = Some(value("--note-label")?),
             "--gauntlet" => gauntlet = true,
             "--enumerate" => enumerate_scorers = true,
+            "--adversarial" => adversarial_mode_on = true,
             "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
             "--frontier-nulls" => {
                 frontier_nulls = number(&value("--frontier-nulls")?, "--frontier-nulls")?
@@ -470,6 +480,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         from,
         gauntlet,
         enumerate_scorers,
+        adversarial: adversarial_mode_on,
         nulls,
         frontier_nulls,
         note_a,
@@ -1645,5 +1656,76 @@ fn enumeration_mode(options: &Options) -> Result<ExitCode, String> {
         }
     }
     println!();
+    Ok(ExitCode::SUCCESS)
+}
+
+// ---------------------------------------------------------------------------
+// Adversarial commissioning — sprint:15, task:25
+// ---------------------------------------------------------------------------
+
+fn adversarial_mode(options: &Options) -> Result<ExitCode, String> {
+    let families = adversarial::families();
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "adversarial",
+            "role": "adversarial commissioning — sprint:15, task:25",
+            "under_test": adversarial::UNDER_TEST,
+            "adversarial_families": families,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document)
+                .map_err(|err| format!("could not render JSON: {err}"))?
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    println!(
+        "event-motif — the sprint:15 adversarial commissioning of {}",
+        adversarial::UNDER_TEST
+    );
+    println!(
+        "The statistic is frozen and is not adopted here. sprint:12's gauntlet is regression; these \
+         families are the fresh evidence."
+    );
+    println!("Expectations, sweeps, and predictions were fixed before any family ran.");
+    println!();
+    println!(
+        "  {:<30} {:>10} {:>9} {:>7}   first failing point",
+        "family", "predicted", "result", "points"
+    );
+    for family in &families {
+        println!(
+            "  {:<30} {:>10} {:>9} {:>7}   {}",
+            family.name,
+            family.predicted.label(),
+            family.verdict.label(),
+            family.points.len(),
+            family.boundary.clone().unwrap_or_else(|| "—".to_owned()),
+        );
+    }
+    println!();
+    for family in &families {
+        println!("  -- {} --", family.name);
+        println!("     construction: {}", family.construction);
+        println!("     invariant:    {}", family.invariant);
+        println!("     risk:         {}", family.mechanism);
+        println!(
+            "     {:<34} {:>10} {:>10}  holds",
+            "point", "weaker", "stronger"
+        );
+        for value in &family.points {
+            println!(
+                "     {:<34} {:>10.3} {:>10.3}  {}{}",
+                value.params,
+                value.weaker,
+                value.stronger,
+                if value.holds { "yes" } else { "NO" },
+                if value.nominal { "   (nominal)" } else { "" },
+            );
+        }
+        println!();
+    }
     Ok(ExitCode::SUCCESS)
 }
