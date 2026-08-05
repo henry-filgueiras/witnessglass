@@ -422,10 +422,12 @@ fn gauntlet_card(document: &serde_json::Value) -> String {
     for family in families {
         let verdict = family["verdict"].as_str().unwrap_or("");
         scorecard.push_str(&format!(
-            "<tr class=\"{}\"><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.3}</td>\
-             <td>{:+.3}</td><td>{:+.3}</td><td class=\"strong\">{}</td></tr>",
+            "<tr class=\"{}\"><td>{}</td><td class=\"stat\">{}</td><td>{}</td><td>{}</td>\
+             <td>{}</td><td>{:.3}</td><td>{:+.3}</td><td>{:+.3}</td>\
+             <td class=\"strong\">{}</td></tr>",
             verdict.to_lowercase(),
             escape(family["family"].as_str().unwrap_or("")),
+            escape(family["statistic"].as_str().unwrap_or("")),
             escape(family["expectation"].as_str().unwrap_or("")),
             as_integer(&family["trials"]),
             as_integer(&family["undefined"]),
@@ -438,14 +440,16 @@ fn gauntlet_card(document: &serde_json::Value) -> String {
 
     let mut panels = String::new();
     for family in families {
+        let surprisal = family["statistic"].as_str() == Some("surprisal");
         let points: Vec<(f64, f64)> = family["scored"]
             .as_array()
             .into_iter()
             .flatten()
             .filter_map(|entry| {
                 let outcome = &entry["outcome"];
-                let delta_z = outcome["delta_z"].as_f64()?;
-                Some((as_number(&outcome["delta_total"]), delta_z))
+                let key = if surprisal { "delta_s" } else { "delta_z" };
+                let delta = outcome[key].as_f64()?;
+                Some((as_number(&outcome["delta_total"]), delta))
             })
             .filter(|(x, y)| x.is_finite() && y.is_finite())
             .collect();
@@ -453,7 +457,11 @@ fn gauntlet_card(document: &serde_json::Value) -> String {
             continue;
         }
         panels.push_str(&quadrant(
-            family["family"].as_str().unwrap_or(""),
+            &format!(
+                "{} [{}]",
+                family["family"].as_str().unwrap_or(""),
+                family["statistic"].as_str().unwrap_or("")
+            ),
             &family["verdict"].as_str().unwrap_or("").to_uppercase(),
             &points,
         ));
@@ -483,11 +491,12 @@ fn gauntlet_card(document: &serde_json::Value) -> String {
             })
             .collect();
         counterexamples.push_str(&format!(
-            "<h3>{} &mdash; worst counterexamples <span class=\"axis\">{}</span></h3>\
+            "<h3>{} [{}] &mdash; worst counterexamples <span class=\"axis\">{}</span></h3>\
              <table><thead><tr><th>value</th><th>seed</th><th>core</th><th>context</th>\
              <th>ratio</th><th>&Delta;total</th><th>spans</th></tr></thead><tbody>{rows}</tbody>\
              </table>",
             escape(family["family"].as_str().unwrap_or("")),
+            escape(family["statistic"].as_str().unwrap_or("")),
             escape(family["quantity"].as_str().unwrap_or("")),
         ));
     }
@@ -500,8 +509,9 @@ fn gauntlet_card(document: &serde_json::Value) -> String {
          the boundary search are frozen; the gauntlet only calls them. Scoring is one rule applied \
          to every family alike: PASS when the median has the expected sign and at least two thirds \
          of trials agree.</p>\
-         <table><thead><tr><th>family</th><th>expectation</th><th>trials</th><th>undef</th>\
-         <th>frac</th><th>median</th><th>median &Delta;total</th><th>result</th></tr></thead>\
+         <table><thead><tr><th>family</th><th>statistic</th><th>expectation</th><th>trials</th>\
+         <th>undef</th><th>frac</th><th>median</th><th>median &Delta;total</th><th>result</th>\
+         </tr></thead>\
          <tbody>{scorecard}</tbody></table>\
          <p class=\"meta\">Each panel below plots &Delta; raw distance against &Delta; surprise. \
          The shaded quadrant is the phenomenon under test: <strong>raw agreement worsens while \
@@ -752,6 +762,7 @@ tr.mixed td { color: var(--truth); }
 tr.fail td { color: #d1495b; }
 h3 { font-size: .95rem; margin: 1.2rem 0 .3rem; }
 td.marks { font-size: .78em; opacity: .8; text-align: left; }
+td.stat { opacity: .7; }
 ";
 
 /// Render one page from specimen documents.

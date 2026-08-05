@@ -1489,13 +1489,14 @@ fn gauntlet_mode(options: &Options) -> Result<ExitCode, String> {
     );
     println!();
     println!(
-        "  {:<13} {:>7} {:>6} {:>9} {:>9} {:>9} {:>9} {:>7}",
-        "family", "trials", "undef", "frac", "q1", "median", "q3", "verdict"
+        "  {:<13} {:>10} {:>7} {:>6} {:>9} {:>9} {:>9} {:>9} {:>7}",
+        "family", "statistic", "trials", "undef", "frac", "q1", "median", "q3", "verdict"
     );
     for report in &reports {
         println!(
-            "  {:<13} {:>7} {:>6} {:>9.3} {:>9.3} {:>9.3} {:>9.3} {:>7}",
+            "  {:<13} {:>10} {:>7} {:>6} {:>9.3} {:>9.3} {:>9.3} {:>9.3} {:>7}",
             report.family.label(),
+            report.statistic,
             report.trials,
             report.undefined,
             report.expected_fraction,
@@ -1507,7 +1508,7 @@ fn gauntlet_mode(options: &Options) -> Result<ExitCode, String> {
     }
     println!();
     for report in &reports {
-        println!("  -- {} --", report.family.label());
+        println!("  -- {} [{}] --", report.family.label(), report.statistic);
         println!("     quantity:    {}", report.quantity);
         println!("     expectation: {}", report.expectation);
         println!(

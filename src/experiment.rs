@@ -42,6 +42,9 @@ pub mod boundary_page;
 // sprint:8's event-native motif experiment. No dependency and no feature gate:
 // it is a few hundred lines of arithmetic over the projection everything else
 // here reads.
+// sprint:13's challenger to the sprint:11 statistic. Same permutation null,
+// asked a conditional question and evaluated exactly. Touches nothing it tests.
+pub mod conditional_null;
 pub mod event_sequence;
 // sprint:12's adversarial gauntlet against sprint:11's statistic. Calls the
 // machinery and changes none of it; deleting the attack is deleting this file.

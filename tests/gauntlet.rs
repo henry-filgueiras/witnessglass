@@ -267,3 +267,81 @@ fn the_report_page_renders_the_scorecard_the_gauntlet_computed() {
     // A page inventing a family would have to invent this one.
     assert!(!page.contains("supercalifragilistic"));
 }
+
+#[test]
+fn adding_the_challenger_left_the_incumbents_numbers_exactly_where_they_were() {
+    // sprint:12's committed scorecard, pinned. If a later round perturbs the
+    // incumbent while claiming only to add a column beside it, this fails.
+    let (_, reports) = gauntlet::report();
+    let incumbent = |family: Family| {
+        reports
+            .iter()
+            .find(|report| report.family == family && report.statistic == "z")
+            .expect("an incumbent report")
+    };
+
+    let expected = [
+        (Family::Informative, 60usize, 1.000, 0.515, Verdict::Pass),
+        (Family::Noise, 60, 1.000, -0.770, Verdict::Pass),
+        (Family::Rare, 30, 0.700, 0.073, Verdict::Pass),
+        (Family::Redundant, 30, 0.467, -0.003, Verdict::Fail),
+        (Family::Accidental, 30, 0.967, 2.403, Verdict::Pass),
+        (Family::Diluted, 40, 1.000, 1.000, Verdict::Pass),
+        (Family::Competing, 20, 1.000, 0.427, Verdict::Pass),
+    ];
+    for (family, trials, fraction, median, verdict) in expected {
+        let report = incumbent(family);
+        assert_eq!(report.trials, trials, "{}", family.label());
+        assert_eq!(report.verdict, verdict, "{}", family.label());
+        assert!(
+            (report.expected_fraction - fraction).abs() < 5e-4,
+            "{} fraction {} against sprint:12's {}",
+            family.label(),
+            report.expected_fraction,
+            fraction
+        );
+        assert!(
+            (report.median - median).abs() < 5e-4,
+            "{} median {} against sprint:12's {}",
+            family.label(),
+            report.median,
+            median
+        );
+    }
+}
+
+#[test]
+fn the_challenger_is_scored_over_the_same_trials_and_is_undefined_only_across_indels() {
+    let (outcomes, reports) = gauntlet::report();
+    let challenger: Vec<_> = reports
+        .iter()
+        .filter(|report| report.statistic == "surprisal")
+        .collect();
+    assert_eq!(
+        challenger.len(),
+        7,
+        "every family scored under both statistics"
+    );
+
+    // The families whose spans are fixed-length must have no undefined trials;
+    // the ones that search over spans may.
+    for report in &challenger {
+        match report.family {
+            Family::Accidental | Family::Diluted => {}
+            _ => assert_eq!(
+                report.undefined,
+                0,
+                "{} should be defined everywhere",
+                report.family.label()
+            ),
+        }
+    }
+
+    // And every undefined challenger value corresponds to a candidate whose two
+    // spans differ in length, which is the only reason the statistic declines.
+    let unequal = outcomes
+        .iter()
+        .filter(|outcome| outcome.core_s.is_none())
+        .count();
+    assert!(unequal > 0, "the accidental family should produce some");
+}

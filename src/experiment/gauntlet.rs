@@ -43,6 +43,7 @@
 
 use serde::Serialize;
 
+use super::conditional_null;
 use super::event_sequence::{
     ChannelScope, EventSequence, LENGTH_FLOOR, NullEnsemble, REFINE_RADIUS, align, null_ensemble,
     null_evidence, project, refine,
@@ -159,9 +160,22 @@ pub struct Outcome {
     /// `diluted` only: whether the best-`z` candidate found by the frozen search
     /// overlaps the planted core.
     pub overlap: Option<bool>,
+    /// The same question asked of the challenger: whether the best-surprisal
+    /// candidate overlaps the planted core.
+    pub overlap_s: Option<bool>,
     /// `competing` only: the standardized separation of the *other* motif — the
     /// short, tight, common one — against which the scored core competes.
     pub alt_z: Option<f64>,
+    /// sprint:13's challenger, on the core spans: conditional match surprisal in
+    /// nats. `None` where the spans differ in length, which the statistic cannot
+    /// score.
+    pub core_s: Option<f64>,
+    /// The challenger on the extended spans.
+    pub expanded_s: Option<f64>,
+    /// `expanded_s − core_s`.
+    pub delta_s: Option<f64>,
+    /// `competing` only: the challenger on the other motif.
+    pub alt_s: Option<f64>,
 }
 
 /// A generated pair of recordings, as NDJSON, with the spans that matter.
@@ -558,6 +572,45 @@ pub fn run(trial: &Trial) -> Option<Outcome> {
         _ => None,
     };
 
+    // The same dilution question, asked of the challenger. Computed separately
+    // rather than reusing the incumbent's answer, which would have reported the
+    // incumbent's verdict in the challenger's column.
+    let overlap_s = (trial.family == Family::Diluted)
+        .then(|| {
+            let pad = 2usize;
+            let seed_a = (built.core_a.0.saturating_sub(pad), built.core_a.1 + pad);
+            let seed_b = (built.core_b.0.saturating_sub(pad), built.core_b.1 + pad);
+            let refined = refine(&a, seed_a, &b, seed_b, REFINE_RADIUS, LENGTH_FLOOR)?;
+            let best = refined
+                .frontier
+                .iter()
+                .filter_map(|candidate| {
+                    let (wa, wb) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+                    let value = conditional_null::surprisal(
+                        &a,
+                        (wa.start, wa.start + wa.k),
+                        &b,
+                        (wb.start, wb.start + wb.k),
+                    )?;
+                    Some((value, *candidate))
+                })
+                .max_by(|left, right| {
+                    left.0
+                        .partial_cmp(&right.0)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+            let window = best.1.pair.comparison.a;
+            Some(window.start < built.core_a.1 && window.start + window.k > built.core_a.0)
+        })
+        .flatten();
+
+    let core_s = conditional_null::surprisal(&a, core_a, &b, core_b);
+    let expanded_s = conditional_null::surprisal(&a, expanded_a, &b, expanded_b);
+    let alt_s = match (built.alt_a, built.alt_b) {
+        (Some(span_a), Some(span_b)) => conditional_null::surprisal(&a, span_a, &b, span_b),
+        _ => None,
+    };
+
     Some(Outcome {
         trial: *trial,
         core_total,
@@ -574,7 +627,15 @@ pub fn run(trial: &Trial) -> Option<Outcome> {
         a_marks: marks(&a, expanded_a),
         b_marks: marks(&b, expanded_b),
         overlap,
+        overlap_s,
         alt_z,
+        core_s,
+        expanded_s,
+        delta_s: match (expanded_s, core_s) {
+            (Some(expanded), Some(core)) => Some(expanded - core),
+            _ => None,
+        },
+        alt_s,
     })
 }
 
@@ -603,7 +664,7 @@ pub fn score_values(values: &[f64], expect_positive: bool) -> Verdict {
             outcome: placeholder_outcome(),
         })
         .collect();
-    assemble(Family::Informative, "", "", scored, 0, expect_positive).verdict
+    assemble(Family::Informative, "", "", "", scored, 0, expect_positive).verdict
 }
 
 /// A zeroed outcome, so [`score_values`] can exercise the rule without building
@@ -621,6 +682,10 @@ fn placeholder_outcome() -> Outcome {
         expanded_total: 0.0,
         core_z: None,
         expanded_z: None,
+        core_s: None,
+        expanded_s: None,
+        delta_s: None,
+        alt_s: None,
         core_p: 0.0,
         expanded_p: 0.0,
         delta_total: 0.0,
@@ -628,6 +693,7 @@ fn placeholder_outcome() -> Outcome {
         a_marks: Vec::new(),
         b_marks: Vec::new(),
         overlap: None,
+        overlap_s: None,
         alt_z: None,
     }
 }
@@ -716,6 +782,8 @@ pub struct Scored {
 pub struct FamilyReport {
     /// Which family.
     pub family: Family,
+    /// Which statistic scored it: the incumbent `z` or sprint:13's challenger.
+    pub statistic: &'static str,
     /// What the scored quantity is, in words.
     pub quantity: &'static str,
     /// What was expected of it, recorded before any trial ran.
@@ -760,8 +828,10 @@ fn quantile(sorted: &[f64], fraction: f64) -> f64 {
 
 /// Apply task:22 §7's rule. `expect_positive` is false only for the `noise`
 /// family, whose expectation is an absence of effect and whose rule inverts.
+#[allow(clippy::too_many_arguments)]
 fn assemble(
     family: Family,
+    statistic: &'static str,
     quantity: &'static str,
     expectation: &'static str,
     scored: Vec<Scored>,
@@ -835,6 +905,7 @@ fn assemble(
 
     FamilyReport {
         family,
+        statistic,
         quantity,
         expectation,
         trials,
@@ -880,17 +951,48 @@ fn paired(
     (scored, undefined)
 }
 
-/// Run the whole grid and score every family.
+/// Run the whole grid and score every family under both statistics.
+///
+/// sprint:13 adds the second column. The trials, their generation, the
+/// expectations, and the pass rule are exactly sprint:12's; only the quantity
+/// being scored changes.
 pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
     let outcomes: Vec<Outcome> = grid().iter().filter_map(run).collect();
+    let mut reports = score_all(
+        &outcomes,
+        "z",
+        &|o| o.delta_z,
+        &|o| o.core_z,
+        &|o| o.alt_z,
+        &|o| o.overlap,
+    );
+    reports.extend(score_all(
+        &outcomes,
+        "surprisal",
+        &|o| o.delta_s,
+        &|o| o.core_s,
+        &|o| o.alt_s,
+        &|o| o.overlap_s,
+    ));
+    (outcomes, reports)
+}
 
+/// Score every family under one statistic.
+fn score_all(
+    outcomes: &[Outcome],
+    statistic: &'static str,
+    delta: &dyn Fn(&Outcome) -> Option<f64>,
+    core: &dyn Fn(&Outcome) -> Option<f64>,
+    alt: &dyn Fn(&Outcome) -> Option<f64>,
+    overlap: &dyn Fn(&Outcome) -> Option<bool>,
+) -> Vec<FamilyReport> {
     let unpaired = |family: Family| -> (Vec<Scored>, usize) {
         let mut scored = Vec::new();
         let mut undefined = 0usize;
         for outcome in outcomes.iter().filter(|o| o.trial.family == family) {
-            match outcome.delta_z {
-                Some(delta) => scored.push(Scored {
-                    value: delta,
+            match delta(outcome) {
+                Some(value) => scored.push(Scored {
+                    value,
                     outcome: outcome.clone(),
                 }),
                 None => undefined += 1,
@@ -905,22 +1007,22 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
     // Rare against common: identical raw agreement by construction, differing
     // only in the boundary mark's background prevalence.
     let (rarity, rarity_undefined) =
-        paired(&outcomes, Family::Rare, Family::Common, |rare, common| {
-            Some(rare.delta_z? - common.delta_z?)
+        paired(outcomes, Family::Rare, Family::Common, |rare, common| {
+            Some(delta(rare)? - delta(common)?)
         });
     // A novel rare boundary against one the core already carries.
     let (redundancy, redundancy_undefined) = paired(
-        &outcomes,
+        outcomes,
         Family::Redundant,
         Family::Informative,
-        |redundant, novel| Some(novel.delta_z? - redundant.delta_z?),
+        |redundant, novel| Some(delta(novel)? - delta(redundant)?),
     );
     // A genuine planted core against the best a coincidence can manage.
     let (accident, accident_undefined) = paired(
-        &outcomes,
+        outcomes,
         Family::Accidental,
         Family::Rare,
-        |chance, planted| Some(planted.core_z? - chance.core_z?),
+        |chance, planted| Some(core(planted)? - core(chance)?),
     );
 
     let mut dilution = Vec::new();
@@ -929,9 +1031,9 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         .iter()
         .filter(|o| o.trial.family == Family::Diluted)
     {
-        match outcome.overlap {
-            Some(overlap) => dilution.push(Scored {
-                value: if overlap { 1.0 } else { -1.0 },
+        match overlap(outcome) {
+            Some(hit) => dilution.push(Scored {
+                value: if hit { 1.0 } else { -1.0 },
                 outcome: outcome.clone(),
             }),
             None => dilution_undefined += 1,
@@ -944,7 +1046,7 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         .iter()
         .filter(|o| o.trial.family == Family::Competing)
     {
-        match (outcome.core_z, outcome.alt_z) {
+        match (core(outcome), alt(outcome)) {
             (Some(long_rare), Some(short_common)) => competing.push(Scored {
                 value: long_rare - short_common,
                 outcome: outcome.clone(),
@@ -953,9 +1055,10 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         }
     }
 
-    let reports = vec![
+    vec![
         assemble(
             Family::Informative,
+            statistic,
             "Δz on adding one shared rare boundary event",
             "Δz > 0 even where raw distance worsens",
             informative,
@@ -964,6 +1067,7 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         ),
         assemble(
             Family::Noise,
+            statistic,
             "Δz on adding one unrelated boundary event",
             "no systematic Δz > 0",
             noise,
@@ -972,6 +1076,7 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         ),
         assemble(
             Family::Rare,
+            statistic,
             "Δz(rare) − Δz(common), matched pairs",
             "rare boundary carries more evidence than a ubiquitous one",
             rarity,
@@ -980,6 +1085,7 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         ),
         assemble(
             Family::Redundant,
+            statistic,
             "Δz(novel) − Δz(redundant), matched pairs",
             "a novel mark carries more evidence than one the core repeats",
             redundancy,
@@ -988,6 +1094,7 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         ),
         assemble(
             Family::Accidental,
+            statistic,
             "z(planted core) − z(best chance match), matched pairs",
             "a coincidence attracts less evidence than a planted figure",
             accident,
@@ -996,6 +1103,7 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         ),
         assemble(
             Family::Diluted,
+            statistic,
             "best-z candidate overlaps the planted core (+1) or not (−1)",
             "the surprising region stays on the motif as context grows",
             dilution,
@@ -1004,12 +1112,12 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         ),
         assemble(
             Family::Competing,
+            statistic,
             "z(longer, rarer, imperfect) − z(shorter, tighter, common)",
             "evidential weight beats raw fit",
             competing,
             competing_undefined,
             true,
         ),
-    ];
-    (outcomes, reports)
+    ]
 }
