@@ -27,7 +27,7 @@ use witnessglass::experiment::event_sequence::{
     neighbours, null_ensemble, null_evidence, order_null, perturbation, project, refine,
     timing_null, top_pairs, top_pairs_where,
 };
-use witnessglass::experiment::{boundary_page, gauntlet};
+use witnessglass::experiment::{boundary_page, gauntlet, identifiability};
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
 
@@ -95,6 +95,9 @@ USAGE:
                          of controlled synthetic specimen pairs, scored against
                          expectations task:22 recorded before any trial ran.
                          Needs no recording.
+    --enumerate          sprint:14. Score the same gauntlet under every
+                         preregistered function of the mark-only representation,
+                         as a representation audit. Not a search for a scorer.
 
 WHAT A WINDOW IS HERE:
     A fixed number of *events*, not a fixed wall-clock width. A window of k
@@ -163,6 +166,7 @@ struct Options {
     render: Option<PathBuf>,
     from: Vec<PathBuf>,
     gauntlet: bool,
+    enumerate_scorers: bool,
     nulls: usize,
     frontier_nulls: usize,
     note_a: Option<(usize, usize)>,
@@ -185,6 +189,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.render.is_some() {
         return render_mode(&options);
+    }
+
+    if options.enumerate_scorers {
+        return enumeration_mode(&options);
     }
 
     if options.gauntlet {
@@ -376,6 +384,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut render = None;
     let mut from = Vec::new();
     let mut gauntlet = false;
+    let mut enumerate_scorers = false;
     let mut nulls = 0usize;
     let mut frontier_nulls = 0usize;
     let mut note_a = None;
@@ -424,6 +433,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--note-b" => note_b = Some(span(&value("--note-b")?)?),
             "--note-label" => note_label = Some(value("--note-label")?),
             "--gauntlet" => gauntlet = true,
+            "--enumerate" => enumerate_scorers = true,
             "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
             "--frontier-nulls" => {
                 frontier_nulls = number(&value("--frontier-nulls")?, "--frontier-nulls")?
@@ -459,6 +469,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         render,
         from,
         gauntlet,
+        enumerate_scorers,
         nulls,
         frontier_nulls,
         note_a,
@@ -1532,5 +1543,107 @@ fn gauntlet_mode(options: &Options) -> Result<ExitCode, String> {
         }
         println!();
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+// ---------------------------------------------------------------------------
+// The representation audit — sprint:14, task:24
+// ---------------------------------------------------------------------------
+
+fn enumeration_mode(options: &Options) -> Result<ExitCode, String> {
+    let (_, reports) = gauntlet::enumeration();
+    let families = [
+        "informative",
+        "noise",
+        "rare",
+        "redundant",
+        "accidental",
+        "diluted",
+        "competing",
+    ];
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "identifiability",
+            "role": "representation audit — sprint:14, task:24",
+            "realizations": gauntlet::REALIZATIONS,
+            "trials": 300,
+            "families": reports,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document)
+                .map_err(|err| format!("could not render JSON: {err}"))?
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    println!("event-motif — the sprint:14 representation audit");
+    println!(
+        "Every function below is a function of the mark-only representation and of nothing else. \
+         The trials, the families, the expectations, and the pass rule are frozen."
+    );
+    println!(
+        "task:24 §A.2 already settled that Family E's arms are identifiable from that \
+         representation; this asks whether any simple function of it reconciles E with the rest."
+    );
+    println!();
+    print!("  {:<28}", "function");
+    for family in families {
+        print!(" {:>12}", family);
+    }
+    println!("  {:>6}", "clean");
+    for scorer in identifiability::SCORERS.iter() {
+        let name = if scorer.probe {
+            format!("{} *", scorer.name)
+        } else {
+            scorer.name.to_owned()
+        };
+        print!("  {name:<28}");
+        let mut clean = true;
+        for family in families {
+            let cell = reports
+                .iter()
+                .find(|r| r.statistic == scorer.name && r.family.label() == family);
+            match cell {
+                Some(report) => {
+                    if report.verdict != gauntlet::Verdict::Pass {
+                        clean = false;
+                    }
+                    print!(" {:>12}", report.verdict.label());
+                }
+                None => {
+                    clean = false;
+                    print!(" {:>12}", "-");
+                }
+            }
+        }
+        println!("  {:>6}", if clean { "YES" } else { "no" });
+    }
+    println!();
+    println!("  * a probe: an inverse-frequency weighting, admissible in an identifiability");
+    println!("    enumeration and inadmissible as a proposed statistic.");
+    println!();
+    println!("  Family E's column, in detail:");
+    println!(
+        "  {:<28} {:>8} {:>10} {:>10} {:>8}",
+        "function", "trials", "frac", "median", "verdict"
+    );
+    for scorer in identifiability::SCORERS.iter() {
+        if let Some(report) = reports
+            .iter()
+            .find(|r| r.statistic == scorer.name && r.family == gauntlet::Family::Redundant)
+        {
+            println!(
+                "  {:<28} {:>8} {:>10.3} {:>10.4} {:>8}",
+                scorer.name,
+                report.trials,
+                report.expected_fraction,
+                report.median,
+                report.verdict.label(),
+            );
+        }
+    }
+    println!();
     Ok(ExitCode::SUCCESS)
 }

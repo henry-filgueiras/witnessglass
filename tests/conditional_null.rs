@@ -242,3 +242,28 @@ fn counts_and_span_marks_read_the_sequence_they_are_given() {
         assert_eq!(mark, &sequence.events[20 + index].mark.label());
     }
 }
+
+#[test]
+fn agreeing_in_at_least_zero_positions_is_certain_rather_than_an_underflow() {
+    // A named regression test for the defect sprint:13's brute-force check found:
+    // Jordan's formula's `C(j−1, k−1)` is undefined at k = 0, and the subtraction
+    // underflowed. `P(≥ 0) = 1` is the answer, and no production path reaches it —
+    // only an exhaustive test does, which is why it went unnoticed until one existed.
+    let pool = population(&[("a", 2), ("b", 3)]);
+    for span in 1..=3usize {
+        let target: Vec<String> = std::iter::repeat_n("a".to_owned(), span).collect();
+        let tail = agreement_tail(&target, &pool, 5, 0).expect("a tail");
+        assert!(
+            (tail - 1.0).abs() < 1e-12,
+            "P(>= 0) must be exactly 1, got {tail} at span {span}"
+        );
+    }
+    // And it still agrees with brute force there, which is how it was found.
+    let target = marks(&["a", "b"]);
+    assert!(
+        (agreement_tail(&target, &pool, 5, 0).expect("a tail")
+            - brute_force_tail(&target, &pool, 0))
+        .abs()
+            < 1e-12
+    );
+}

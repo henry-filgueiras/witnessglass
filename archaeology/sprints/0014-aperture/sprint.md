@@ -2,8 +2,9 @@
 id: spr_01KZA2DNPW9HXNQYWAKTBBG68T
 sequence: 14
 kind: sprint
-status: active
+status: closed
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Aperture
@@ -81,3 +82,75 @@ implementation.
 - Corpus accumulation, variable-length discovery, a fourth real specimen, a product CLI surface, a
   dependency, or a Spectroscope change.
 - Committing a real recording, or any prompt, response, command, file content, or sensitive path.
+
+## Outcome
+
+One task, closed. **The representation is sufficient**, which is the opposite of what the audit was
+commissioned to expect, and the round has no `φ` to propose.
+
+```text
+representation R0  →  can answer question Q  →  no missing information  →  no φ
+```
+
+**Family E's arms are not `R`-identical.** Their equality patterns differ, and `ā_{L−1} ∈ ā₀…ā_{L−2}`
+separates them while testing only mark equality and surviving any relabelling. No collision certificate
+exists for them, so three rounds of failure were never identifiability failures. Six of ten preregistered
+functions separate the arms empirically, confirming the proof.
+
+**Two functions pass all seven families cleanly**, against a prediction that none would — and both are
+the ones sprints 12 and 13 forbade as repairs. `rarity_of_agreements` scores Family E at exactly
+`ln 2 = 0.6931`: the very quantity sprint:13 derived from the falling factorial and then lost to
+cancellation.
+
+**And the reason relocates the problem.** A permutation null samples *without* replacement, so the second
+copy of a mark is the second of two already in the recording and costs nothing extra — the discount falls
+on the core and the extension alike and vanishes from the delta. An i.i.d. null over the *same*
+representation charges every draw at `−ln(c/N)` regardless, so the repeat costs `ln 2` less than a fresh
+mark and the signal survives. sprint:13's conclusion — that no marginal-based statistic scored as a
+nested delta can separate the arms — was **too strong**: it holds for without-replacement nulls and fails
+for with-replacement ones, and sprint:13 never distinguished them because it only considered permutations.
+That Result stands unedited with the correction recorded here.
+
+**A collision does exist for a stronger claim.** Two candidates with identical spans and identical counts
+— one a core plus a repeat that adds nothing, one a figure whose defining property is returning to its
+first mark — are indistinguishable inside `R` and have opposite desired orderings. So *semantic*
+redundancy is not `R`-determined, and Family E is answerable only because sprint:12 defined redundancy
+syntactically. The witness is preserved in the module and asserted by test, and it is not grounds to
+change Family E.
+
+### Success criteria, against evidence
+
+- **`R` formalized with its invariance**, and mechanically enforced: a test renames the entire mark
+  alphabet and asserts every function's value is unmoved, so "restricted to the mark-only representation"
+  is checked rather than promised.
+- **The collision question settled constructively**, both ways — none for Family E's arms, one for the
+  semantic claim, with a minimal witness.
+- **Ten functions preregistered at `e5cdf47` and evaluated unchanged**, over the frozen 300 trials, the
+  frozen families and expectations, and the single pass rule, with the dilution argmax recomputed per
+  function rather than inherited.
+- **A conclusion stronger than "no good statistic was found"**: identifiable, with the proof and the
+  measurement agreeing.
+- **The `k = 0` underflow preserved as a named regression test**, changing no experimental question,
+  weakening no check, and perturbing no pinned output.
+
+### What the sprint found that it was not looking for
+
+**A prediction of "none will pass" that was wrong, and instructively.** Two functions pass all seven, and
+both are inverse-frequency weightings — a class forbidden by a constraint written when the only null
+under consideration was a permutation. That constraint, it turns out, excluded the only null that can see
+a repeat at all. Whether to lift it is an adjudication for the human, and the round declines to make it.
+
+**The archaeology now needs three kinds of section and has one.** sprint:13 wanted somewhere for an
+analysis; this round wanted somewhere for a *proof*, whose conclusion chose which of two experiments ran.
+Both share the `###` subsection with the preregistration, so the record cannot distinguish what was
+proved from what was predicted. Second occurrence, third object.
+
+### What this sprint deliberately leaves open
+
+Whether the inverse-frequency constraint should be lifted, and if so, whether `rarity_of_agreements`
+survives an adversarial gauntlet built against *its* failure modes rather than the permutation null's.
+Passing a gauntlet designed against a different statistic is weak evidence, which is the objection
+sprint:12 exists to raise, and it is the weakest link in this round's strongest finding.
+
+Nothing here changed the raw format, the schema, the recorder, `inspection`, the viewer, the workbench,
+the Spectroscope, or the product CLI's verbs, and no dependency was added.

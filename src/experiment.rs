@@ -49,7 +49,11 @@ pub mod event_sequence;
 // sprint:12's adversarial gauntlet against sprint:11's statistic. Calls the
 // machinery and changes none of it; deleting the attack is deleting this file.
 pub mod gauntlet;
+// sprint:14's representation audit. Formalizes what a scorer restricted to the
+// mark-only representation can see, and a preregistered family of functions of
+// it. Not a statistic and not a repair.
 pub mod haar;
+pub mod identifiability;
 // sprint:6's Matrix Profile experiment. Behind a non-default feature because it
 // is the one part of this experiment with a third-party dependency, and a
 // default build of the product must not link a numerics stack for research code.

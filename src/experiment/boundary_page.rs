@@ -438,8 +438,14 @@ fn gauntlet_card(document: &serde_json::Value) -> String {
         ));
     }
 
+    // With ten functions the per-family scatter becomes seventy panels of noise,
+    // so the audit renders its matrix and its counterexamples without them.
     let mut panels = String::new();
-    for family in families {
+    for family in families.iter().take(if families.len() > 20 {
+        0
+    } else {
+        families.len()
+    }) {
         let surprisal = family["statistic"].as_str() == Some("surprisal");
         let points: Vec<(f64, f64)> = family["scored"]
             .as_array()

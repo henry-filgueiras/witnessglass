@@ -48,6 +48,7 @@ use super::event_sequence::{
     ChannelScope, EventSequence, LENGTH_FLOOR, NullEnsemble, REFINE_RADIUS, align, null_ensemble,
     null_evidence, project, refine,
 };
+use super::identifiability::{Observation, SCORERS};
 use crate::inspection::inspect;
 use crate::replay_bytes;
 
@@ -176,6 +177,16 @@ pub struct Outcome {
     pub delta_s: Option<f64>,
     /// `competing` only: the challenger on the other motif.
     pub alt_s: Option<f64>,
+    /// sprint:14's enumeration, on the core spans: one value per preregistered
+    /// function of the representation, in `SCORERS` order.
+    pub core_scores: Vec<Option<f64>>,
+    /// The same on the extended spans.
+    pub expanded_scores: Vec<Option<f64>>,
+    /// The same on the competing motif, where a family has one.
+    pub alt_scores: Vec<Option<f64>>,
+    /// Per function, whether its best-scoring candidate overlaps the planted
+    /// core. `diluted` only, recomputed per function rather than inherited.
+    pub overlap_scores: Vec<Option<bool>>,
 }
 
 /// A generated pair of recordings, as NDJSON, with the spans that matter.
@@ -604,6 +615,64 @@ pub fn run(trial: &Trial) -> Option<Outcome> {
         })
         .flatten();
 
+    // sprint:14's enumeration over the same spans. Each function is a function
+    // of the representation and of nothing else; `Observation::of` is what
+    // closes it off from the recording.
+    let observe = |span_a: (usize, usize), span_b: (usize, usize)| -> Vec<Option<f64>> {
+        match Observation::of(&a, span_a, &b, span_b) {
+            Some(observation) => SCORERS
+                .iter()
+                .map(|scorer| (scorer.score)(&observation))
+                .collect(),
+            None => vec![None; SCORERS.len()],
+        }
+    };
+    let core_scores = observe(core_a, core_b);
+    let expanded_scores = observe(expanded_a, expanded_b);
+    let alt_scores = match (built.alt_a, built.alt_b) {
+        (Some(span_a), Some(span_b)) => observe(span_a, span_b),
+        _ => vec![None; SCORERS.len()],
+    };
+
+    // The dilution question, asked once per function.
+    let overlap_scores = if trial.family == Family::Diluted {
+        let pad = 2usize;
+        let seed_a = (built.core_a.0.saturating_sub(pad), built.core_a.1 + pad);
+        let seed_b = (built.core_b.0.saturating_sub(pad), built.core_b.1 + pad);
+        match refine(&a, seed_a, &b, seed_b, REFINE_RADIUS, LENGTH_FLOOR) {
+            Some(refined) => SCORERS
+                .iter()
+                .enumerate()
+                .map(|(index, _)| {
+                    let best = refined
+                        .frontier
+                        .iter()
+                        .filter_map(|candidate| {
+                            let (wa, wb) =
+                                (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+                            let observation = Observation::of(
+                                &a,
+                                (wa.start, wa.start + wa.k),
+                                &b,
+                                (wb.start, wb.start + wb.k),
+                            )?;
+                            Some(((SCORERS[index].score)(&observation)?, *candidate))
+                        })
+                        .max_by(|left, right| {
+                            left.0
+                                .partial_cmp(&right.0)
+                                .unwrap_or(std::cmp::Ordering::Equal)
+                        })?;
+                    let window = best.1.pair.comparison.a;
+                    Some(window.start < built.core_a.1 && window.start + window.k > built.core_a.0)
+                })
+                .collect(),
+            None => vec![None; SCORERS.len()],
+        }
+    } else {
+        vec![None; SCORERS.len()]
+    };
+
     let core_s = conditional_null::surprisal(&a, core_a, &b, core_b);
     let expanded_s = conditional_null::surprisal(&a, expanded_a, &b, expanded_b);
     let alt_s = match (built.alt_a, built.alt_b) {
@@ -636,6 +705,10 @@ pub fn run(trial: &Trial) -> Option<Outcome> {
             _ => None,
         },
         alt_s,
+        core_scores,
+        expanded_scores,
+        alt_scores,
+        overlap_scores,
     })
 }
 
@@ -686,6 +759,10 @@ fn placeholder_outcome() -> Outcome {
         expanded_s: None,
         delta_s: None,
         alt_s: None,
+        core_scores: Vec::new(),
+        expanded_scores: Vec::new(),
+        alt_scores: Vec::new(),
+        overlap_scores: Vec::new(),
         core_p: 0.0,
         expanded_p: 0.0,
         delta_total: 0.0,
@@ -974,6 +1051,32 @@ pub fn report() -> (Vec<Outcome>, Vec<FamilyReport>) {
         &|o| o.alt_s,
         &|o| o.overlap_s,
     ));
+    (outcomes, reports)
+}
+
+/// The sprint:14 enumeration: every preregistered function of the representation,
+/// scored by the frozen machinery over the same trials and the same rule.
+///
+/// The trials are generated once and shared, so every function sees identical
+/// specimens — which is what makes the matrix a comparison rather than ten
+/// separate experiments.
+pub fn enumeration() -> (Vec<Outcome>, Vec<FamilyReport>) {
+    let outcomes: Vec<Outcome> = grid().iter().filter_map(run).collect();
+    let mut reports = Vec::new();
+    for (index, scorer) in SCORERS.iter().enumerate() {
+        let pick = move |values: &[Option<f64>]| values.get(index).copied().flatten();
+        reports.extend(score_all(
+            &outcomes,
+            scorer.name,
+            &move |o| match (pick(&o.expanded_scores), pick(&o.core_scores)) {
+                (Some(expanded), Some(core)) => Some(expanded - core),
+                _ => None,
+            },
+            &move |o| pick(&o.core_scores),
+            &move |o| pick(&o.alt_scores),
+            &move |o| o.overlap_scores.get(index).copied().flatten(),
+        ));
+    }
     (outcomes, reports)
 }
 
