@@ -126,3 +126,96 @@ The friction findings above were collected under an explicit instruction to gath
 without modifying this repository, and were written here afterwards with authorization. cuecraft
 records none of them: its own archaeology carries only the decision that it is observed
 (cuecraft's `decision:7`), not the defects of the thing observing it.
+
+## Addendum — the first recorded external session (2026-08-05)
+
+The validation gap left open above has been closed. A real Claude session in cuecraft was
+recorded, and this addendum was written from inside that same session. It is a later append,
+not a revision; nothing above has been altered.
+
+**The `PATH` assumption holds.** This log named one load-bearing, documentation-derived belief —
+that Claude's exec form resolves `command` on `PATH` — and predicted that if the first
+instrumented session recorded nothing, that belief would be the first thing to suspect. It
+recorded. The exec form (`command: "witnessglass"` plus `args`) resolved on `PATH` on macOS,
+with no machine-specific path anywhere in the settings file. The failure this braced for did not
+happen. Worth noting for idea:5: the prediction is legible as predating its result only because
+the two sit in the same artifact in written order, which is precisely the property idea:5 wants
+to stop depending on good manners.
+
+**Five of eight surfaces fired; three remain unmeasured.** Observed in a single session:
+`SessionStart` (`session_started`, source `startup`, sequence 1), `PreToolUse`, `PostToolUse`,
+`PostToolUseFailure`, and `SubagentStop`. `PermissionDenied` was never exercised — the session
+ran in an auto permission mode and nothing was denied. `SessionEnd` cannot be observed from
+inside the session whose end it marks, so a complete `session_started` → `session_ended`
+recording is still unvalidated. `SubagentStart` never fired at all, which is the next finding.
+
+`duration_ms` was present and plausible throughout — 403 ms for a trivial `echo`, 23 ms for a
+failing `jq`.
+
+### Evidence for dragon:1 — `SubagentStop` fires with no `SubagentStart`
+
+Twice, once at the end of each completed turn, a `subagent_stopped` record was written carrying
+a populated `agent_id` and an **empty-string** `agent_type`. No subagent was spawned at any
+point in this session, and no `subagent_started` record exists anywhere in the recording. The
+two `agent_id` values differ from each other.
+
+The adapter therefore emits a stop for something it never saw start, and cannot say what kind of
+thing it was. Whether these are main-loop turn boundaries surfacing on the subagent hook, or
+genuine internal agents that `SubagentStart` does not cover, the recording does not distinguish
+— and that is dragon:1 in its concrete form rather than its anticipated one.
+
+One part of this is a WitnessGlass choice rather than a Claude one. An `agent_type` of `""`
+renders a missing value as a present field. Under §6 an absence should render as an absence, so
+either the field should be omitted or the absence should be explicit.
+
+### Evidence for dragon:3 — `prompt_id` under-counts user input
+
+A user message arrived **mid-turn**, after tool calls had begun and before the turn ended, and
+was answered inside that same turn. It minted no new `prompt_id`; the turn continued under the
+existing one. Across the session, four user messages produced three `prompt_id` values.
+
+This sharpens dragon:3 from "`prompt_id` may not delimit a unit of work" to something stricter:
+`prompt_id` is not in bijection with user messages, so a projection that counted them would
+under-report user input rather than merely mis-segment it. The §6 prohibition on segmenting by
+`prompt_id` is the right posture, and this is a second, independent reason for it.
+
+### Evidence for dragon:2 and idea:6 — inspection is not free
+
+The unredacted posture is literal, as documented: full command text and full `stdout`/`stderr`
+land verbatim. The failing-`jq` record additionally carries filesystem paths inside its error
+string — the same shape dragon:2 already found for `cwd`, and the same lesson, that dropping a
+field does not remove the value from prose that quotes it.
+
+Less anticipated: **reading a recording extends it.** Inspecting the file with shell tooling
+grew it by roughly twenty records of inspection, interleaved with the records being inspected.
+There is no way to check a recording from inside the session that produced it without becoming
+part of what you are checking. idea:6 is framed as a convenience — checking completeness without
+printing — but the observer effect makes it closer to a correctness affordance: a verb that
+reads a recording without transiting the tool surface would not contaminate what it reads.
+
+### Friction encountered writing this addendum
+
+`log:1` could not be appended with Scarp: **no Scarp version exposes an append or amend verb.**
+The command surface is identical in the published 0.2.0 on `PATH` and in the pre-release build
+in a sibling checkout — `init`, `new`, `proposal`, `list`, `show`, `doctor`, `close`, `reopen`,
+`adopt`, `reject`, `fortune`, `resolve`, `completions` — and adding prose to an existing artifact
+is not among them. This is exactly local idea:4, encountered a second time and from a different
+direction: idea:4 was filed about amending a *closed* artifact, whereas `log:1` is open and still
+unwritable.
+
+The workaround was to edit the Markdown body directly, touching no front matter, sequence, slug,
+or path — the things §7 reserves to Scarp. The pre-release `doctor` accepts the result. But it is
+a hand-edit, and nothing in the record marks it as one.
+
+**Two builds answer to the same version string.** A first pass at this section wrongly reported
+the unreachable `logs` collection as a second, independent blocker. It is not one: the binary on
+`PATH` is the published 0.2.0 that cannot see the collection, while the pre-release build that
+reads and validates it sits in a sibling checkout. Both report `scarp 0.2.0`. They differ by two
+collections and by what `doctor` counts — 58 artifacts against 60 — and nothing in the CLI
+distinguishes them, with the narrower one installed on `PATH`.
+
+This is idea:9's problem — a binary that cannot name its own build — surfacing in Scarp rather
+than in WitnessGlass. It is worth recording in that form because the failure was not a stuck
+command but a confident wrong conclusion, drawn from a real transcript and corrected only
+because a human knew which checkout to look in. A version string that cannot separate two
+builds is the same defect as a recording that cannot name the recorder that produced it.
