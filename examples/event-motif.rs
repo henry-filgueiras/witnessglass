@@ -21,9 +21,11 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use witnessglass::experiment::boundary_page;
 use witnessglass::experiment::event_sequence::{
-    ChannelScope, Comparison, CrossPair, EventSequence, cross_pairs, dedupe_overlapping, ladder,
-    neighbours, order_null, perturbation, project, timing_null, top_pairs, top_pairs_where,
+    ChannelScope, Comparison, CrossPair, EventSequence, LENGTH_FLOOR, REFINE_RADIUS,
+    RefinedCandidate, Refinement, cross_pairs, dedupe_overlapping, ladder, neighbours, order_null,
+    perturbation, project, refine, timing_null, top_pairs, top_pairs_where,
 };
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
@@ -64,6 +66,22 @@ USAGE:
     --blind              Cross-recording mode only: print the candidate packet
                          with distances withheld, so a classification can be
                          recorded before they are seen.
+    --refine             Boundary refinement, sprint:10. Exhaustively scores
+                         every combination of the four boundaries within
+                         --radius events of a seed, and reports the Pareto
+                         frontier over (distance, retained events). Local only:
+                         it never looks outside the seed's neighbourhood.
+    --seed-a <S..E>      The seed spans, as half-open event indices.
+    --seed-b <S..E>
+    --truth-a <S..E>     Known planted boundaries, where a fixture has them.
+    --truth-b <S..E>     Supplied by the caller; never guessed from a fixture.
+    --radius <N>         Boundary movement allowed, in events. Default 3.
+    --floor <N>          Fewest events a refined span may hold. Default 3. Set
+                         to 1 to run the anti-collapse negative control.
+    --label / --role     Names for the specimen in output.
+    --render <OUT.html>  Write one static page from specimen JSON documents.
+    --from <IN.json>     A specimen document, from `--refine --json`. Repeatable.
+                         The page holds no measurement of its own.
 
 WHAT A WINDOW IS HERE:
     A fixed number of *events*, not a fixed wall-clock width. A window of k
@@ -120,6 +138,17 @@ struct Options {
     perturbation: bool,
     against: Option<PathBuf>,
     blind: bool,
+    refine: bool,
+    seed_a: Option<(usize, usize)>,
+    seed_b: Option<(usize, usize)>,
+    truth_a: Option<(usize, usize)>,
+    truth_b: Option<(usize, usize)>,
+    radius: usize,
+    floor: usize,
+    label: Option<String>,
+    role: Option<String>,
+    render: Option<PathBuf>,
+    from: Vec<PathBuf>,
 }
 
 fn run() -> Result<ExitCode, String> {
@@ -135,6 +164,10 @@ fn run() -> Result<ExitCode, String> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    if options.render.is_some() {
+        return render_mode(&options);
+    }
+
     let path = options
         .recording
         .clone()
@@ -146,6 +179,10 @@ fn run() -> Result<ExitCode, String> {
         eprintln!("no records in the examined scope, so there is no origin and no sequence.");
         return Ok(ExitCode::from(2));
     };
+
+    if options.refine {
+        return refinement_mode(&path, &sequence, &options);
+    }
 
     if let Some(other) = options.against.clone() {
         return cross_recording(&path, &sequence, &other, &options);
@@ -304,6 +341,17 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut perturbation = false;
     let mut against = None;
     let mut blind = false;
+    let mut refine_mode = false;
+    let mut seed_a = None;
+    let mut seed_b = None;
+    let mut truth_a = None;
+    let mut truth_b = None;
+    let mut radius = REFINE_RADIUS;
+    let mut floor = LENGTH_FLOOR;
+    let mut label = None;
+    let mut role = None;
+    let mut render = None;
+    let mut from = Vec::new();
 
     let mut rest = args.iter();
     while let Some(arg) = rest.next() {
@@ -332,6 +380,17 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--perturbation" => perturbation = true,
             "--against" => against = Some(PathBuf::from(value("--against")?)),
             "--blind" => blind = true,
+            "--refine" => refine_mode = true,
+            "--seed-a" => seed_a = Some(span(&value("--seed-a")?)?),
+            "--seed-b" => seed_b = Some(span(&value("--seed-b")?)?),
+            "--truth-a" => truth_a = Some(span(&value("--truth-a")?)?),
+            "--truth-b" => truth_b = Some(span(&value("--truth-b")?)?),
+            "--radius" => radius = number(&value("--radius")?, "--radius")?,
+            "--floor" => floor = number(&value("--floor")?, "--floor")?,
+            "--label" => label = Some(value("--label")?),
+            "--role" => role = Some(value("--role")?),
+            "--render" => render = Some(PathBuf::from(value("--render")?)),
+            "--from" => from.push(PathBuf::from(value("--from")?)),
             other => return Err(format!("unexpected argument {other:?}\n\n{USAGE}")),
         }
     }
@@ -351,6 +410,17 @@ fn parse(args: &[String]) -> Result<Options, String> {
         perturbation,
         against,
         blind,
+        refine: refine_mode,
+        seed_a,
+        seed_b,
+        truth_a,
+        truth_b,
+        radius,
+        floor,
+        label,
+        role,
+        render,
+        from,
     })
 }
 
@@ -884,4 +954,292 @@ fn print_blind(a: &EventSequence<'_>, b: &EventSequence<'_>, rungs: &[Rung<'_>])
             println!();
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Boundary refinement — sprint:10, task:20
+// ---------------------------------------------------------------------------
+
+/// A half-open event span, as `START:END`.
+fn span(text: &str) -> Result<(usize, usize), String> {
+    let (start, end) = text
+        .split_once("..")
+        .or_else(|| text.split_once(':'))
+        .ok_or_else(|| format!("span {text:?} should be <START>..<END>"))?;
+    let parsed = |part: &str| {
+        part.parse::<usize>()
+            .map_err(|_| format!("span bound {part:?} is not a number"))
+    };
+    let (start, end) = (parsed(start)?, parsed(end)?);
+    if start >= end {
+        return Err(format!("span {text:?} is empty or inverted"));
+    }
+    Ok((start, end))
+}
+
+fn refinement_mode(
+    a_path: &std::path::Path,
+    a: &EventSequence<'_>,
+    options: &Options,
+) -> Result<ExitCode, String> {
+    let b_path = options
+        .against
+        .clone()
+        .ok_or_else(|| "--refine needs --against <PATH>".to_owned())?;
+    let replay = replay_file(&b_path)
+        .map_err(|err| format!("could not replay {}: {err}", b_path.display()))?;
+    let inspection = inspect(&replay);
+    let Some(b) = project(&inspection, options.scope) else {
+        eprintln!("no records in the examined scope of the second recording.");
+        return Ok(ExitCode::from(2));
+    };
+
+    let seed_a = options
+        .seed_a
+        .ok_or_else(|| "--seed-a <S..E> is required".to_owned())?;
+    let seed_b = options
+        .seed_b
+        .ok_or_else(|| "--seed-b <S..E> is required".to_owned())?;
+
+    let refinement = refine(a, seed_a, &b, seed_b, options.radius, options.floor)
+        .ok_or_else(|| "the seed is not a valid pair of spans in these recordings".to_owned())?;
+
+    if options.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&specimen_json(options, a_path, &b_path, &refinement))
+                .map_err(|err| format!("could not render JSON: {err}"))?
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    print_refinement(a, &b, options, &refinement);
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The specimen document: computed values only, and the shape the static page
+/// consumes. Nothing here is transcribed by hand.
+fn specimen_json(
+    options: &Options,
+    a_path: &std::path::Path,
+    b_path: &std::path::Path,
+    refinement: &Refinement<'_>,
+) -> serde_json::Value {
+    serde_json::json!({
+        "label": options.label.clone().unwrap_or_else(|| "specimen".to_owned()),
+        "role": options.role.clone().unwrap_or_else(|| "unlabelled".to_owned()),
+        "a_recording": a_path.display().to_string(),
+        "b_recording": b_path.display().to_string(),
+        "truth_a": options.truth_a,
+        "truth_b": options.truth_b,
+        "refinement": refinement,
+    })
+}
+
+/// One side's events around the interesting region, with verbatim marks.
+///
+/// Verbatim rather than abbreviated: task:20 requires the marks stay
+/// inspectable, and a one-letter code would be an invented vocabulary sitting
+/// exactly where this project refuses to have one.
+fn print_side(
+    label: &str,
+    sequence: &EventSequence<'_>,
+    seed: (usize, usize),
+    pick: Option<(usize, usize)>,
+    truth: Option<(usize, usize)>,
+) {
+    let lower = [Some(seed.0), pick.map(|p| p.0), truth.map(|t| t.0)]
+        .into_iter()
+        .flatten()
+        .min()
+        .unwrap_or(seed.0)
+        .saturating_sub(1);
+    let upper = [Some(seed.1), pick.map(|p| p.1), truth.map(|t| t.1)]
+        .into_iter()
+        .flatten()
+        .max()
+        .unwrap_or(seed.1)
+        + 1;
+
+    println!("     {label} events — S seed, P pick, T planted truth");
+    for index in lower..upper {
+        let Some(event) = sequence.events.get(index) else {
+            continue;
+        };
+        let flag = |range: Option<(usize, usize)>, mark: char| match range {
+            Some((from, until)) if index >= from && index < until => mark,
+            _ => ' ',
+        };
+        let gap = match event.gap_from_previous_ms {
+            Some(ms) if index > lower => format!("{:>7.1}s", ms as f64 / 1000.0),
+            _ => "       -".to_owned(),
+        };
+        println!(
+            "       {:>4} {}{}{} {} {}",
+            index,
+            flag(Some(seed), 'S'),
+            flag(pick, 'P'),
+            flag(truth, 'T'),
+            gap,
+            event.mark.label()
+        );
+    }
+}
+
+fn candidate_line(tag: &str, candidate: &RefinedCandidate<'_>) -> String {
+    let (a, b) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+    let alignment = &candidate.pair.comparison.alignment;
+    format!(
+        "  {tag:<9} A[{}..{}) len {:>2} marks {:>2}   B[{}..{}) len {:>2} marks {:>2}   \
+         ev {:.3} tm {:.3} tot {:.3}",
+        a.start,
+        a.start + a.k,
+        a.k,
+        a.distinct_marks,
+        b.start,
+        b.start + b.k,
+        b.k,
+        b.distinct_marks,
+        alignment.event_norm,
+        alignment.timing_norm,
+        alignment.total,
+    )
+}
+
+fn print_refinement(
+    a: &EventSequence<'_>,
+    b: &EventSequence<'_>,
+    options: &Options,
+    refinement: &Refinement<'_>,
+) {
+    let label = options
+        .label
+        .clone()
+        .unwrap_or_else(|| "specimen".to_owned());
+    let role = options
+        .role
+        .clone()
+        .unwrap_or_else(|| "unlabelled".to_owned());
+    println!("SPECIMEN {label} — {role}");
+    println!(
+        "  radius {}, floor {}, {} boundary combinations scored, {} rejected",
+        refinement.radius, refinement.floor, refinement.evaluated, refinement.rejected
+    );
+    println!("{}", candidate_line("seed", &refinement.seed));
+    match &refinement.pick {
+        Some(pick) => {
+            println!("{}", candidate_line("pick", pick));
+            println!(
+                "  delta     A start {:+} end {:+}   B start {:+} end {:+}",
+                pick.delta.a_start, pick.delta.a_end, pick.delta.b_start, pick.delta.b_end
+            );
+        }
+        None => println!("  pick      none — no combination survived the floor"),
+    }
+    if let (Some(truth_a), Some(truth_b)) = (options.truth_a, options.truth_b) {
+        let on_frontier = refinement.frontier.iter().position(|candidate| {
+            let (ca, cb) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+            (ca.start, ca.start + ca.k) == truth_a && (cb.start, cb.start + cb.k) == truth_b
+        });
+        println!(
+            "  truth     A[{}..{}) B[{}..{}) — on frontier: {}",
+            truth_a.0,
+            truth_a.1,
+            truth_b.0,
+            truth_b.1,
+            match on_frontier {
+                Some(rank) => format!("yes, position {}", rank + 1),
+                None => "no".to_owned(),
+            }
+        );
+    }
+
+    println!("  Pareto frontier — retained events against total distance:");
+    println!(
+        "  {:>9} {:>12} {:>12} {:>7} {:>7} {:>7}   deltas",
+        "retained", "A span", "B span", "ev", "tm", "tot"
+    );
+    for candidate in &refinement.frontier {
+        let (ca, cb) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+        let alignment = &candidate.pair.comparison.alignment;
+        println!(
+            "  {:>9} {:>12} {:>12} {:>7.3} {:>7.3} {:>7.3}   {:+} {:+} {:+} {:+}{}",
+            candidate.retained,
+            format!("[{}..{})", ca.start, ca.start + ca.k),
+            format!("[{}..{})", cb.start, cb.start + cb.k),
+            alignment.event_norm,
+            alignment.timing_norm,
+            alignment.total,
+            candidate.delta.a_start,
+            candidate.delta.a_end,
+            candidate.delta.b_start,
+            candidate.delta.b_end,
+            if candidate.delta.is_seed() {
+                "  (the seed)"
+            } else {
+                ""
+            },
+        );
+    }
+
+    let pick_spans = refinement.pick.as_ref().map(|pick| {
+        let (ca, cb) = (&pick.pair.comparison.a, &pick.pair.comparison.b);
+        ((ca.start, ca.start + ca.k), (cb.start, cb.start + cb.k))
+    });
+    print_side(
+        "A",
+        a,
+        seed_span(&refinement.seed, true),
+        pick_spans.map(|p| p.0),
+        options.truth_a,
+    );
+    print_side(
+        "B",
+        b,
+        seed_span(&refinement.seed, false),
+        pick_spans.map(|p| p.1),
+        options.truth_b,
+    );
+    println!();
+}
+
+fn seed_span(seed: &RefinedCandidate<'_>, first: bool) -> (usize, usize) {
+    let window = if first {
+        &seed.pair.comparison.a
+    } else {
+        &seed.pair.comparison.b
+    };
+    (window.start, window.start + window.k)
+}
+
+// ---------------------------------------------------------------------------
+// The static specimen page — sprint:10, task:20 §9
+// ---------------------------------------------------------------------------
+
+fn render_mode(options: &Options) -> Result<ExitCode, String> {
+    let out = options
+        .render
+        .clone()
+        .ok_or_else(|| "--render <OUT.html> is required".to_owned())?;
+    if options.from.is_empty() {
+        return Err("--render needs at least one --from <SPECIMEN.json>".to_owned());
+    }
+    let mut documents = Vec::new();
+    for path in &options.from {
+        let text = std::fs::read_to_string(path)
+            .map_err(|err| format!("could not read {}: {err}", path.display()))?;
+        documents.push(
+            serde_json::from_str::<serde_json::Value>(&text)
+                .map_err(|err| format!("{} is not a specimen document: {err}", path.display()))?,
+        );
+    }
+    std::fs::write(&out, boundary_page::render(&documents))
+        .map_err(|err| format!("could not write {}: {err}", out.display()))?;
+    println!(
+        "wrote {} from {} specimen(s)",
+        out.display(),
+        documents.len()
+    );
+    println!("output derived from a real recording is as sensitive as that recording.");
+    Ok(ExitCode::SUCCESS)
 }

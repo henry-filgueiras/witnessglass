@@ -25,9 +25,9 @@
 //! names in the same order at similar spacings, and nothing here says more.
 
 use witnessglass::experiment::event_sequence::{
-    ChannelScope, MarkedEvent, align, cross_pairs, dedupe_overlapping, disjoint, ladder,
-    neighbours, order_null, perturbation, project, timing_null, timing_term, top_pairs,
-    top_pairs_where,
+    ChannelScope, LENGTH_FLOOR, MarkedEvent, REFINE_RADIUS, align, cross_pairs, dedupe_overlapping,
+    disjoint, ladder, neighbours, order_null, perturbation, project, refine, timing_null,
+    timing_term, top_pairs, top_pairs_where,
 };
 use witnessglass::experiment::oracle;
 use witnessglass::inspection::{EventKind, V2Kind, inspect};
@@ -1018,4 +1018,313 @@ fn serialized_cross_pairs_carry_the_numbers_that_were_computed() {
         json["comparison"]["a"]["start"].as_u64().expect("a number"),
         pair.comparison.a.start as u64
     );
+}
+
+// ---------------------------------------------------------------------------
+// Local boundary refinement — sprint:10, task:20
+// ---------------------------------------------------------------------------
+
+/// The legible oracle, projected into an observed-scope sequence, plus the
+/// replay and inspection that own its storage.
+macro_rules! legible {
+    ($replay:ident, $inspection:ident, $sequence:ident) => {
+        let text = oracle::ndjson();
+        let $replay = replay_bytes(text.as_bytes()).expect("replay");
+        let $inspection = inspect(&$replay);
+        let $sequence = project(&$inspection, ChannelScope::Observed).expect("a sequence");
+    };
+}
+
+/// task:20 specimen A: the planted figure with two contaminating events on each
+/// side of each span.
+const CONTAMINATED_A: (usize, usize) = (18, 30);
+const CONTAMINATED_B: (usize, usize) = (160, 172);
+const PLANTED_A: (usize, usize) = (20, 28);
+const PLANTED_B: (usize, usize) = (162, 170);
+
+#[test]
+fn a_contaminated_seed_refines_onto_the_planted_left_boundary_with_no_event_cost() {
+    legible!(replay, inspection, sequence);
+    let refined = refine(
+        &sequence,
+        CONTAMINATED_A,
+        &sequence,
+        CONTAMINATED_B,
+        REFINE_RADIUS,
+        LENGTH_FLOOR,
+    )
+    .expect("a valid seed");
+
+    // The seed pays for its contamination.
+    assert!(refined.seed.pair.comparison.alignment.event_norm > 0.0);
+
+    // Somewhere on the frontier is a candidate that starts exactly where the
+    // planted figure starts, on both sides, and costs nothing in event identity.
+    let recovered = refined
+        .frontier
+        .iter()
+        .find(|candidate| {
+            candidate.pair.comparison.a.start == PLANTED_A.0
+                && candidate.pair.comparison.b.start == PLANTED_B.0
+        })
+        .expect("the planted left boundary should be recovered exactly");
+    assert!(
+        recovered.pair.comparison.alignment.event_norm.abs() < EPSILON,
+        "the recovered span should match mark for mark: {recovered:?}"
+    );
+    assert!(
+        recovered.pair.comparison.alignment.total < refined.seed.pair.comparison.alignment.total
+    );
+}
+
+#[test]
+fn an_already_correct_seed_is_returned_unchanged_at_radius_zero() {
+    legible!(replay, inspection, sequence);
+    let refined =
+        refine(&sequence, PLANTED_A, &sequence, PLANTED_B, 0, LENGTH_FLOOR).expect("a valid seed");
+    assert_eq!(refined.evaluated, 1, "radius zero admits only the seed");
+    let pick = refined.pick.expect("a pick");
+    assert!(pick.delta.is_seed());
+    assert_eq!(
+        pick.pair.comparison.alignment,
+        refined.seed.pair.comparison.alignment
+    );
+}
+
+#[test]
+fn refined_spans_may_differ_in_length_and_both_lengths_are_reported() {
+    legible!(replay, inspection, sequence);
+    let refined = refine(
+        &sequence,
+        CONTAMINATED_A,
+        &sequence,
+        CONTAMINATED_B,
+        REFINE_RADIUS,
+        LENGTH_FLOOR,
+    )
+    .expect("a valid seed");
+    // The two sides move independently, so unequal lengths must be reachable —
+    // the alignment already carries insertions and deletions.
+    let uneven = refined
+        .frontier
+        .iter()
+        .chain(refined.pick.iter())
+        .any(|candidate| candidate.pair.comparison.a.k != candidate.pair.comparison.b.k);
+    let seed_uneven = refined.seed.pair.comparison.a.k != refined.seed.pair.comparison.b.k;
+    assert!(
+        uneven || !seed_uneven,
+        "unequal-length spans must be representable"
+    );
+    // And the retained axis is the shorter side, never the longer one.
+    for candidate in &refined.frontier {
+        assert_eq!(
+            candidate.retained,
+            candidate
+                .pair
+                .comparison
+                .a
+                .k
+                .min(candidate.pair.comparison.b.k)
+        );
+    }
+}
+
+#[test]
+fn an_inverted_or_out_of_range_seed_is_rejected_rather_than_clamped() {
+    legible!(replay, inspection, sequence);
+    assert!(refine(&sequence, (30, 18), &sequence, PLANTED_B, 1, LENGTH_FLOOR).is_none());
+    assert!(refine(&sequence, (20, 20), &sequence, PLANTED_B, 1, LENGTH_FLOOR).is_none());
+    assert!(refine(&sequence, (20, 28), &sequence, (900, 908), 1, LENGTH_FLOOR).is_none());
+
+    // A seed at the very start has neighbours outside the sequence, and they are
+    // skipped rather than pulled back inside it.
+    let refined =
+        refine(&sequence, (0, 6), &sequence, PLANTED_B, 3, LENGTH_FLOOR).expect("a valid seed");
+    assert!(refined.rejected > 0);
+    assert_eq!(refined.evaluated + refined.rejected, 7usize.pow(4));
+    for candidate in &refined.frontier {
+        assert!(candidate.pair.comparison.a.k >= LENGTH_FLOOR);
+        assert!(candidate.pair.comparison.b.k >= LENGTH_FLOOR);
+    }
+}
+
+#[test]
+fn the_length_floor_removes_the_arithmetic_collapse_it_was_written_for() {
+    // Without a floor, a one-event span has no gap at all, so its timing
+    // component is structurally absent and two spans carrying the same mark are
+    // at distance exactly zero. This is the degeneracy task:20 §3 preregistered,
+    // demonstrated rather than asserted.
+    legible!(replay, inspection, sequence);
+    let seed_a = (20, 23);
+    let seed_b = (162, 165);
+
+    let unguarded =
+        refine(&sequence, seed_a, &sequence, seed_b, REFINE_RADIUS, 1).expect("a valid seed");
+    let collapsed = unguarded
+        .frontier
+        .iter()
+        .find(|candidate| candidate.retained == 1)
+        .expect("collapse to one event must be reachable when nothing prevents it");
+    assert!(collapsed.pair.comparison.alignment.total.abs() < EPSILON);
+
+    let guarded = refine(
+        &sequence,
+        seed_a,
+        &sequence,
+        seed_b,
+        REFINE_RADIUS,
+        LENGTH_FLOOR,
+    )
+    .expect("a valid seed");
+    assert!(
+        guarded
+            .frontier
+            .iter()
+            .all(|candidate| candidate.retained >= LENGTH_FLOOR),
+        "the floor must remove every span shorter than it"
+    );
+}
+
+#[test]
+fn refinement_is_deterministic_and_never_mutates_its_inputs() {
+    legible!(replay, inspection, sequence);
+    let before = sequence.clone();
+    let first = refine(
+        &sequence,
+        CONTAMINATED_A,
+        &sequence,
+        CONTAMINATED_B,
+        REFINE_RADIUS,
+        LENGTH_FLOOR,
+    );
+    let second = refine(
+        &sequence,
+        CONTAMINATED_A,
+        &sequence,
+        CONTAMINATED_B,
+        REFINE_RADIUS,
+        LENGTH_FLOOR,
+    );
+    assert_eq!(first, second);
+    assert_eq!(sequence, before, "the search borrows and rewrites nothing");
+}
+
+#[test]
+fn every_frontier_point_carries_provenance_correct_deltas_and_a_rescorable_distance() {
+    // Three properties at once, because they are three ways of asking whether the
+    // reported candidate really is the span it says it is.
+    let a_text = oracle::ndjson();
+    let b_text = oracle::sparse::ndjson();
+    let a_replay = replay_bytes(a_text.as_bytes()).expect("replay");
+    let b_replay = replay_bytes(b_text.as_bytes()).expect("replay");
+    let (a_i, b_i) = (inspect(&a_replay), inspect(&b_replay));
+    let a = project(&a_i, ChannelScope::Observed).expect("a sequence");
+    let b = project(&b_i, ChannelScope::Observed).expect("a sequence");
+
+    let seed_a = (20, 28);
+    let seed_b = (20, 28);
+    let refined =
+        refine(&a, seed_a, &b, seed_b, REFINE_RADIUS, LENGTH_FLOOR).expect("a valid seed");
+
+    for candidate in refined
+        .frontier
+        .iter()
+        .chain(std::iter::once(&refined.seed))
+    {
+        // Provenance: each side names its own recording, and they differ here.
+        assert_eq!(candidate.pair.a_session, a.session_id);
+        assert_eq!(candidate.pair.b_session, b.session_id);
+        assert_ne!(candidate.pair.a_session, candidate.pair.b_session);
+
+        // Deltas: the span really is the seed plus the reported movement.
+        let (ca, cb) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+        assert_eq!(
+            ca.start as isize,
+            seed_a.0 as isize + candidate.delta.a_start
+        );
+        assert_eq!(
+            (ca.start + ca.k) as isize,
+            seed_a.1 as isize + candidate.delta.a_end
+        );
+        assert_eq!(
+            cb.start as isize,
+            seed_b.0 as isize + candidate.delta.b_start
+        );
+        assert_eq!(
+            (cb.start + cb.k) as isize,
+            seed_b.1 as isize + candidate.delta.b_end
+        );
+
+        // Distance: rescoring the returned spans reproduces the reported numbers
+        // exactly, so nothing was carried over from a neighbouring combination.
+        let rescored = align(
+            a.window(ca.start, ca.k).expect("a window"),
+            b.window(cb.start, cb.k).expect("a window"),
+        );
+        assert_eq!(rescored, candidate.pair.comparison.alignment);
+    }
+
+    // The frontier is strictly monotone in both axes, which is what makes it a
+    // frontier rather than a list.
+    for window in refined.frontier.windows(2) {
+        assert!(window[0].retained > window[1].retained);
+        assert!(
+            window[0].pair.comparison.alignment.total > window[1].pair.comparison.alignment.total
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The specimen page reads computed values — sprint:10, task:20 §9
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_specimen_page_renders_the_numbers_the_experiment_computed() {
+    // The smallest useful fidelity check: run the experiment, serialize it the
+    // way the example does, render the page from that document, and assert the
+    // page carries the computed distances and spans. A page holding its own
+    // measurements would pass none of this.
+    legible!(replay, inspection, sequence);
+    let refined = refine(
+        &sequence,
+        CONTAMINATED_A,
+        &sequence,
+        CONTAMINATED_B,
+        REFINE_RADIUS,
+        LENGTH_FLOOR,
+    )
+    .expect("a valid seed");
+
+    let document = serde_json::json!({
+        "label": "A",
+        "role": "synthetic",
+        "truth_a": [PLANTED_A.0, PLANTED_A.1],
+        "truth_b": [PLANTED_B.0, PLANTED_B.1],
+        "refinement": refined,
+    });
+    let page = witnessglass::experiment::boundary_page::render(&[document]);
+
+    // Every frontier point's total and both spans appear, to the precision the
+    // page prints them at.
+    for candidate in &refined.frontier {
+        let (a, b) = (&candidate.pair.comparison.a, &candidate.pair.comparison.b);
+        let total = format!("{:.3}", candidate.pair.comparison.alignment.total);
+        assert!(
+            page.contains(&total),
+            "the page omits a computed total: {total}"
+        );
+        assert!(page.contains(&format!("A[{}..{})", a.start, a.start + a.k)));
+        assert!(page.contains(&format!("B[{}..{})", b.start, b.start + b.k)));
+    }
+    // The seed's own distance is on the page too, so seed and pick are comparable.
+    assert!(page.contains(&format!(
+        "{:.3}",
+        refined.seed.pair.comparison.alignment.total
+    )));
+    // And the planted boundaries are reported as absent from the frontier, which
+    // is what this specimen actually found.
+    assert!(page.contains("on the frontier: <strong>no</strong>"));
+
+    // A page that invented a number would have to invent this one too.
+    assert!(!page.contains("0.999"));
 }

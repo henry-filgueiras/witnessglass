@@ -1048,3 +1048,292 @@ pub mod perturbation {
         .collect()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Local boundary refinement — sprint:10, task:20
+// ---------------------------------------------------------------------------
+
+/// How far each of the four boundaries may move, in events.
+///
+/// `(2·3 + 1)⁴ = 2401` combinations per seed, each an `O(k²)` alignment. Brute
+/// force at this scale is a feature: there is no optimizer to misunderstand and
+/// no local minimum to get stuck in.
+///
+/// Three rather than two because task:19's ladder evidence says the
+/// independent-real seed needs a `(+2, −2)` adjustment on both sides, and a
+/// radius that exactly equals the required adjustment would place the known
+/// answer at the corner of the search space. At this radius the answer is
+/// interior, so the search can overshoot and has to choose not to.
+pub const REFINE_RADIUS: usize = 3;
+
+/// Fewest events a refined span may contain.
+///
+/// **The collapse this prevents is arithmetic, not hypothetical.** A one-event
+/// span has no within-window gap, so its timing component is structurally absent
+/// and [`Alignment::total`] reduces to `event_cost / 1` — exactly zero when the
+/// two marks are equal. In a recording where one tool name carries 37.9% of all
+/// events, such a pair exists inside essentially any neighbourhood, so
+/// unconstrained minimization does not risk collapsing; it must.
+///
+/// Three is the shortest span at which the timing component has **two** gaps to
+/// speak with, so it is the shortest span at which both channels of the metric
+/// carry more than a single comparison. It is chosen from that property rather
+/// than from taste.
+///
+/// **It does not remove degeneracy and is not claimed to.** task:19 measured a
+/// three-event `Bash request → Bash success → Bash request` cross-recording pair
+/// at 0.022. The floor removes the guaranteed collapse; the Pareto frontier is
+/// what a reader is meant to look at.
+pub const LENGTH_FLOOR: usize = 3;
+
+/// How far each boundary moved from the seed, in events.
+///
+/// Negative moves a boundary left, positive right. So a span that lost two
+/// events from its front and one from its back reads `start: +2, end: −1`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BoundaryDelta {
+    /// Movement of the A span's start.
+    pub a_start: isize,
+    /// Movement of the A span's end.
+    pub a_end: isize,
+    /// Movement of the B span's start.
+    pub b_start: isize,
+    /// Movement of the B span's end.
+    pub b_end: isize,
+}
+
+impl BoundaryDelta {
+    /// Whether this is the seed itself.
+    pub fn is_seed(&self) -> bool {
+        self.a_start == 0 && self.a_end == 0 && self.b_start == 0 && self.b_end == 0
+    }
+}
+
+/// One boundary combination, scored.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct RefinedCandidate<'a> {
+    /// The two spans, their alignment, and which recording each came from.
+    pub pair: CrossPair<'a>,
+    /// How this candidate's boundaries differ from the seed's.
+    pub delta: BoundaryDelta,
+    /// `min(len_a, len_b)` — the frontier's second axis. The shorter side bounds
+    /// how much figure is actually shared, which the sum of the two lengths does
+    /// not.
+    pub retained: usize,
+}
+
+/// Everything one seed's local search produced.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Refinement<'a> {
+    /// The seed, scored by the same metric.
+    pub seed: RefinedCandidate<'a>,
+    /// Boundary combinations that were valid and scored.
+    pub evaluated: usize,
+    /// Combinations rejected for falling outside a sequence, inverting a span,
+    /// or breaching [`LENGTH_FLOOR`]. Reported because a neighbourhood that is
+    /// mostly invalid is a different search from one that is mostly valid.
+    pub rejected: usize,
+    /// Radius the search used.
+    pub radius: usize,
+    /// Length floor the search used.
+    pub floor: usize,
+    /// The Pareto frontier over `(total ↓, retained ↑)`, ordered by retained
+    /// descending. Strictly monotone: each successive point retains fewer events
+    /// and scores strictly better, so a reader can see exactly what each
+    /// discarded event bought.
+    pub frontier: Vec<RefinedCandidate<'a>>,
+    /// The designated pick: the frontier point retaining the most events among
+    /// those scoring no worse than the seed, or — if none does — the frontier
+    /// point with the lowest total.
+    ///
+    /// A preference stated in words rather than in a coefficient: *the longest
+    /// span that is at least as good as what we started with*.
+    pub pick: Option<RefinedCandidate<'a>>,
+}
+
+/// Exhaustively score every boundary combination within `radius` of a seed.
+///
+/// **Local only.** This searches around a candidate somebody already has; it does
+/// not mine subsequences, and it never looks outside `radius` events of the seed.
+///
+/// The two sides move independently, so refined lengths may differ — the
+/// alignment already carries insertions and deletions, and both lengths are
+/// reported.
+///
+/// Takes two sequences and does not require them to be different recordings:
+/// task:20's synthetic specimen draws both spans from one fixture on purpose,
+/// because that is where a figure with *known* boundaries lives. A
+/// cross-recording claim is [`cross_pairs`], which does refuse.
+///
+/// Returns `None` when the seed itself is not a valid pair of spans. Borrows
+/// throughout and mutates neither sequence.
+pub fn refine<'a>(
+    first: &EventSequence<'a>,
+    seed_a: (usize, usize),
+    second: &EventSequence<'a>,
+    seed_b: (usize, usize),
+    radius: usize,
+    floor: usize,
+) -> Option<Refinement<'a>> {
+    let score = |a: (usize, usize), b: (usize, usize)| -> Option<CrossPair<'a>> {
+        let (a_len, b_len) = (a.1.checked_sub(a.0)?, b.1.checked_sub(b.0)?);
+        if a_len < floor || b_len < floor {
+            return None;
+        }
+        let a_events = first.window(a.0, a_len)?;
+        let b_events = second.window(b.0, b_len)?;
+        Some(CrossPair {
+            a_session: first.session_id,
+            b_session: second.session_id,
+            comparison: Comparison {
+                a: first.window_ref(a.0, a_len)?,
+                b: second.window_ref(b.0, b_len)?,
+                alignment: align(a_events, b_events),
+            },
+        })
+    };
+
+    let seed_pair = score(seed_a, seed_b)?;
+    let seed = RefinedCandidate {
+        pair: seed_pair,
+        delta: BoundaryDelta {
+            a_start: 0,
+            a_end: 0,
+            b_start: 0,
+            b_end: 0,
+        },
+        retained: seed_pair.comparison.a.k.min(seed_pair.comparison.b.k),
+    };
+
+    let span = radius as isize;
+    let shift = |base: usize, by: isize| -> Option<usize> {
+        let moved = base as isize + by;
+        (moved >= 0).then_some(moved as usize)
+    };
+
+    let mut scored: Vec<RefinedCandidate<'a>> = Vec::new();
+    let mut rejected = 0usize;
+    // Fixed iteration order, so the enumeration is reproducible and so is every
+    // tie-break that falls out of it.
+    for a_start in -span..=span {
+        for a_end in -span..=span {
+            for b_start in -span..=span {
+                for b_end in -span..=span {
+                    let bounds = (|| {
+                        Some((
+                            (shift(seed_a.0, a_start)?, shift(seed_a.1, a_end)?),
+                            (shift(seed_b.0, b_start)?, shift(seed_b.1, b_end)?),
+                        ))
+                    })();
+                    let Some((a, b)) = bounds else {
+                        rejected += 1;
+                        continue;
+                    };
+                    // Invalid combinations are skipped, never clamped. Clamping
+                    // would silently re-enter the neighbourhood from outside it.
+                    let Some(pair) = score(a, b) else {
+                        rejected += 1;
+                        continue;
+                    };
+                    scored.push(RefinedCandidate {
+                        pair,
+                        delta: BoundaryDelta {
+                            a_start,
+                            a_end,
+                            b_start,
+                            b_end,
+                        },
+                        retained: pair.comparison.a.k.min(pair.comparison.b.k),
+                    });
+                }
+            }
+        }
+    }
+
+    let frontier = pareto_frontier(&scored);
+    let seed_total = seed.pair.comparison.alignment.total;
+    let pick = frontier
+        .iter()
+        .filter(|candidate| candidate.pair.comparison.alignment.total <= seed_total)
+        .max_by_key(|candidate| candidate.retained)
+        .or_else(|| {
+            frontier.iter().min_by(|left, right| {
+                left.pair
+                    .comparison
+                    .alignment
+                    .total
+                    .partial_cmp(&right.pair.comparison.alignment.total)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
+        .copied();
+
+    Some(Refinement {
+        seed,
+        evaluated: scored.len(),
+        rejected,
+        radius,
+        floor,
+        frontier,
+        pick,
+    })
+}
+
+/// The non-dominated set over `(total ↓, retained ↑)`.
+///
+/// Two axes rather than three. `distinct_marks` travels on every candidate and
+/// is *not* an axis: adding axes only grows a frontier, and a two-axis frontier
+/// is one a reader can check by eye. No axis is weighted against another and no
+/// coefficient is introduced.
+fn pareto_frontier<'a>(scored: &[RefinedCandidate<'a>]) -> Vec<RefinedCandidate<'a>> {
+    let better = |left: &RefinedCandidate<'a>, right: &RefinedCandidate<'a>| {
+        let (l, r) = (
+            left.pair.comparison.alignment.total,
+            right.pair.comparison.alignment.total,
+        );
+        l < r
+            || (l == r
+                && (
+                    left.delta.a_start,
+                    left.delta.a_end,
+                    left.delta.b_start,
+                    left.delta.b_end,
+                ) < (
+                    right.delta.a_start,
+                    right.delta.a_end,
+                    right.delta.b_start,
+                    right.delta.b_end,
+                ))
+    };
+
+    // One representative per retained length: the best-scoring, with ties broken
+    // by the deltas so the choice never depends on iteration accidents.
+    let mut best: Vec<RefinedCandidate<'a>> = Vec::new();
+    for candidate in scored {
+        match best
+            .iter_mut()
+            .find(|held| held.retained == candidate.retained)
+        {
+            Some(held) => {
+                if better(candidate, held) {
+                    *held = *candidate;
+                }
+            }
+            None => best.push(*candidate),
+        }
+    }
+    best.sort_by_key(|candidate| std::cmp::Reverse(candidate.retained));
+
+    // Walk from the longest span downwards, keeping a point only when giving up
+    // events actually bought a strictly better distance.
+    let mut frontier: Vec<RefinedCandidate<'a>> = Vec::new();
+    let mut floor_total = f64::INFINITY;
+    for candidate in best {
+        let total = candidate.pair.comparison.alignment.total;
+        if total < floor_total {
+            floor_total = total;
+            frontier.push(candidate);
+        }
+    }
+    frontier
+}
