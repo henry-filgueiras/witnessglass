@@ -2,9 +2,10 @@
 id: tsk_01KZ9XFS9REDP6BNFCMKMXJVWF
 sequence: 21
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZ9XFS9ED6GPVPF0K7HZGWC9
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Evaluate boundary candidates against a deterministic order-null distribution
@@ -252,3 +253,315 @@ No variable-length discovery, no motif families, no corpus, no fourth specimen. 
 surface, no stable public statistical API, no recording-format change, no dependency, no new page. No
 real recording committed, copied, or reproduced. The unrelated `cargo build --examples` /
 `spectroscope.rs` `required-features` defect stays out of scope. Nothing pushed.
+
+## Result
+
+Delivered. **Supported**, and the central prediction held with a margin the mechanism predicted in
+advance.
+
+The one-line finding:
+
+> The four-event core is 4.3× rarer under the null than the three-event suffix that raw distance
+> prefers — and standardized separation has an interior maximum at exactly that core, over all 2304
+> candidates, without being told it existed.
+
+The finding that matters as much: **the three statistics disagree sharply**, and one of them —
+unstandardized separation — reproduces raw distance's bias exactly. Naming a score in advance would
+have had a one-in-three chance of being right.
+
+### 1. Frozen, and the one extension
+
+`git diff bff44d6..5646595 -- src/experiment/event_sequence.rs` leaves `align`, `timing_term`, the
+five constants, `event_norm`, `timing_norm`, `total`, `Mark`, `MarkedEvent`, `project`, `refine`,
+`pareto_frontier`, `REFINE_RADIUS`, and `LENGTH_FLOOR` byte-identical. `refine`'s enumeration moved
+into `enumerate_candidates` and `refine` now calls it — behaviour unchanged, and task:20's
+thirty-three tests pass untouched, which is the assertion that says so.
+
+**The extension:** `order_null_seeded(sequence, seed)`, with `order_null(s) =
+order_null_seeded(s, ORDER_NULL_SEED)` at task:19's own constant. A test asserts the two agree, so
+task:19's null keeps its exact meaning and is realization zero of this one.
+
+### 2. The null construction, exactly
+
+Per realization, per side: marks permuted by fixed-seed Fisher–Yates; every `gap_from_previous_ms` and
+`offset_ms` left where it was; mark multiset, length, and channel scope preserved; receipts dropped.
+Both sides nulled independently. One ensemble per specimen, shared by every candidate.
+
+```text
+seed(realization r, side s) = ORDER_NULL_SEED
+                            ^ r · 0x9E37_79B9_7F4A_7C15
+                            ^ s · 0xD1B5_4A32_D192_ED03
+```
+
+No ambient RNG, no clock, no thread state. A test checks for collisions **after** the generator's
+`seed | 1` normalization, because two seeds differing only in bit 0 drive the same stream and would
+have put duplicate realizations in the ensemble unnoticed. Twenty thousand realizations × two sides:
+no collision.
+
+### 3. Scope and cost
+
+| scope | candidates | realizations | measured |
+|---|---|---|---|
+| geometry | every valid candidate (2401 / 1764 / 2304) | 1 000 | ≈ 2.5 s per specimen |
+| resolution | the Pareto frontier (8 / 7 / 10) | 10 000 | ≈ 2.1 s per specimen |
+
+Both preregistered from the benchmark, both run comprehensively as preferred. Total ≈ 14 s for three
+specimens in a release build.
+
+### 4. The feasibility review's mechanism, confirmed empirically
+
+The preregistration derived, before anything ran, that because the null permutes marks and leaves gaps
+in place, a null realization reaches an exact-agreement candidate's observed total **precisely when its
+marks match positionally** — so the empirical tail probability of such a candidate is the probability
+of positional mark agreement, roughly `c^L`.
+
+The measurement bears it out. On specimen C the frontier's exact-agreement candidates:
+
+```text
+retained 4   emp-p 7.0e-4        c⁴ predicted ≈ 3.1e-4
+retained 3   emp-p 3.0e-3        c³ predicted ≈ 2.4e-3
+```
+
+Same order of magnitude, same ratio direction, from marginals computed by hand in advance. And the
+review's two consequences both landed: the resolution scope was raised to 10 000 *because* 1 000 could
+not separate `c³` from `c⁴`, and the synthetic criterion was written around fixture repetition rather
+than against it.
+
+### 5. Specimen C — independent real, the central prediction
+
+Frontier at 10 000 realizations:
+
+```text
+   retained       A span       B span     tot  null-mu  null-sd    emp-p      sep        z
+         14     [48..62)     [12..26)   0.544    0.706    0.055  5.50e-3    0.162     2.94
+         13     [48..61)     [12..25)   0.508    0.696    0.058  3.20e-3    0.188     3.22
+         12     [48..60)     [12..24)   0.466    0.682    0.062  2.00e-3    0.216     3.48
+         11     [48..59)     [12..23)   0.446    0.691    0.066  9.00e-4    0.245     3.73
+         10     [48..58)     [12..22)   0.419    0.701    0.070  4.00e-4    0.282     4.05
+          9     [48..57)     [12..21)   0.372    0.700    0.075  3.00e-4    0.328     4.39
+          7     [50..57)     [12..21)   0.331    0.636    0.071  1.00e-4    0.304     4.27
+          5     [53..58)     [17..22)   0.266    0.721    0.108  1.10e-3    0.455     4.23
+          4     [53..57)     [17..21)   0.113    0.718    0.123  7.00e-4    0.605   * 4.91
+          3     [54..57)     [18..21)   0.031    0.674    0.147  3.00e-3    0.643     4.37
+```
+
+**The core against the suffix, under every reported statistic:**
+
+| | 4-event core `[53..57)`↔`[17..21)` | 3-event suffix `[54..57)`↔`[18..21)` | who wins |
+|---|---|---|---|
+| raw `total` | 0.113 | **0.031** | suffix, by 3.6× |
+| `event_norm` | 0.000 | 0.000 | tie |
+| `timing_norm` | 0.416 | **0.124** | suffix |
+| `null_mean` | 0.718 | 0.674 | — |
+| `null_stddev` | 0.123 | 0.147 | — |
+| `empirical_p` | **7.0e-4** | 3.0e-3 | **core, by 4.3×** |
+| `separation` | 0.605 | **0.643** | suffix |
+| `standardized_separation` | **4.91** | 4.37 | **core** |
+
+**P3 confirmed.** The core is strictly rarer under the null despite scoring 3.6× worse on raw
+agreement. Two of the four null statistics prefer it; two do not.
+
+### 6. Specimens A and B
+
+**A — synthetic**, frontier at 10 000: `emp-p` is at the floor `1.0e-4` for **all eight** candidates —
+completely saturated and useless here. `separation` rises monotonically to retained 9 (0.563). `z` has
+an interior maximum at **retained 13, `A[20..33)` ↔ `B[162..175)`** — which begins at exactly the
+planted left boundary, index 20 and index 162.
+
+```text
+   retained    tot  null-mu  null-sd    emp-p      sep        z
+         18  0.277    0.613    0.050  1.00e-4    0.336     6.75
+         15  0.139    0.596    0.057  1.00e-4    0.457     8.04
+         13  0.029    0.582    0.063  1.00e-4    0.553   * 8.85
+         12  0.026    0.584    0.066  1.00e-4    0.557     8.45
+          9  0.024    0.587    0.079  1.00e-4    0.563     7.15
+```
+
+**P1 confirmed as written**, including its prediction that surprise would prefer the longest exact
+match rather than the planted span itself — a swing, not a solution, and predicted as such.
+
+**B — positive control:** `emp-p` saturated at the floor for all seven. `z` peaks at **retained 10,
+`A[5..15)` ↔ `B[5..15)`** — the longest span in which the two runbook executions agree exactly,
+starting at the first index past their divergence. **P2 confirmed**: ten events, well above the six
+the criterion asked for.
+
+### 7. The geometry scope: the argmax over every candidate
+
+The frontier is 8–10 points. Over the **whole neighbourhood** at 1 000 realizations:
+
+| specimen | candidates | `max z` | `max separation` | `min emp-p` |
+|---|---|---|---|---|
+| A | 2401 | `A[20..33) B[162..175)` ret 13 — **starts at the planted boundary** | `A[21..27)` ret 6 | 1914 of 2401 tied at the floor |
+| B | 1764 | `A[5..15) B[5..15)` ret 10 — **the agreement span** | `A[5..9)` ret 4 | 1086 of 1764 tied at the floor |
+| C | 2304 | `A[53..57) B[17..21)` ret 4 — **the previously observed core, exactly** | `A[54..57)` ret 3 | 38 of 2304 tied at the floor |
+
+**Standardized separation's global argmax is the meaningful span on all three specimens**, chosen from
+thousands of candidates with no anchor, no ground truth passed in, and no metric change. On the
+independent-real specimen it is the four-event core task:19 observed and task:20 recovered.
+
+### 8. Does an interior optimum appear? Yes — in exactly one statistic
+
+**Yes for `z`**, on all three specimens: 2.94 → 4.91 → 4.37 on C, 6.75 → 8.85 → 7.15 on A,
+8.25 → 9.81 → 9.26 on B. Each rises with shortening spans, peaks, and falls. task:20's finding was
+that *every* frontier descended monotonically to the floor with no knee; there is now a knee.
+
+**No for `separation`**, which is monotonic toward short spans on all three and therefore reproduces
+raw distance's bias. **No for `emp-p`**, which saturates at the ensemble floor on two specimens.
+
+**Why `z` has the knee, stated so it is not mistaken for magic.** `z = separation / null_stddev`, and
+the null's standard deviation *grows* as spans shorten — 0.055 at retained 14 to 0.147 at retained 3
+on specimen C. Short spans match by chance more variably, so their good agreement is less exceptional.
+The knee is where separation stops outgrowing that variance. That is a mechanism, not a discovery, and
+it is the reason `z` behaves differently from `separation` rather than a reason to trust it.
+
+### 9. Do the statistics agree? No, and that is the round's second finding
+
+```text
+                    specimen A        specimen B        specimen C
+raw total           shortest          shortest          shortest
+separation          shortest-ish      shortest-ish      shortest
+empirical p         saturated         saturated         core (4.3x)
+standardized sep    planted boundary  agreement span    the core
+```
+
+Three null-relative statistics computed from the same distribution point in three directions. Had this
+round preregistered one as *the* motif score, it would have had a one-in-three chance of picking the
+one with useful geometry — and `separation` is the most obvious choice a person would reach for.
+
+**This is why §10 forbade writing a selector**, and the prohibition held: nothing in this round ranks
+candidates by any of these, and no `choose_motif` exists.
+
+### 10. Degenerate behaviour, reported rather than hidden
+
+**`empirical_p` saturates badly.** 1914 of 2401 candidates on specimen A and 1086 of 1764 on B sit at
+the ensemble floor at N = 1 000, and every frontier candidate on both sits at the floor at N = 10 000.
+The statistic cannot order candidates on either specimen. It is reported at the floor as *rarer than
+this ensemble can resolve*, which is what the evidence supports, rather than as `p = 0`.
+
+**No zero-variance null occurred on any specimen.** Standard deviations ran 0.049–0.147 throughout. The
+path is tested anyway: a fixture whose every observed record carries one mark produces a point-mass
+null, and `standardized_separation` is `None` there rather than infinity.
+
+**No NaN or infinity reaches serialization or the page**, asserted by test at both finite-sample edges.
+
+### 11. Verdict: **Supported**
+
+| clause | outcome |
+|---|---|
+| **C** — core's `empirical_p` strictly below the suffix's | 7.0e-4 < 3.0e-3 ✓ |
+| **A** — most exceptional candidate begins at the planted left boundary | ✓ under `z` (retained 13) and under `separation` (retained 9); undefined under saturated `emp-p` |
+| **B** — most exceptional candidate retains ≥ 6 events | ✓ 10 under `z`, 9 under `separation` |
+| no change to metric or representation | ✓ by diff |
+
+No Falsified clause fires: the suffix is not at least as exceptional as the core; the most exceptional
+candidate is at the length floor on **one** specimen only (C, under `separation`) and the clause needs
+two; no specimen had a degenerate null; and two of three statistics order candidates fine.
+
+**One drafting imprecision, recorded rather than smoothed.** Clauses A and B say "the most exceptional
+candidate" without naming which statistic makes a candidate most exceptional. On specimen A three
+statistics give three answers. Both clauses hold under both non-saturated statistics and are undefined
+under the saturated one, so the ambiguity did not bite — but it is an under-specification of the same
+family as the four previous defects, and it is the fifth. §13.
+
+### 12. What the null adds beyond raw similarity
+
+**It supplies the quantity task:20 found missing, and it does so without being told anything about
+rarity.** No `−log p(mark)`, no inverse-frequency weight, no entropy term, no change to the alignment.
+The rarity enters through the permutation: a mark occurring once in 169 events almost never lands in
+your window under the null, so a span containing it is hard to match by chance. That is why the core
+beats the suffix, and it is stronger evidence than a weighting invented to produce that answer would
+have been — the null was built in a different round for a different question.
+
+**And the interpretation this round is required to keep separate.** The core is
+`tool_requested/Agent → subagent_started → tool_requested/Bash → tool_succeeded/Bash`, and task:19
+recorded that the first two are a deterministic adapter emission. The finding here is that the core is
+**statistically distinctive**. It is not a finding that it is **behaviourally meaningful**, and the
+adapter-emission question stays deferred exactly as preregistered. A representation in which the
+rarest mark is an artefact of how events are written down will make artefacts look exceptional, and
+that is now the most urgent open question in this line of work.
+
+### 13. Desire-path friction
+
+**The section-template refusal returned, for the first time in three rounds.** `scarp new sprint`
+rejected a `## A distinction this sprint must keep` heading — sprints have exactly Goal, Rationale,
+Success criteria, Non-goals. One failed command, fold the material into Rationale as a bolded
+paragraph, move on. Already **idea:2**; recorded as a fourth occurrence across the project.
+
+**Sixth consecutive round with the preregistration in a `###` subsection.** `bff44d6` contains nothing
+else. **idea:5**.
+
+**The fifth criterion imprecision, and it is a new shape again.** Not a disproved criterion, not an
+inherited threshold, not an unapplied mechanism — an under-specified one: "the most exceptional
+candidate" without naming the statistic, in a round whose whole point was that several statistics
+exist. The closing step task:20 recommended (re-read every criterion against each mechanism found)
+would not have caught this; what would is asking, of every criterion, *which computed quantity does
+this sentence name?* Recorded, not built.
+
+**Appending a Result is still `cat >>`**: `scarp` 0.2.0 on this machine, version lag, maintenance:1.
+
+### 14. Strongest limitation
+
+**`z` has a knee for a reason that is about variance, not about meaning.** The null's spread grows as
+spans shorten because short spans have fewer positions to disagree in. That makes `z` a *length-aware*
+statistic almost by accident, and its interior maximum could be a length preference wearing a
+statistical costume. The evidence against that reading is that the maximum lands on the meaningful
+span on all three specimens rather than at a fixed length — 13, 10, and 4 events respectively — but
+three specimens cannot distinguish "finds the figure" from "prefers a length that happens to be right
+three times".
+
+Secondly, and it follows from §12: the null measures surprise *given the recording's marginal
+vocabulary*, so anything that makes a mark rare makes spans containing it exceptional — including an
+adapter that emits a mark exactly once per subagent launch.
+
+### 15. Recommendation: exactly one next experiment
+
+**Test whether `z`'s interior maximum survives when the rare mark is removed from the representation.**
+
+Rebuild specimen C's sequences with `subagent_started`, `subagent_stopped`, and `tool_requested/Agent`
+excluded — the three adapter-lifecycle marks task:19 flagged — recompute the same frontier and the same
+null evidence, and ask whether `z` still peaks at a four-event span, peaks somewhere else, or loses its
+knee entirely.
+
+It is the smallest experiment that separates the two readings §14 leaves open. If the knee survives, the
+geometry is about behaviour and the adapter emission was incidental. If it collapses, then what this
+round found is that adapter artefacts are statistically distinctive — which is a real and useful
+finding, and it would make representation the next problem rather than statistics. Either way it costs
+one flag, no new machinery, no new specimen, and no metric change.
+
+**Not recommended:** an information-theoretic weighting. The null already supplies rarity, and adding a
+`−log p(mark)` term now would answer the same question twice while making it impossible to tell which
+mechanism produced the answer.
+
+### 16. The visualization
+
+`src/experiment/boundary_page.rs`, extended rather than replaced: two stacked SVG panels over a shared
+axis — raw `total` and standardized separation against retained length, longest span on the left — with
+every evaluated candidate as a faint dot, the frontier highlighted, and the planted figure, a
+caller-supplied marked span, and the raw-distance-preferred span drawn on top. Below them the evidence
+table with all five statistics, and below that each marked candidate's null distribution drawn as a
+20-bin histogram with the observed value marked on the same axis.
+
+The raw panel slopes down to the right on all three specimens. The surprise panel rises and then falls,
+with the green marker at its apex on specimen C. The two panels are the round's result, side by side.
+
+**One defect found by looking at the page and not by reading the source**: the x axis plotted short
+spans on the left while its own caption said long-to-short. Fixed by flipping the axis to match the
+caption, which is also the direction the argument reads in.
+
+Fidelity is tested: a real refinement is scored against a real ensemble, serialized, rendered, and every
+computed mean, standard deviation, separation, and tail probability is asserted present at the precision
+the page prints, along with the histogram bars.
+
+**The generator is committed and its output is not**, as in task:20.
+
+### What this task did not do
+
+No selector, no motif score, no `choose_motif`, no ranking by a null statistic. No inverse-frequency,
+TF-IDF, `−log p(mark)`, entropy, mutual-information, or learned weighting. No new facet, no mark change,
+no timing change, no removal of adapter emissions, no boundary moved on this round's output. No
+variable-length discovery, no motif families, no corpus, no fourth specimen. No product CLI surface, no
+stable public statistical API, no recording-format change, no dependency, no new page, no Spectroscope
+change. No existing test altered and no check weakened. No real recording committed, copied, or
+reproduced; no absolute path, prompt, response, command, or file content in this artifact. The
+unrelated `cargo build --examples` / `spectroscope.rs` `required-features` defect did not obstruct
+validation and stays out of scope. Nothing pushed.

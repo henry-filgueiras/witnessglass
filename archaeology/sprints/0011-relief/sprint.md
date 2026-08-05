@@ -2,8 +2,9 @@
 id: spr_01KZ9XFS9ED6GPVPF0K7HZGWC9
 sequence: 11
 kind: sprint
-status: active
+status: closed
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Relief
@@ -96,3 +97,77 @@ meaningful**, and no output this round may blur the two.
 - A visualization framework, a charting dependency, a new page, a product CLI surface, a stable public
   statistical API, or a recording-format change.
 - Committing a real recording, or any prompt, response, command, file content, or sensitive path.
+
+## Outcome
+
+One task, closed. **Supported.** The missing quantity was surprise, and the existing null already had it.
+
+task:20 ended with a search that could find the core and an objective that could not stop at it. This
+sprint added no facet, changed no weight, and touched the alignment not at all; it made the null's seed
+a parameter, estimated a distribution per candidate, and looked at the shape.
+
+**The central number.** The four-event core is 4.3× rarer under the null than the three-event suffix
+that raw distance prefers — `empirical_p` 7.0e-4 against 3.0e-3 — despite scoring 3.6× worse on
+agreement. The preregistration derived that ordering from the null's own construction before anything
+ran, and predicted its magnitude to within an order of magnitude from marginals computed by hand.
+
+**The number that was not predicted.** Standardized separation has an interior maximum, and its global
+argmax over *every* candidate is the meaningful span on all three specimens: the span beginning at the
+planted left boundary on the synthetic one, the exact agreement span on the runbook control, and — on
+the independent-real specimen, out of 2304 candidates with no anchor and no ground truth supplied — the
+four-event core itself. task:20 found every frontier descending monotonically to the floor with no knee.
+There is now a knee, and it lands where three previous rounds said the figure was.
+
+**Rarity arrived without being invited.** No `−log p(mark)`, no inverse-frequency weight, no entropy
+term. A mark occurring once in 169 events almost never lands in a window under a permutation, so a span
+containing it is hard to match by chance. That is stronger evidence than a weighting designed to
+produce the answer, because the null was built in a different round for a different question.
+
+### Success criteria, against evidence
+
+- **Frozen except the seed**, verifiable by diff, with task:20's thirty-three tests passing untouched as
+  the assertion that `refine` did not move when its enumeration was split out.
+- **The null reused, its extension explicit**: `order_null` is `order_null_seeded` at task:19's own
+  constant, and a test says so. Seed collisions are checked *after* the generator's low-bit
+  normalization, because two seeds differing in bit 0 would have silently duplicated realizations.
+- **A distribution, not a shuffled answer**: 1 000 realizations over every candidate, 10 000 over the
+  frontier, both benchmarked before being chosen and both run comprehensively.
+- **Several statistics, none named as the score** — and this mattered more than expected. See below.
+- **A six-question feasibility review** that changed a parameter and a criterion before commitment.
+- **The page extended, not replaced**, with the geometry visible in two stacked panels and one null
+  distribution drawn per marked candidate.
+
+### What the sprint found that it was not looking for
+
+**The statistics disagree, and the obvious one is wrong.** Unstandardized separation is monotonic toward
+short spans on all three specimens — it reproduces raw distance's bias exactly. The empirical tail
+saturates at the ensemble floor on two of three specimens and cannot order candidates there at all. Only
+standardized separation has usable geometry. A round that had preregistered one of the three as *the*
+motif score would have had a one-in-three chance, and `separation` is what a person reaches for first.
+The prohibition on writing a selector this round was not caution; it was load-bearing.
+
+**The knee has a mechanical explanation, and it cuts both ways.** The null's spread grows as spans
+shorten, so `z` is length-aware almost by accident. Its maximum landing on the meaningful span at three
+different lengths — 13, 10, and 4 events — is the evidence against reading it as a disguised length
+preference, and three specimens cannot settle that.
+
+**The rarest mark in the independent-real specimen is an adapter emission.** The null makes spans
+containing rare marks exceptional, and `tool_requested/Agent` is rare because of how the integration
+writes subagent launches down. The core is statistically distinctive; whether it is behaviourally
+meaningful is now the most urgent open question in this line of work, and it is the one recommended next
+experiment.
+
+### What this sprint deliberately leaves open
+
+Whether `z`'s interior maximum survives removing the three adapter-lifecycle marks from the
+representation — one flag, no new machinery, and it separates "finds the figure" from "finds the
+artefact".
+
+Any selector. The three quantities are computed and shown side by side; how or whether they should
+collapse into one is not decided here, and task:20 is the reason.
+
+Information-theoretic weighting, which the null makes unnecessary to try next and would confound if
+tried now.
+
+Nothing here changed the raw format, the schema, the recorder, `inspection`, the viewer, the workbench,
+the Spectroscope, or the product CLI's verbs, and no dependency was added.
