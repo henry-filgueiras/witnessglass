@@ -2,9 +2,10 @@
 id: tsk_01KZA8C47ZYK0V8ZC4GQPTH2D9
 sequence: 27
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZA86CT59H3WXB1BZ33F61RG
 created: 2026-08-05
+closed: 2026-08-06
 ---
 
 # Commission candidate repairs to rarity_of_agreements against a semantic contract
@@ -199,3 +200,147 @@ metric, or the null. No modification of any prior family, fixture, or expectatio
 whose defect is reported rather than fixed. No new search procedure. No threshold tuned on the corpus,
 and no treatment of the corpus as ground truth. No recording content — prompts, commands, responses,
 file contents, or absolute paths — in any artifact. Nothing pushed.
+
+## Result
+
+**Outcome: O2 — partially repaired. The predicted outcome was O3, and predicting it was a criterion
+defect of exactly the kind decision:7 exists to prevent. §7 below is the most important part of this
+result.**
+
+Every premise reproduced before use, and the frozen statistic's row in every table below reproduces
+sprint:16 exactly: 118 pairs, `delta = 0` in 0 of them, median 0.851, max 4.082 nats, 13 crossings,
+pick moved in 3 of 29 sets, 27 of 195 pairwise orders reversed.
+
+### 1. The semantic contract
+
+`(free)` marks a clause §D1 derived to be free by construction, which §I therefore excludes from
+conferring eligibility.
+
+| candidate | C1 *(free)* | C2 | C3 | C4 *(free)* | C5 *(free)* | C6 |
+|---|---|---|---|---|---|---|
+| **S0** `rarity_of_agreements` | **NO** | ok | ok | ok | ok | ok |
+| **R1** pooled sum | ok | ok | ok | ok | ok | ok |
+| **R2** pooled mean | ok | **NO** | ok | ok | ok | ok |
+| **R3** pooled density | ok | ok | ok | ok | ok | ok |
+
+- S0 violates C1 at `max │S(A,B) − S(B,A)│ = 6.5101` nats. This is the commissioning defect.
+- R2 violates C2 at `min ΔS = −3.1073` nats, witness *add a count-500 agreement to {count 1}*. Adding
+  an agreement **lowers** the score, which is the price of dividing by the agreement count.
+
+### 2. The crossing theorem, exhibited
+
+§D2 predicted that *every* rarity-weighted statistic admits a candidate with fewer agreements
+outscoring one with more. Constructed at rare `c=1` against common `c=500`, `N=100 000`:
+
+| candidate | fewer `k` | more `k` | fewer | more | crosses |
+|---|---|---|---|---|---|
+| S0 | 1 | 2 | 11.513 | 10.597 | **yes** |
+| R1 | 1 | 2 | 11.513 | 10.597 | **yes** |
+| R2 | 1 | 2 | 11.513 | 5.298 | **yes** |
+| R3 | 1 | 2 | 5.756 | 5.298 | **yes** |
+
+No candidate escapes, including the mean built to bound accumulation. **Accumulation is not a defect
+of `rarity_of_agreements`. It is a consequence of weighting positions by rarity at all**, and any
+statistic that eliminates it has abandoned C3.
+
+### 3. The ten sprint:15 families, constructions unchanged
+
+| family | S0 | R1 | R2 | R3 |
+|---|---|---|---|---|
+| AG1 singleton vs motif | MIXED | MIXED | **FAIL** | MIXED |
+| AG2 rarity explosion | MIXED | MIXED | **FAIL** | MIXED |
+| AG3 rare disagreement | PASS | PASS | PASS | **FAIL** |
+| AG3b one-sided rarity | FAIL | MIXED | MIXED | MIXED |
+| AG4 common but structural | MIXED | MIXED | **FAIL** | MIXED |
+| AG5 vocabulary growth | MIXED | MIXED | PASS | MIXED |
+| AG6a whole-corpus duplication | PASS | PASS | PASS | PASS |
+| AG6b background duplication | MIXED | MIXED | PASS | MIXED |
+| AG7 sample-size stability | PASS | PASS | PASS | PASS |
+| AG8 coincidence vs repetition | MIXED | MIXED | **FAIL** | MIXED |
+
+**§D4 confirmed exactly.** S0 and R1 are numerically identical at **65 of 68** family points, and
+differ *only* at AG3b's `count_B ∈ {10, 100, 500}` — the three points where the two recordings'
+marginals differ at all. Without the propagation pass, nine families' worth of "R1 does as well as S0"
+would have read as evidence for R1 and is in fact evidence of nothing.
+
+**§D5 confirmed.** Every candidate's only AG3b failure is `count_B=1`, the degenerate point where the
+family compares a case to itself under a strict inequality. **R1 holds every reachable AG3b point**,
+which is the repair working. AG3b was not modified.
+
+**§P5 confirmed.** R2 fails AG1 at its very first point, `N=100 c=10`, as derived.
+
+### 4. The real operating envelope — sprint:16's exact candidate sets
+
+| candidate | pairs | `delta = 0` | median | max | crossings | picks moved | orders reversed |
+|---|---|---|---|---|---|---|---|
+| **S0** | 118 | 0/118 | 0.851 | 4.082 | 13 | 3/29 | 27/195 |
+| **R1** | 118 | **118/118** | 0.000 | 0.000 | 13 | **0/29** | **0/195** |
+| **R2** | 118 | **118/118** | 0.000 | 0.000 | **25** | **0/29** | **0/195** |
+| **R3** | 118 | **118/118** | 0.000 | 0.000 | 13 | **0/29** | **0/195** |
+
+- **P1 confirmed.** All three candidates are exchange-invariant on every real pair. The asymmetry
+  defect is fully repaired, and by the cheapest available change.
+- **P2b confirmed, and §D3 survived its falsification target.** R1's and R3's crossings are identical
+  set-for-set and pair-for-pair, 13 and 13, because every observed crossing is a comparison at fixed
+  span length and `R3 = R1/L` there.
+- **P2c confirmed, sharply.** R2 — the candidate built to bound accumulation — produces **25**
+  crossings, nearly twice S0's 13. A mean crosses *more* readily, exactly as §D2 derived.
+
+### 5. The undeviated loss: R3 fails AG3
+
+§D derived nothing about this and it is the round's one surprise. AG3 compares a candidate carrying a
+count-1 mark at a **disagreeing** position against one not carrying it at all — spans of length 3 and
+2. R3 divides by span length, so a disagreeing position *dilutes* the score by 33%. The invariant AG3
+states — *rarity that does not agree contributes nothing* — is violated.
+
+**The contract did not catch this and the prior family did.** C4 as operationalized varied the
+disagreeing marks' counts while holding their *number* fixed, so R3 passed it. AG3 varies the number.
+A clause whose title says "contributes nothing" was implemented as the strictly weaker "changing its
+marks changes nothing". Running the prior families unchanged is the only reason this surfaced, and it
+is the concrete argument for §J's refusal to touch them.
+
+By §G, R3 loses a family S0 held by a mechanism not derived in advance, and is **rejected**. Banked as
+`tests/repair.rs::dividing_by_span_length_lets_a_disagreement_change_the_score`.
+
+### 6. Eligibility — §I, not a pass count
+
+| candidate | verdict | reason |
+|---|---|---|
+| **R1** pooled sum | **eligible** | C1 exact on all 118 real pairs; C2, C3, C6 hold; loses no family S0 held and repairs every reachable AG3b point; its interpretation — *surprisal under the shared-source model* — stands without reference to any test. |
+| **R2** pooled mean | rejected | violates C2 at −3.107 nats, and loses AG1, AG2, AG4 and AG8 outright. Its gains on AG5 and AG6b do not enter, since §I is not a pass count. |
+| **R3** pooled density | rejected | loses AG3, which S0 held, by an underived mechanism (§5). |
+
+R2's and R3's results are preserved rather than discarded: both are informative about the shape of the
+problem, and R2 in particular is the obvious naive repair whose failure is worth having on record.
+
+**Exactly one candidate is eligible. R1 earns an ADOPTION EXPERIMENT, and is not adopted.** Nothing in
+this round changed the incumbent selector, the production statistic, the representation, the metric,
+or the null; `UNDER_TEST` and `UNDER_STUDY` are still `rarity_of_agreements`, and a test asserts it.
+
+### 7. The ninth criterion defect, and it is this round's own
+
+decision:7 banked eight criterion defects across sprints 6–15. **This round contributes a ninth, and
+it is mine.**
+
+§H predicted **O3 — contract conflict**, on the strength of §D2's theorem. The partition returns
+**O2**. The precedence rule that decides it is `O3` *only if* "two clauses are incompatible **and no
+candidate satisfies all**" — and R1 satisfies all six. The prediction assumed C2 meant *more
+agreements always wins*, which is the form §D2's theorem is genuinely incompatible with C3. The C2 I
+actually wrote and implemented is the weaker *one candidate gaining an agreement must not lose score*,
+which R1 satisfies comfortably. §B even footnoted "C2 and C3 conflict" while defining a C2 that does
+not conflict with C3 at all.
+
+**A criterion that did not mean what the prediction assumed, in the first round conducted under the
+decision written to stop exactly that.** Recorded here rather than resolved by adjusting either the
+clause or the partition after the fact. What decision:7 bought is not immunity: it is that the defect
+was caught by the round's own machinery, named against a preregistered rule, and reported in the same
+breath as the result it distorted — instead of surfacing eight rounds later.
+
+The substantive finding stands on its own and does not depend on which outcome label applies: **the
+strong form of C2 and the whole of C3 are provably incompatible, and §2 exhibits it.**
+
+### 8. Numbers
+
+`scripts/check.sh` green, unweakened. **358 tests**, up from 343; 15 new, all in `tests/repair.rs`.
+`scarp doctor`: no problems. Nothing pushed. No recording content in any artifact — counts,
+frequencies and margins only, per decision:8.

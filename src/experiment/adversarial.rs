@@ -147,14 +147,27 @@ fn case(
     }
 }
 
-/// Score one case with the frozen statistic. Panics only if the preregistered
-/// name is ever removed from [`SCORERS`], which a test forbids.
-fn score(observation: &Observation) -> f64 {
-    let scorer = SCORERS
+/// The statistic every family is scored with.
+///
+/// sprint:17 parameterized this. **No construction, sweep, invariant or
+/// expectation below changed** — task:27 §J forbids modifying a prior family,
+/// and a family that moved when a candidate needed it to would be worthless as
+/// commissioning evidence. Only the choice of what does the arithmetic is new.
+pub type Stat = fn(&Observation) -> Option<f64>;
+
+/// The frozen statistic these families were built against, for callers that
+/// want sprint:15's original run. Panics only if the preregistered name is ever
+/// removed from [`SCORERS`], which a test forbids.
+pub fn under_test() -> Stat {
+    SCORERS
         .iter()
         .find(|scorer| scorer.name == UNDER_TEST)
-        .expect("the statistic under test must remain in the preregistered family");
-    (scorer.score)(observation).unwrap_or(f64::NAN)
+        .expect("the statistic under test must remain in the preregistered family")
+        .score
+}
+
+fn score(stat: Stat, observation: &Observation) -> f64 {
+    (stat)(observation).unwrap_or(f64::NAN)
 }
 
 /// Assemble a family from its swept comparisons.
@@ -206,12 +219,12 @@ fn point(params: String, nominal: bool, weaker: f64, stronger: f64) -> Point {
 }
 
 /// AG1 — a lone accidental agreement on a singleton against a repeated motif.
-fn ag1() -> FamilyResult {
+fn ag1(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     for total in [100usize, 1_000, 10_000, 100_000, 1_000_000] {
         for common in [10usize, 50, 200] {
-            let lone = score(&case(&[1], 3, total, None, total));
-            let motif = score(&case(&[common; 4], 0, total, None, total));
+            let lone = score(stat, &case(&[1], 3, total, None, total));
+            let motif = score(stat, &case(&[common; 4], 0, total, None, total));
             points.push(point(
                 format!("N={total} c={common}"),
                 total == 1_000 && common == 50,
@@ -232,13 +245,13 @@ fn ag1() -> FamilyResult {
 
 /// AG2 — does a single agreement acquire unbounded dominance as a mark's
 /// frequency approaches zero?
-fn ag2() -> FamilyResult {
+fn ag2(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     for total in [100usize, 1_000, 10_000, 100_000, 1_000_000] {
-        let lone = score(&case(&[1], 3, total, None, total));
+        let lone = score(stat, &case(&[1], 3, total, None, total));
         // Four agreements at a fixed relative frequency of 0.05.
         let held = (total / 20).max(1);
-        let motif = score(&case(&[held; 4], 0, total, None, total));
+        let motif = score(stat, &case(&[held; 4], 0, total, None, total));
         points.push(point(format!("N={total}"), total == 1_000, lone, motif));
     }
     family(
@@ -252,14 +265,14 @@ fn ag2() -> FamilyResult {
 }
 
 /// AG3 — rarity that does not agree must contribute nothing.
-fn ag3() -> FamilyResult {
+fn ag3(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     for total in [1_000usize, 100_000] {
         for common in [20usize, 100] {
             // X carries a count-1 mark at a *disagreeing* position; Y does not
             // carry it at all. Both agree on the same two common marks.
-            let with_rare = score(&case(&[common, common], 1, total, None, total));
-            let without = score(&case(&[common, common], 0, total, None, total));
+            let with_rare = score(stat, &case(&[common, common], 1, total, None, total));
+            let without = score(stat, &case(&[common, common], 0, total, None, total));
             points.push(Point {
                 params: format!("N={total} c={common}"),
                 nominal: total == 1_000 && common == 20,
@@ -281,12 +294,12 @@ fn ag3() -> FamilyResult {
 }
 
 /// AG3b — the statistic never reads B's marginals.
-fn ag3b() -> FamilyResult {
+fn ag3b(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     for b_count in [1usize, 10, 100, 500] {
         let total = 1_000usize;
-        let ubiquitous_in_b = score(&case(&[1], 3, total, Some(&[b_count]), total));
-        let rare_in_both = score(&case(&[1], 3, total, Some(&[1]), total));
+        let ubiquitous_in_b = score(stat, &case(&[1], 3, total, Some(&[b_count]), total));
+        let rare_in_both = score(stat, &case(&[1], 3, total, Some(&[1]), total));
         points.push(Point {
             params: format!("count_B={b_count}"),
             nominal: b_count == 500,
@@ -307,13 +320,13 @@ fn ag3b() -> FamilyResult {
 }
 
 /// AG4 — a repeated figure of common marks must stay recoverable.
-fn ag4() -> FamilyResult {
+fn ag4(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     for total in [100usize, 1_000, 10_000, 100_000, 1_000_000] {
         for percent in [10usize, 20, 35] {
             let held = (total * percent / 100).max(1);
-            let structural = score(&case(&[held; 6], 0, total, None, total));
-            let lone_rare = score(&case(&[1], 5, total, None, total));
+            let structural = score(stat, &case(&[held; 6], 0, total, None, total));
+            let lone_rare = score(stat, &case(&[1], 5, total, None, total));
             points.push(point(
                 format!("N={total} p={percent}%"),
                 total == 1_000 && percent == 20,
@@ -333,15 +346,15 @@ fn ag4() -> FamilyResult {
 }
 
 /// AG5 — appending unrelated marks must not reorder unchanged candidates.
-fn ag5() -> FamilyResult {
+fn ag5(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     let base = 1_000usize;
     // X: one agreement on a count-2 mark. Y: three agreements on count-300 marks.
     // Neither candidate's own evidence changes as unrelated events are appended.
     for added in [0usize, 1_000, 10_000, 100_000] {
         let total = base + added;
-        let sparse = score(&case(&[2], 2, total, None, total));
-        let broad = score(&case(&[300; 3], 0, total, None, total));
+        let sparse = score(stat, &case(&[2], 2, total, None, total));
+        let broad = score(stat, &case(&[300; 3], 0, total, None, total));
         // At M = 0 the sparse candidate leads; the invariant is that the
         // ordering established there survives.
         points.push(Point {
@@ -363,18 +376,21 @@ fn ag5() -> FamilyResult {
 }
 
 /// AG6a — duplicating the whole corpus must change nothing.
-fn ag6a() -> FamilyResult {
+fn ag6a(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     let base = 1_000usize;
-    let reference = score(&case(&[50, 50, 7], 1, base, None, base));
+    let reference = score(stat, &case(&[50, 50, 7], 1, base, None, base));
     for factor in [1usize, 2, 4, 10] {
-        let scaled = score(&case(
-            &[50 * factor, 50 * factor, 7 * factor],
-            1,
-            base * factor,
-            None,
-            base * factor,
-        ));
+        let scaled = score(
+            stat,
+            &case(
+                &[50 * factor, 50 * factor, 7 * factor],
+                1,
+                base * factor,
+                None,
+                base * factor,
+            ),
+        );
         points.push(Point {
             params: format!("×{factor}"),
             nominal: factor == 2,
@@ -394,13 +410,13 @@ fn ag6a() -> FamilyResult {
 }
 
 /// AG6b — duplicating background only, which is AG5's mechanism by another name.
-fn ag6b() -> FamilyResult {
+fn ag6b(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     let base = 1_000usize;
     for added in [0usize, 1_000, 10_000] {
         let total = base + added;
-        let sparse = score(&case(&[2], 2, total, None, total));
-        let broad = score(&case(&[300; 3], 0, total, None, total));
+        let sparse = score(stat, &case(&[2], 2, total, None, total));
+        let broad = score(stat, &case(&[300; 3], 0, total, None, total));
         points.push(Point {
             params: format!("+{added} background"),
             nominal: added == 0,
@@ -420,14 +436,18 @@ fn ag6b() -> FamilyResult {
 }
 
 /// AG7 — the same distribution observed at a different sample size.
-fn ag7() -> FamilyResult {
+fn ag7(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     let base = 1_000usize;
     // Proportional candidate: relative frequency held at 0.05 as N grows.
-    let proportional_at =
-        |total: usize| score(&case(&[(total / 20).max(1); 3], 0, total, None, total));
+    let proportional_at = |total: usize| {
+        score(
+            stat,
+            &case(&[(total / 20).max(1); 3], 0, total, None, total),
+        )
+    };
     // Singleton candidate: count 1 at every N, so its frequency moves with N.
-    let singleton_at = |total: usize| score(&case(&[1], 2, total, None, total));
+    let singleton_at = |total: usize| score(stat, &case(&[1], 2, total, None, total));
 
     let proportional_reference = proportional_at(base);
     let singleton_reference = singleton_at(base);
@@ -460,12 +480,12 @@ fn ag7() -> FamilyResult {
 }
 
 /// AG8 — one spectacular coincidence against several moderate ones.
-fn ag8() -> FamilyResult {
+fn ag8(stat: Stat) -> FamilyResult {
     let mut points = Vec::new();
     for total in [100usize, 1_000, 10_000, 1_000_000, 1_000_000_000] {
         for common in [5usize, 50] {
-            let coincidence = score(&case(&[1], 3, total, None, total));
-            let repeated = score(&case(&[common; 4], 0, total, None, total));
+            let coincidence = score(stat, &case(&[1], 3, total, None, total));
+            let repeated = score(stat, &case(&[common; 4], 0, total, None, total));
             points.push(point(
                 format!("N={total} c={common}"),
                 total == 1_000 && common == 5,
@@ -488,16 +508,21 @@ fn ag8() -> FamilyResult {
 
 /// Every preregistered adversarial family, in task:25 §2.4's order.
 pub fn families() -> Vec<FamilyResult> {
+    families_with(under_test())
+}
+
+/// The same ten families, scored with any statistic. sprint:17, task:27 §D.
+pub fn families_with(stat: Stat) -> Vec<FamilyResult> {
     vec![
-        ag1(),
-        ag2(),
-        ag3(),
-        ag3b(),
-        ag4(),
-        ag5(),
-        ag6a(),
-        ag6b(),
-        ag7(),
-        ag8(),
+        ag1(stat),
+        ag2(stat),
+        ag3(stat),
+        ag3b(stat),
+        ag4(stat),
+        ag5(stat),
+        ag6a(stat),
+        ag6b(stat),
+        ag7(stat),
+        ag8(stat),
     ]
 }

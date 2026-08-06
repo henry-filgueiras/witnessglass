@@ -210,9 +210,15 @@ pub struct AsymmetrySample {
     pub delta: f64,
 }
 
-fn rarity(observation: &Observation) -> Option<f64> {
-    let scorer = SCORERS.iter().find(|scorer| scorer.name == UNDER_STUDY)?;
-    (scorer.score)(observation)
+/// The statistic a replay is conducted with.
+pub type Stat = fn(&Observation) -> Option<f64>;
+
+/// The statistic sprint:16 studied, for callers that want its original run.
+pub fn under_study() -> Option<Stat> {
+    SCORERS
+        .iter()
+        .find(|scorer| scorer.name == UNDER_STUDY)
+        .map(|scorer| scorer.score)
 }
 
 /// Score one candidate both ways round.
@@ -226,10 +232,22 @@ pub fn asymmetry_of(
     span_b: (usize, usize),
     origin: &str,
 ) -> Option<AsymmetrySample> {
+    asymmetry_with(under_study()?, first, span_a, second, span_b, origin)
+}
+
+/// The same measurement under any statistic. sprint:17, task:27 §E.
+pub fn asymmetry_with(
+    stat: Stat,
+    first: &EventSequence<'_>,
+    span_a: (usize, usize),
+    second: &EventSequence<'_>,
+    span_b: (usize, usize),
+    origin: &str,
+) -> Option<AsymmetrySample> {
     let forward_view = Observation::of(first, span_a, second, span_b)?;
     let backward_view = Observation::of(second, span_b, first, span_a)?;
-    let forward = rarity(&forward_view)?;
-    let backward = rarity(&backward_view)?;
+    let forward = (stat)(&forward_view)?;
+    let backward = (stat)(&backward_view)?;
     Some(AsymmetrySample {
         a_session: first
             .session_id

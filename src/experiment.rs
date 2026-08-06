@@ -66,6 +66,9 @@ pub mod identifiability;
 #[cfg(feature = "experiment-matrix-profile")]
 pub mod matrix_profile;
 pub mod oracle;
+// sprint:17's candidate repairs and the semantic contract they are derived
+// from. Proposes; adopts nothing, and changes no statistic anything else uses.
+pub mod repair;
 pub mod signal;
 // sprint:7's Behavioral Spectroscope projection. Behind the same feature as the
 // Matrix Profile it renders, since it cannot be assembled without one.

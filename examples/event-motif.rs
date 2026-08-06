@@ -27,7 +27,9 @@ use witnessglass::experiment::event_sequence::{
     neighbours, null_ensemble, null_evidence, order_null, perturbation, project, refine,
     timing_null, top_pairs, top_pairs_where,
 };
-use witnessglass::experiment::{adversarial, boundary_page, envelope, gauntlet, identifiability};
+use witnessglass::experiment::{
+    adversarial, boundary_page, envelope, gauntlet, identifiability, repair,
+};
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
 
@@ -101,6 +103,11 @@ USAGE:
     --adversarial        sprint:15. Commission `rarity_of_agreements` against a
                          gauntlet built for its own failure modes. The statistic
                          is frozen and is not adopted by this mode.
+    --repair             sprint:17. Compare candidate repairs to
+                         rarity_of_agreements against the task:27 semantic
+                         contract, the ten sprint:15 families, and — with
+                         --corpus — the real operating envelope. Adopts nothing.
+
     --envelope           sprint:16. Measure where the two known failure surfaces
                          lie relative to the supplied corpus. Measures exposure,
                          not accuracy, and repairs nothing.
@@ -177,6 +184,7 @@ struct Options {
     enumerate_scorers: bool,
     adversarial: bool,
     envelope: bool,
+    repair: bool,
     corpus: Vec<PathBuf>,
     nulls: usize,
     frontier_nulls: usize,
@@ -200,6 +208,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.render.is_some() {
         return render_mode(&options);
+    }
+
+    if options.repair {
+        return repair_mode(&options);
     }
 
     if options.envelope {
@@ -406,6 +418,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut enumerate_scorers = false;
     let mut adversarial_mode_on = false;
     let mut envelope_on = false;
+    let mut repair_on = false;
     let mut corpus = Vec::new();
     let mut nulls = 0usize;
     let mut frontier_nulls = 0usize;
@@ -458,6 +471,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--enumerate" => enumerate_scorers = true,
             "--adversarial" => adversarial_mode_on = true,
             "--envelope" => envelope_on = true,
+            "--repair" => repair_on = true,
             "--corpus" => corpus.push(PathBuf::from(value("--corpus")?)),
             "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
             "--frontier-nulls" => {
@@ -497,6 +511,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         enumerate_scorers,
         adversarial: adversarial_mode_on,
         envelope: envelope_on,
+        repair: repair_on,
         corpus,
         nulls,
         frontier_nulls,
@@ -2018,5 +2033,307 @@ fn envelope_mode(options: &Options) -> Result<ExitCode, String> {
         );
     }
     println!();
+    Ok(ExitCode::SUCCESS)
+}
+
+// ---------------------------------------------------------------------------
+// The comparative repair experiment — sprint:17, task:27
+// ---------------------------------------------------------------------------
+
+/// The rare/common pair task:27 §D2's witness is exhibited at.
+const WITNESS_RARE: usize = 1;
+const WITNESS_COMMON: usize = 500;
+
+fn repair_mode(options: &Options) -> Result<ExitCode, String> {
+    println!("event-motif — the sprint:17 comparative repair experiment");
+    println!(
+        "Candidates are compared, not adopted. task:27 §D2 proves rarity weighting implies\n\
+         accumulation crossings, so no candidate is built to remove them or rejected for having them.\n"
+    );
+
+    // A. The contract, clause by clause.
+    println!(
+        "  semantic contract — task:27 §B. (free) marks a clause §D1 makes free by construction:"
+    );
+    println!(
+        "  {:<26} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
+        "candidate", "C1", "C2", "C3", "C4", "C5", "C6"
+    );
+    let reports = repair::contracts();
+    for report in &reports {
+        let cells: Vec<String> = report
+            .clauses
+            .iter()
+            .map(|clause| {
+                if clause.satisfied {
+                    "ok".to_owned()
+                } else {
+                    "NO".to_owned()
+                }
+            })
+            .collect();
+        println!(
+            "  {:<26} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
+            report.candidate, cells[0], cells[1], cells[2], cells[3], cells[4], cells[5]
+        );
+    }
+    println!(
+        "  {:<26} {:>6} {:>6} {:>6} {:>6} {:>6} {:>6}",
+        "", "(free)", "", "", "(free)", "(free)", ""
+    );
+    for report in &reports {
+        for clause in report.violations() {
+            println!(
+                "    {} violates {}: {} = {:+.4}   [{}]",
+                report.candidate, clause.clause, clause.quantity, clause.value, clause.witness
+            );
+        }
+    }
+
+    // B. §D2's crossing theorem, exhibited constructively.
+    println!(
+        "\n  the crossing theorem — task:27 §D2, exhibited at rare c={WITNESS_RARE}, common c={WITNESS_COMMON}:"
+    );
+    println!(
+        "  {:<26} {:>8} {:>8} {:>10} {:>10}  crosses",
+        "candidate", "fewer k", "more k", "fewer", "more"
+    );
+    for witness in repair::crossing_witnesses(WITNESS_RARE, WITNESS_COMMON) {
+        if witness.crossed {
+            println!(
+                "  {:<26} {:>8} {:>8} {:>10.3} {:>10.3}  YES",
+                witness.candidate,
+                witness.fewer,
+                witness.more,
+                witness.fewer_score,
+                witness.more_score
+            );
+        } else {
+            println!(
+                "  {:<26} {:>8} {:>8} {:>10} {:>10}  no (k ≤ 24)",
+                witness.candidate, "—", "—", "—", "—"
+            );
+        }
+    }
+
+    // C. The ten sprint:15 families, unchanged, under every candidate.
+    println!("\n  the ten sprint:15 adversarial families, constructions unchanged, per candidate:");
+    let per_candidate: Vec<_> = repair::CANDIDATES
+        .iter()
+        .map(|entry| (entry, adversarial::families_with(entry.score)))
+        .collect();
+    let names: Vec<&str> = per_candidate[0].1.iter().map(|f| f.name).collect();
+    print!("  {:<32}", "family");
+    for (entry, _) in &per_candidate {
+        print!(
+            " {:>12}",
+            entry.name.split_whitespace().next().unwrap_or(entry.name)
+        );
+    }
+    println!();
+    for (index, name) in names.iter().enumerate() {
+        print!("  {name:<32}");
+        for (_, families) in &per_candidate {
+            print!(
+                " {:>12}",
+                format!("{:?}", families[index].verdict).to_uppercase()
+            );
+        }
+        println!();
+    }
+
+    println!("\n  first failing point per family, where one exists:");
+    for (index, name) in names.iter().enumerate() {
+        let boundaries: Vec<String> = per_candidate
+            .iter()
+            .map(|(entry, families)| {
+                families[index]
+                    .boundary
+                    .clone()
+                    .map(|point| {
+                        format!(
+                            "{}: {point}",
+                            entry.name.split_whitespace().next().unwrap_or(entry.name)
+                        )
+                    })
+                    .unwrap_or_default()
+            })
+            .filter(|text| !text.is_empty())
+            .collect();
+        if !boundaries.is_empty() {
+            println!("    {name:<32} {}", boundaries.join("   "));
+        }
+    }
+
+    // Point-level identity between S0 and R1, which §D4 predicts wherever the
+    // two recordings share marginals.
+    let frozen = &per_candidate[0].1;
+    let pooled = &per_candidate[1].1;
+    let mut identical = 0usize;
+    let mut differing = Vec::new();
+    for (left, right) in frozen.iter().zip(pooled.iter()) {
+        for (a, b) in left.points.iter().zip(right.points.iter()) {
+            if (a.weaker - b.weaker).abs() <= 1e-12 && (a.stronger - b.stronger).abs() <= 1e-12 {
+                identical += 1;
+            } else {
+                differing.push(format!("{} {}", left.name, a.params));
+            }
+        }
+    }
+    println!(
+        "\n  §D4 check — S0 and R1 numerically identical at {identical} of {} family points",
+        identical + differing.len()
+    );
+    if !differing.is_empty() {
+        println!("    they differ only at: {}", differing.join(", "));
+    }
+
+    if options.corpus.len() < 2 {
+        println!(
+            "\n  real operating envelope not replayed: --repair needs at least two --corpus <PATH>."
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+    repair_envelope(options)
+}
+
+/// §E — replay every candidate against sprint:16's exact candidate sets.
+fn repair_envelope(options: &Options) -> Result<ExitCode, String> {
+    let mut replays = Vec::new();
+    for path in &options.corpus {
+        replays.push((
+            path.clone(),
+            replay_file(path)
+                .map_err(|err| format!("could not replay {}: {err}", path.display()))?,
+        ));
+    }
+    let inspections: Vec<_> = replays
+        .iter()
+        .map(|(path, replay)| (path.clone(), inspect(replay)))
+        .collect();
+    let mut sequences = Vec::new();
+    for (path, inspection) in &inspections {
+        if let Some(sequence) = project(inspection, options.scope) {
+            sequences.push(sequence);
+        } else {
+            eprintln!("skipping {}: no records in scope", path.display());
+        }
+    }
+
+    println!("\n  real operating envelope — sprint:16's exact candidate sets, per candidate:");
+    println!(
+        "  {:<26} {:>7} {:>9} {:>9} {:>8} {:>10} {:>10}",
+        "candidate", "pairs", "delta=0", "med delta", "max", "crossings", "picks moved"
+    );
+
+    let mut crossing_signatures: Vec<(String, Vec<String>)> = Vec::new();
+
+    for entry in repair::CANDIDATES.iter() {
+        let mut samples = Vec::new();
+        let mut sets = 0usize;
+        let mut picks_moved = 0usize;
+        let mut reversals = 0usize;
+        let mut orders = 0usize;
+        let mut crossings: Vec<envelope::Crossing> = Vec::new();
+
+        for (index, left) in sequences.iter().enumerate() {
+            for right in sequences.iter().skip(index + 1) {
+                for k in [3usize, 4, 6, 8, 12] {
+                    let Some(ranked) = cross_pairs(left, right, k, usize::MAX) else {
+                        continue;
+                    };
+                    let kept = dedupe_overlapping(&ranked, 5);
+                    let mut per_pair = Vec::new();
+                    for candidate in &kept {
+                        let (wa, wb) = (&candidate.comparison.a, &candidate.comparison.b);
+                        if let Some(sample) = envelope::asymmetry_with(
+                            entry.score,
+                            left,
+                            (wa.start, wa.start + wa.k),
+                            right,
+                            (wb.start, wb.start + wb.k),
+                            &format!("cross_pairs k={k}"),
+                        ) {
+                            per_pair.push(sample);
+                        }
+                    }
+                    if per_pair.is_empty() {
+                        continue;
+                    }
+                    let label = format!(
+                        "{} x {} k={k}",
+                        per_pair[0].a_session, per_pair[0].b_session
+                    );
+                    crossings.extend(envelope::crossings(&label, &per_pair));
+                    if let Some(check) = envelope::ordering_check(&label, &per_pair) {
+                        // Counted exactly as sprint:16 counted it: a set needs
+                        // two candidates before a pick can move. One set in this
+                        // corpus is a singleton and is excluded here as it was
+                        // there, which is what makes 29 comparable to 29.
+                        sets += 1;
+                        if check.pick_changed {
+                            picks_moved += 1;
+                        }
+                        reversals += check.inversions;
+                        orders += check.comparisons;
+                    }
+                    samples.extend(per_pair);
+                }
+            }
+        }
+
+        let mut deltas: Vec<f64> = samples.iter().map(|s| s.delta).collect();
+        deltas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let exact = samples.iter().filter(|s| s.delta <= 1e-12).count();
+        let quantiles = envelope::quantiles(&deltas);
+        let median = quantiles.get(2).copied().unwrap_or(f64::NAN);
+        let max = deltas.last().copied().unwrap_or(f64::NAN);
+
+        println!(
+            "  {:<26} {:>7} {:>9} {:>9.3} {:>8.3} {:>10} {:>10}",
+            entry.name,
+            samples.len(),
+            format!("{}/{}", exact, samples.len()),
+            median,
+            max,
+            crossings.len(),
+            format!("{picks_moved}/{sets}")
+        );
+        if reversals > 0 || orders > 0 {
+            println!("      pairwise orders reversed: {reversals} of {orders}");
+        }
+
+        let mut signature: Vec<String> = crossings
+            .iter()
+            .map(|c| format!("{}|{}|{}", c.origin, c.fewer_agreements, c.more_agreements))
+            .collect();
+        signature.sort();
+        crossing_signatures.push((entry.name.to_owned(), signature));
+    }
+
+    // §D3's falsification target: R1 and R3 must produce identical crossings.
+    let r1 = crossing_signatures
+        .iter()
+        .find(|(name, _)| name.starts_with("R1"));
+    let r3 = crossing_signatures
+        .iter()
+        .find(|(name, _)| name.starts_with("R3"));
+    if let (Some((_, a)), Some((_, b))) = (r1, r3) {
+        println!(
+            "\n  §D3 falsification target — R1 and R3 crossings identical: {}  ({} vs {})",
+            if a == b {
+                "YES, as derived"
+            } else {
+                "NO — the derivation is unsound"
+            },
+            a.len(),
+            b.len()
+        );
+    }
+
+    println!(
+        "\n  Output derived from real recordings is as sensitive as those recordings.\n\
+         Counts and frequencies only; decision:8 forbids publishing contents."
+    );
     Ok(ExitCode::SUCCESS)
 }
