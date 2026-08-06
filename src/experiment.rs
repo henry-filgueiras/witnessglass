@@ -48,6 +48,9 @@ pub mod boundary_page;
 // sprint:13's challenger to the sprint:11 statistic. Same permutation null,
 // asked a conditional question and evaluated exactly. Touches nothing it tests.
 pub mod conditional_null;
+// sprint:16's exposure study: where two known failure surfaces lie relative to
+// the recordings this project actually has. Measures; repairs nothing.
+pub mod envelope;
 pub mod event_sequence;
 // sprint:12's adversarial gauntlet against sprint:11's statistic. Calls the
 // machinery and changes none of it; deleting the attack is deleting this file.

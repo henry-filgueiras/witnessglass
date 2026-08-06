@@ -2,8 +2,9 @@
 id: spr_01KZA5SR3F4HX6ZQY7XC8T8DE9
 sequence: 16
 kind: sprint
-status: active
+status: closed
 created: 2026-08-05
+closed: 2026-08-05
 ---
 
 # Envelope
@@ -75,3 +76,68 @@ range.
   expectations.
 - Committing a real recording, or any prompt, response, command, file content, or sensitive path — from
   either repository. Mechanically derived mark frequencies and counts only.
+
+## Outcome
+
+One task, closed. **L1** for accumulation, **S1** for asymmetry, reported separately.
+
+sprint:15 closed by asking whether its failure surfaces bite at real corpus sizes or are asymptotic
+curiosities. They bite.
+
+**Accumulation is observed, not merely reachable.** Both preregistered clauses fire independently. The
+unmodified machinery, on real recordings at sprint:9's frozen ladder, returns **13 candidate pairs in
+which fewer agreements outscore more** — the largest by 4.128 nats, ten agreements beating eleven. And
+two of four included recordings, from two independent projects, hold both ingredients for a constructed
+crossing: a mark above `N^{(k−1)/k}` and a singleton. The L2 margin test fails by a factor of four.
+
+**The two large recordings straddle the surface.** At `k = 5`, `8b68dece` sits 3.4 counts above its
+boundary and `7d95c414` sits 3.3 below. The envelope does not approach this boundary; it contains it.
+
+**Asymmetry is an invariance defect by intent, and empirically large.** The intent was settled in the
+preregistration on design grounds before any measurement: the relation is a claim about an unordered
+pair, `cross_pairs` gives the two recordings no distinct roles, and sprint:13 symmetrized `surprisal`
+for exactly this reason. The measurement then found **0 of 118 real candidate pairs symmetric**, a median
+discrepancy of 0.851 nats, a maximum of 4.082, and the designated pick moving in 3 of 29 candidate sets.
+Which window pair a reader is shown as *the* candidate depends on which recording was passed first.
+
+**sprint:15's carried-forward estimate was recomputed from source and was correct**: `N = 169` exactly,
+commonest count `= 64` exactly, `169^{3/4} = 46.94`. It is now a measurement rather than a recollection,
+and a test pins the formula.
+
+### Success criteria, against evidence
+
+- **A corpus inventory with reasons**, spanning two repositories after log:1's addendum recorded a real
+  Claude session in an external project. Four included, two excluded as lone records, none manufactured.
+- **Per-recording characterization** of events, vocabulary, every mark's frequency, extremes, deciles,
+  and the spans and agreement counts the frozen machinery produces.
+- **Margins as quantities, not labels** — absolute and relative, per `k`, per recording — with the
+  closest approach in each direction named.
+- **The two claims kept distinct throughout**: a corpus that *contains* a crossing is a different and
+  stronger finding than one that *could supply* an adversarial one, and both were established.
+- **Classifications fixed before the data** and reported apart; neither combined into a single verdict.
+- **All three synthetic gauntlets re-run unchanged**, known failures intact.
+
+### What the sprint found that it was not looking for
+
+**Two unrelated repositories have almost the same shape.** `8b68dece` and `7d95c414` — different
+projects, different languages, different tasks — put 0.3787 and 0.3766 of their observed events on the
+same delivered tool name, with its completion close behind. The operating envelope characterized here is
+not one project's idiom, which is the difference between a measurement and an anecdote, and it exists
+only because the corpus grew.
+
+**The corpus itself is now durable knowledge with nowhere to live.** Which recordings exist, in which
+repositories, and which are suitable for study is project knowledge that currently survives only inside
+a task Result. First occurrence; recorded, not promoted.
+
+### What this sprint deliberately leaves open
+
+The repair, both of them. L1 makes the accumulation repair a blocker and S1 makes the symmetry repair
+required, and this round chose neither mechanism — it is forbidden to.
+
+The recommended sequencing, with its reason: **accumulation first**. It is the defect that makes scores
+incomparable *within* a single argument order, so fixing symmetry first would produce a statistic that is
+consistently wrong in both directions. Its repair round should preregister candidates before measuring
+and be scored against both existing gauntlets plus the 13 crossings banked here.
+
+Nothing here changed the raw format, the schema, the recorder, `inspection`, the viewer, the workbench,
+the Spectroscope, or the product CLI's verbs, and no dependency was added.

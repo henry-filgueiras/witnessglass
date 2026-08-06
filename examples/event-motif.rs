@@ -27,7 +27,7 @@ use witnessglass::experiment::event_sequence::{
     neighbours, null_ensemble, null_evidence, order_null, perturbation, project, refine,
     timing_null, top_pairs, top_pairs_where,
 };
-use witnessglass::experiment::{adversarial, boundary_page, gauntlet, identifiability};
+use witnessglass::experiment::{adversarial, boundary_page, envelope, gauntlet, identifiability};
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
 
@@ -101,6 +101,11 @@ USAGE:
     --adversarial        sprint:15. Commission `rarity_of_agreements` against a
                          gauntlet built for its own failure modes. The statistic
                          is frozen and is not adopted by this mode.
+    --envelope           sprint:16. Measure where the two known failure surfaces
+                         lie relative to the supplied corpus. Measures exposure,
+                         not accuracy, and repairs nothing.
+    --corpus <PATH>      A recording to include in the envelope study.
+                         Repeatable. Output is as sensitive as the recordings.
 
 WHAT A WINDOW IS HERE:
     A fixed number of *events*, not a fixed wall-clock width. A window of k
@@ -171,6 +176,8 @@ struct Options {
     gauntlet: bool,
     enumerate_scorers: bool,
     adversarial: bool,
+    envelope: bool,
+    corpus: Vec<PathBuf>,
     nulls: usize,
     frontier_nulls: usize,
     note_a: Option<(usize, usize)>,
@@ -193,6 +200,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.render.is_some() {
         return render_mode(&options);
+    }
+
+    if options.envelope {
+        return envelope_mode(&options);
     }
 
     if options.adversarial {
@@ -394,6 +405,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut gauntlet = false;
     let mut enumerate_scorers = false;
     let mut adversarial_mode_on = false;
+    let mut envelope_on = false;
+    let mut corpus = Vec::new();
     let mut nulls = 0usize;
     let mut frontier_nulls = 0usize;
     let mut note_a = None;
@@ -444,6 +457,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--gauntlet" => gauntlet = true,
             "--enumerate" => enumerate_scorers = true,
             "--adversarial" => adversarial_mode_on = true,
+            "--envelope" => envelope_on = true,
+            "--corpus" => corpus.push(PathBuf::from(value("--corpus")?)),
             "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
             "--frontier-nulls" => {
                 frontier_nulls = number(&value("--frontier-nulls")?, "--frontier-nulls")?
@@ -481,6 +496,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
         gauntlet,
         enumerate_scorers,
         adversarial: adversarial_mode_on,
+        envelope: envelope_on,
+        corpus,
         nulls,
         frontier_nulls,
         note_a,
@@ -1727,5 +1744,279 @@ fn adversarial_mode(options: &Options) -> Result<ExitCode, String> {
         }
         println!();
     }
+    Ok(ExitCode::SUCCESS)
+}
+
+// ---------------------------------------------------------------------------
+// The operating-envelope exposure study — sprint:16, task:26
+// ---------------------------------------------------------------------------
+
+/// The span lengths sprint:9 and sprint:10 actually produce, frozen.
+const OBSERVED_SPANS: [usize; 7] = [3, 4, 5, 6, 8, 10, 12];
+
+fn envelope_mode(options: &Options) -> Result<ExitCode, String> {
+    if options.corpus.len() < 2 {
+        return Err("--envelope needs at least two --corpus <PATH> recordings".to_owned());
+    }
+
+    // Replays and inspections must outlive the sequences that borrow them.
+    let mut replays = Vec::new();
+    for path in &options.corpus {
+        replays.push((
+            path.clone(),
+            replay_file(path)
+                .map_err(|err| format!("could not replay {}: {err}", path.display()))?,
+        ));
+    }
+    let inspections: Vec<_> = replays
+        .iter()
+        .map(|(path, replay)| (path.clone(), inspect(replay)))
+        .collect();
+    let mut sequences = Vec::new();
+    for (path, inspection) in &inspections {
+        match project(inspection, options.scope) {
+            Some(sequence) => sequences.push((path.clone(), sequence)),
+            None => eprintln!("skipping {}: no records in scope", path.display()),
+        }
+    }
+
+    let profiles: Vec<_> = sequences
+        .iter()
+        .map(|(path, sequence)| (path.clone(), envelope::profile(sequence)))
+        .collect();
+
+    // Asymmetry over every unordered pair, using the frozen sprint:9 ladder and
+    // the frozen cross-recording search. No new search procedure.
+    let mut samples = Vec::new();
+    let mut orderings = Vec::new();
+    let mut crossings: Vec<envelope::Crossing> = Vec::new();
+    for (index, (_, left)) in sequences.iter().enumerate() {
+        for (_, right) in sequences.iter().skip(index + 1) {
+            for k in [3usize, 4, 6, 8, 12] {
+                let Some(ranked) = cross_pairs(left, right, k, usize::MAX) else {
+                    continue;
+                };
+                let kept = dedupe_overlapping(&ranked, 5);
+                let mut per_pair = Vec::new();
+                for candidate in &kept {
+                    let (wa, wb) = (&candidate.comparison.a, &candidate.comparison.b);
+                    if let Some(sample) = envelope::asymmetry_of(
+                        left,
+                        (wa.start, wa.start + wa.k),
+                        right,
+                        (wb.start, wb.start + wb.k),
+                        &format!("cross_pairs k={k}"),
+                    ) {
+                        per_pair.push(sample);
+                    }
+                }
+                let origin_label = format!(
+                    "{} x {} k={k}",
+                    per_pair
+                        .first()
+                        .map(|s| s.a_session.clone())
+                        .unwrap_or_default(),
+                    per_pair
+                        .first()
+                        .map(|s| s.b_session.clone())
+                        .unwrap_or_default(),
+                );
+                crossings.extend(envelope::crossings(&origin_label, &per_pair));
+                if let Some(check) = envelope::ordering_check(
+                    &format!(
+                        "{} x {} k={k}",
+                        per_pair
+                            .first()
+                            .map(|s| s.a_session.clone())
+                            .unwrap_or_default(),
+                        per_pair
+                            .first()
+                            .map(|s| s.b_session.clone())
+                            .unwrap_or_default(),
+                    ),
+                    &per_pair,
+                ) {
+                    orderings.push(check);
+                }
+                samples.extend(per_pair);
+            }
+        }
+    }
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "envelope",
+            "role": "operating-envelope exposure study — sprint:16, task:26",
+            "under_study": envelope::UNDER_STUDY,
+            "profiles": profiles.iter().map(|(_, profile)| profile).collect::<Vec<_>>(),
+            "approaches": profiles
+                .iter()
+                .map(|(_, profile)| serde_json::json!({
+                    "session": profile.session,
+                    "approaches": envelope::approaches(profile, &OBSERVED_SPANS),
+                }))
+                .collect::<Vec<_>>(),
+            "asymmetry": samples,
+            "orderings": orderings,
+            "crossings": crossings,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document)
+                .map_err(|err| format!("could not render JSON: {err}"))?
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    println!("event-motif — the sprint:16 operating-envelope exposure study");
+    println!(
+        "Statistic under study: {}. Frozen; this measures exposure to known failure surfaces, \
+         not accuracy.",
+        envelope::UNDER_STUDY
+    );
+    println!("Output derived from real recordings is as sensitive as those recordings.");
+    println!();
+
+    println!("  corpus profiles, {} scope:", options.scope.label());
+    println!(
+        "  {:<10} {:>7} {:>6} {:>9} {:>9} {:>10} {:>11}",
+        "session", "events", "vocab", "max count", "max freq", "singletons", "median freq"
+    );
+    for (_, profile) in &profiles {
+        println!(
+            "  {:<10} {:>7} {:>6} {:>9} {:>9.4} {:>10} {:>11.4}",
+            profile.session,
+            profile.events,
+            profile.vocabulary,
+            profile.max_count,
+            profile
+                .frequencies
+                .first()
+                .map(|f| f.frequency)
+                .unwrap_or(0.0),
+            profile.singletons,
+            profile
+                .frequency_deciles
+                .get(5)
+                .copied()
+                .unwrap_or(f64::NAN),
+        );
+    }
+    println!();
+
+    println!(
+        "  accumulation surface — a singleton agreement beats a k-agreement motif when c > N^((k-1)/k):"
+    );
+    println!(
+        "  {:<10} {:>3} {:>10} {:>10} {:>10} {:>8} {:>8} {:>14}",
+        "session", "k", "boundary", "max count", "abs margin", "rel", "above", "constructible"
+    );
+    for (_, profile) in &profiles {
+        for approach in envelope::approaches(profile, &OBSERVED_SPANS) {
+            println!(
+                "  {:<10} {:>3} {:>10.1} {:>10} {:>+10.1} {:>8.2} {:>8} {:>14}",
+                profile.session,
+                approach.k,
+                approach.boundary,
+                approach.max_count,
+                approach.absolute_margin,
+                approach.relative_margin,
+                approach.marks_above,
+                if approach.constructible { "YES" } else { "no" },
+            );
+        }
+    }
+    println!();
+
+    println!(
+        "  observed accumulation crossings — a candidate outscoring one with strictly more \
+         agreements:"
+    );
+    if crossings.is_empty() {
+        println!("    none in {} candidate sets", orderings.len());
+    } else {
+        println!(
+            "    {} found across {} candidate sets",
+            crossings.len(),
+            orderings.len()
+        );
+        let worst = crossings.iter().max_by(|left, right| {
+            left.margin
+                .partial_cmp(&right.margin)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for crossing in crossings.iter().take(4) {
+            println!(
+                "      {} — {} agreements scored {:.3}, beating {} agreements at {:.3} (margin {:+.3})",
+                crossing.origin,
+                crossing.fewer_agreements,
+                crossing.fewer_score,
+                crossing.more_agreements,
+                crossing.more_score,
+                crossing.margin,
+            );
+        }
+        if let Some(worst) = worst {
+            println!(
+                "      largest margin {:+.3} nats: {} agreements over {}",
+                worst.margin, worst.fewer_agreements, worst.more_agreements
+            );
+        }
+    }
+    println!();
+
+    let deltas: Vec<f64> = samples.iter().map(|sample| sample.delta).collect();
+    let zero = deltas.iter().filter(|delta| **delta < 1e-12).count();
+    println!(
+        "  asymmetry over {} real candidate pairs from the frozen machinery:",
+        samples.len()
+    );
+    println!(
+        "    delta = 0 in {} of {} ({:.1}%)",
+        zero,
+        deltas.len(),
+        100.0 * zero as f64 / deltas.len().max(1) as f64
+    );
+    let q = envelope::quantiles(&deltas);
+    if q.len() == 6 {
+        println!(
+            "    quantiles  min {:.3}  q1 {:.3}  median {:.3}  q3 {:.3}  p90 {:.3}  max {:.3}  nats",
+            q[0], q[1], q[2], q[3], q[4], q[5]
+        );
+    }
+    if let Some(worst) = samples.iter().max_by(|left, right| {
+        left.delta
+            .partial_cmp(&right.delta)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }) {
+        println!(
+            "    largest: {} x {} {} span {} agreements {} — forward {:.3} backward {:.3} delta {:.3}",
+            worst.a_session,
+            worst.b_session,
+            worst.origin,
+            worst.span,
+            worst.agreements,
+            worst.forward,
+            worst.backward,
+            worst.delta
+        );
+    }
+    let changed = orderings.iter().filter(|check| check.pick_changed).count();
+    let inversions: usize = orderings.iter().map(|check| check.inversions).sum();
+    let comparisons: usize = orderings.iter().map(|check| check.comparisons).sum();
+    println!(
+        "    designated pick changed in {} of {} candidate sets; {} of {} pairwise orders reversed",
+        changed,
+        orderings.len(),
+        inversions,
+        comparisons
+    );
+    for check in orderings.iter().filter(|check| check.pick_changed) {
+        println!(
+            "      pick moved: {} — forward picks #{}, backward picks #{}",
+            check.origin, check.forward_pick, check.backward_pick
+        );
+    }
+    println!();
     Ok(ExitCode::SUCCESS)
 }
