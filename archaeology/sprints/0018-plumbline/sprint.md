@@ -2,8 +2,9 @@
 id: spr_01KZC3WV6DKR99RKFDMMQVT0RN
 sequence: 18
 kind: sprint
-status: active
+status: closed
 created: 2026-08-06
+closed: 2026-08-06
 ---
 
 # Plumbline

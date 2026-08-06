@@ -2,9 +2,10 @@
 id: tsk_01KZC40AJFCRAXA1M14THM6YYZ
 sequence: 28
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZC3WV6DKR99RKFDMMQVT0RN
 created: 2026-08-06
+closed: 2026-08-06
 ---
 
 # Commission R1 pooled sum against a gauntlet that can distinguish it from S0
@@ -305,3 +306,184 @@ fixture or expectation, including the four demoted to regressions. No threshold 
 no treatment of it as ground truth, and no calibration or significance claim from it. No recording
 content — prompts, commands, responses, file contents, or absolute paths — in any artifact. Nothing
 pushed.
+
+## Result
+
+**Verdict: B — USEFUL HEURISTIC / MODEL LIMITATION.** Predicted before the run, and reached on the
+evidence rather than on a pass count. R1 is preserved and is **not** promoted as calibrated evidence.
+Nothing was adopted.
+
+### 1. Crossing-theorem semantic adjudication
+
+Requirement **A** (rarity informativeness) and requirement **B** (agreement dominance) are **mutually
+exclusive**, by the proof in §PHASE 1: applying B to `k` copies of a rare mark against `k+1` of a
+common one forces `w(r)/w(c) < (k+1)/k` for every `k`, and the limit forces `w` constant. B holds only
+for the statistic that ignores rarity entirely. Banked as two tests.
+
+The tradeoff, quantified: B is recoverable on a declared maximum span `K` only when
+`w_max/w_min < 1 + 1/K`. At the frozen ladder's `K = 12` that admits a weight ratio of `1.0833` — a
+frequency ratio of `1.78×` at `N = 1000`. **Rarity weighting bought at that price is not rarity
+weighting.**
+
+The intended semantics require A. Agreement on a mark occurring once in a thousand is stronger
+evidence of shared structure than four agreements on marks occurring five hundred times in a thousand.
+B is an intuition about motif size; this project scores evidence.
+
+### 2. Newly recognized criterion defects
+
+**The tenth — inherited, and load-bearing for three rounds.** Four of the ten sprint:15 families
+preregister requirement B verbatim: **AG1, AG2, AG4, AG8**. They demand of a rarity-weighted statistic
+something no rarity-weighted statistic can supply. Their MIXED and FAIL verdicts are not evidence of a
+defect in S0 or R1 — they are evidence that the family asks for B. Consequences, all recorded before
+this round's criteria were written:
+
+- sprint:16's **L1 accumulation classification is withdrawn as a defect finding.** Its measurements
+  stand unchanged — 13 crossings, largest margin +4.128 nats — re-read as measuring how often the
+  corpus exercises requirement A.
+- The four families are demoted to regressions, run unchanged, and no verdict of theirs counts for or
+  against any statistic here.
+- F7's criterion was struck and rewritten against the analytic ordering before any code was written.
+
+**The eleventh — this round's own.** §PHASE 3 predicts F5's values as `1.3665` and `0.6941`, then
+attaches a rule requiring the movement between them to exceed **1 nat**. Their difference is
+**0.6724**. The rule fails on the values the same section predicts. §PHASE 4's reachability paragraph
+says to verify the requested outcome is mathematically reachable, and I applied it to the PASS rules
+and not to F5's LIMITATION rule.
+
+**The rule is not repaired.** F5 is reported BROKEN and a named test asserts the inconsistency stays
+visible. The gate also looked at the wrong quantity: across the full sweep R1 moves **3.5156** nats,
+which the rule never examined.
+
+### 3. Exact R1 definition
+
+```text
+p̂(m)  =  ( ĉ_A(m) + ĉ_B(m) ) / ( N_A + N_B )
+R1     =  Σ over positions i where āᵢ = b̄ᵢ  of  −ln p̂(āᵢ)
+```
+
+Whole-recording counts and lengths in the projected scope enter the pool, not span-local counts. An
+agreeing position is an index where the two marks are equal, over spans of equal length; unequal
+lengths yield `None`. Counts are floored at 1 so `p̂ > 0` always, a floor unreachable at an agreeing
+position. **Candidate length enters only through the number of agreeing terms** — that is exactly what
+separates R1 from the rejected R3.
+
+### 4. Probabilistic derivation
+
+With `M0` = both marks i.i.d. from `p̂`, and `M1(λ)` = copied with probability `λ` else independent:
+
+```text
+LLR(λ)  =  Σ over agreeing of ln( λ/p̂(m) + 1−λ )   +   (L − k)·ln(1−λ)
+```
+
+**R1 is exactly the `λ → 1` limit of the agreement side, with the disagreement penalty discarded.**
+Equivalently: `R1 = −ln ∏ over agreeing of p̂(m)` — the self-information, under pooled i.i.d., of the
+marks the two spans agree on.
+
+**R1 is the numerator half of a likelihood ratio, not a likelihood ratio.** The same discard that makes
+R1 satisfy "rarity that does not agree contributes nothing" is why R1 cannot distinguish three
+agreements in three positions from three in fifty.
+
+### 5. Assumptions and non-claims
+
+| assumption | violation in this domain |
+|---|---|
+| positions i.i.d. within a span | event sequences are strongly locally dependent; **F8 exhibits it** |
+| both recordings share one distribution | that is the hypothesis under test; the null is estimated from the data under test |
+| `p̂` known rather than estimated | at `N_A + N_B ≈ 200` and vocabulary 12–17, a singleton's `p̂ ≈ 0.01` has relative variance of order 1 |
+| alignment independent of the marks | **false by construction** — `cross_pairs` selects spans *because* they agree |
+
+**Supportable:** R1 is self-information under `M0`/`M1`. **Not supportable, and not asserted whatever
+the gauntlet returned:** R1 is calibrated statistical evidence that two spans share a motif. The
+selection effect alone voids it, independently of the other three.
+
+### 6–9. Fresh gauntlet — predictions and observed results
+
+Every predicted value was computed analytically before the file existed; the code checks the closed
+forms rather than reporting its own output.
+
+| family | rule | discriminates | outcome | result against prediction |
+|---|---|---|---|---|
+| F0 shared-marginal control | PASS | no | **held** | `S0 − R1 = 0` bit-identical at all 3 points |
+| F1 argument reversal | PASS | yes | **held** | R1 delta `0`; S0 matches `Σ ln((ĉ_B/N_B)/(ĉ_A/N_A))` |
+| F2 different A marginal | PASS | yes | **held** | both fall, R1 damped; both match closed forms |
+| F3 different B marginal | PASS | **yes** | **held** | S0 flat at `4.6052`; R1 `4.6052 → 2.9004 → 1.3665` |
+| F4 balanced countervailing | LIMIT | yes | **confirmed** | R1 range `0`; S0 range `3.9120` |
+| F5 corpus-size imbalance | LIMIT | yes | **BROKEN** | weighted-mean form holds 4/4; the magnitude gate is unreachable (§2) |
+| F6a duplicate A background | LIMIT | no | **confirmed** | both rise, `ΔS0 > ΔR1` at every `D` |
+| F6b duplicate B background | PASS | **yes** | **held** | `ΔS0 = 0` exactly; `ΔR1 = +0.8109, +2.5055, +4.7958` |
+| F7 rare few vs common many | PASS | no | **held** | 0 sign mismatches in 64 points per rarity; crossovers exact |
+| F8 dependent repetition | LIMIT | no | **confirmed** | difference exactly `0` at `23.0259` each |
+
+**F3 carries the round.** S0 is exactly flat while R1 falls monotonically to the three predicted
+values: the change that distinguishes R1 from S0 is real, and the old gauntlet could not see it.
+F6b is the second discriminating PASS, on the same blindness from the specimen-size direction.
+
+### 10. Old regression results
+
+All unchanged. The ten sprint:15 families reproduce their sprint:15 verdicts exactly under the frozen
+statistic — MIXED, MIXED, PASS, FAIL, MIXED, MIXED, PASS, MIXED, PASS, MIXED, with identical first
+failing points. sprint:17's contract is unmoved: S0 fails C1, R1 satisfies all six, R2 fails C2, R3
+satisfies its six clauses. No fixture, sweep, invariant or expectation was modified.
+
+### 11. Minimized counterexamples and crossover surfaces
+
+- **F4, minimal:** `(ĉ_A, ĉ_B) = (10,500)` and `(500,10)`, `N_A = N_B = 1000`. R1 gives `1.3665` to
+  both. Pooling discards the *direction* of a marginal imbalance entirely.
+- **F8, minimal:** five agreeing positions, `p̂ = 0.01` throughout. One mark repeated five times and
+  five distinct marks both score `23.0259`. The processes differ fivefold in independent events.
+- **F7's crossover surface:** the line `k_r/k_c = ln(1/p_c)/ln(1/p_r)`, at `0.2007`, `log₁₀2`, and
+  `0.4628` for `p_r = 0.001, 0.01, 0.05` against `p_c = 0.25`. Observed ordering matched the analytic
+  sign at every one of the 64 swept points per rarity.
+
+### 12. Real-corpus mechanical replay
+
+sprint:17's machinery, unchanged, over the same four specimens — the minimum needed, per §PHASE 5.
+
+| | pairs | `S(A,B) = S(B,A)` | median δ | max δ | crossings | picks moved | orders reversed |
+|---|---|---|---|---|---|---|---|
+| S0 | 118 | 0/118 | 0.851 | 4.082 | 13 | 3/29 | 27/195 |
+| **R1** | 118 | **118/118** | 0.000 | 0.000 | 13 | **0/29** | **0/195** |
+
+Counts only. **No significance or calibration claim is drawn from this table**, per §PHASE 4 M6: the
+spans were selected by search *because* they agree. Picks that moved are reported as a count and were
+not inspected.
+
+### 13–15. Verdict, and the exact claims
+
+**B — USEFUL HEURISTIC / MODEL LIMITATION.** Every PASS family held; three limitations confirmed.
+
+**What R1 has earned, exactly:** R1 is exchange-invariant by construction and in fact — `0` disagreement
+across 118 real candidate pairs. It is the self-information, under a pooled i.i.d. model, of the marks
+two spans agree on. It observes the B-side marginal that S0 is structurally blind to, at the predicted
+magnitudes (F3, F6b). It preserves every property the sprint:17 contract adjudicates, and it loses no
+prior family.
+
+**What R1 has NOT earned:** any claim to be calibrated evidence that two spans share a motif. It is the
+numerator half of a likelihood ratio with the disagreement penalty discarded (§4). Its i.i.d.
+assumption is false in this domain and F8 shows the cost — five dependent repetitions and five
+independent plantings are indistinguishable to it. Its pooled estimate is the length-weighted mean of
+the two recordings' frequencies, so it is exchange-invariant **in value but not in influence** (F5);
+the longer recording dominates by exactly `N_A : N_B`. It discards the direction of a marginal
+imbalance (F4), and it rises when either recording gains unrelated background (F6a), so scores are not
+comparable across recordings of different length. And every real score is computed on a maximum found
+by a search that selected for agreement.
+
+### 16. Recommended next experiment
+
+The three confirmed limitations are all instances of one thing: **R1's null is estimated from the same
+data whose agreement is being scored, and the score is read at a maximum that a search chose.** The
+adoption question cannot be settled without a reference distribution that accounts for the search.
+
+The next round should be a **null-referenced calibration probe**: hold R1 frozen, and measure its
+distribution under the existing sprint:11 order null on the real corpus — what R1 scores at
+search-selected maxima against what it scores at maxima the same search finds in permuted recordings.
+That is the one measurement that would convert "self-information under a model" into or out of
+"evidence", and it needs no new statistic. It is a measurement, not a repair.
+
+### 17. Gates
+
+`scripts/check.sh` green and unweakened. **374 tests**, up from 360; 14 new in `tests/discriminating.rs`.
+`scarp doctor` clean. Nothing pushed. No recording content in any artifact — counts, frequencies and
+margins only, per decision:8.
+
+Commits: preregistration `59d0553`, alone and before implementation; experiment as recorded below.

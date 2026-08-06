@@ -28,7 +28,7 @@ use witnessglass::experiment::event_sequence::{
     timing_null, top_pairs, top_pairs_where,
 };
 use witnessglass::experiment::{
-    adversarial, boundary_page, envelope, gauntlet, identifiability, repair,
+    adversarial, boundary_page, discriminating, envelope, gauntlet, identifiability, repair,
 };
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
@@ -103,6 +103,10 @@ USAGE:
     --adversarial        sprint:15. Commission `rarity_of_agreements` against a
                          gauntlet built for its own failure modes. The statistic
                          is frozen and is not adopted by this mode.
+    --discriminating     sprint:18. Commission R1 pooled sum against a
+                         gauntlet built so that it and the frozen statistic
+                         make different numerical predictions. Adopts nothing.
+
     --repair             sprint:17. Compare candidate repairs to
                          rarity_of_agreements against the task:27 semantic
                          contract, the ten sprint:15 families, and — with
@@ -185,6 +189,7 @@ struct Options {
     adversarial: bool,
     envelope: bool,
     repair: bool,
+    discriminating: bool,
     corpus: Vec<PathBuf>,
     nulls: usize,
     frontier_nulls: usize,
@@ -208,6 +213,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.render.is_some() {
         return render_mode(&options);
+    }
+
+    if options.discriminating {
+        return discriminating_mode(&options);
     }
 
     if options.repair {
@@ -419,6 +428,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut adversarial_mode_on = false;
     let mut envelope_on = false;
     let mut repair_on = false;
+    let mut discriminating_on = false;
     let mut corpus = Vec::new();
     let mut nulls = 0usize;
     let mut frontier_nulls = 0usize;
@@ -472,6 +482,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--adversarial" => adversarial_mode_on = true,
             "--envelope" => envelope_on = true,
             "--repair" => repair_on = true,
+            "--discriminating" => discriminating_on = true,
             "--corpus" => corpus.push(PathBuf::from(value("--corpus")?)),
             "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
             "--frontier-nulls" => {
@@ -512,6 +523,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         adversarial: adversarial_mode_on,
         envelope: envelope_on,
         repair: repair_on,
+        discriminating: discriminating_on,
         corpus,
         nulls,
         frontier_nulls,
@@ -2389,4 +2401,126 @@ fn repair_envelope(options: &Options) -> Result<Vec<serde_json::Value>, String> 
          Counts and frequencies only; decision:8 forbids publishing contents."
     );
     Ok(rows)
+}
+
+// ---------------------------------------------------------------------------
+// The discriminating gauntlet — sprint:18, task:28
+// ---------------------------------------------------------------------------
+
+fn discriminating_mode(options: &Options) -> Result<ExitCode, String> {
+    println!("event-motif — the sprint:18 discriminating commissioning of R1 pooled sum");
+    println!(
+        "R1 is frozen and is not adopted. Every predicted value was derived analytically in\n\
+         task:28 before this code existed; the run checks the closed forms, not its own output.\n"
+    );
+
+    let families = discriminating::families();
+
+    println!(
+        "  {:<38} {:>6} {:>12} {:>7} {:>7}",
+        "family", "rule", "discriminates", "points", "outcome"
+    );
+    for family in &families {
+        println!(
+            "  {:<38} {:>6} {:>12} {:>7} {:>7}",
+            family.name,
+            match family.rule {
+                discriminating::Rule::Pass => "PASS",
+                discriminating::Rule::Limitation => "LIMIT",
+            },
+            if family.discriminating { "yes" } else { "no" },
+            family.points.len(),
+            match family.outcome {
+                discriminating::Outcome::Held => "held",
+                discriminating::Outcome::Broken => "BROKEN",
+            },
+        );
+        if let Some(boundary) = &family.boundary {
+            println!("      first point off prediction: {boundary}");
+        }
+        if let Some(precondition) = family.precondition {
+            println!(
+                "      precondition ({}): {}",
+                if family.precondition_held {
+                    "held"
+                } else {
+                    "FAILED"
+                },
+                precondition
+            );
+        }
+    }
+
+    for family in &families {
+        println!("\n  -- {} --", family.name);
+        println!("     construction: {}", family.construction);
+        println!("     quantity:     {}", family.quantity);
+        println!("     semantics:    {}", family.semantic_expectation);
+        println!(
+            "     {:<34} {:>12} {:>12} {:>12}",
+            "point", "S0", "R1", "vs predicted"
+        );
+        for point in &family.points {
+            println!(
+                "     {:<34} {:>12} {:>12} {:>12}",
+                point.params,
+                fmt_or_dash(point.frozen),
+                fmt_or_dash(point.pooled),
+                if point.matched {
+                    "ok".to_owned()
+                } else {
+                    format!("OFF by {:.3e}", (point.predicted - point.observed).abs())
+                },
+            );
+        }
+    }
+
+    let verdict = discriminating::verdict(&families);
+    println!("\n  verdict — task:28 §PHASE 6, by precedence:");
+    println!(
+        "    {}",
+        match verdict {
+            discriminating::Verdict::Reject => "C REJECT — a PASS family failed",
+            discriminating::Verdict::CoherentSurvivor =>
+                "A COHERENT SURVIVOR — earns a subsequent adoption experiment, and nothing else",
+            discriminating::Verdict::UsefulHeuristic =>
+                "B USEFUL HEURISTIC / MODEL LIMITATION — preserved, not promoted as calibrated evidence",
+        }
+    );
+    let confirmed: Vec<&str> = families
+        .iter()
+        .filter(|family| {
+            family.rule == discriminating::Rule::Limitation
+                && family.outcome == discriminating::Outcome::Held
+        })
+        .map(|family| family.name)
+        .collect();
+    if !confirmed.is_empty() {
+        println!("    confirmed limitations: {}", confirmed.join("; "));
+    }
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "discriminating",
+            "role": "discriminating commissioning of R1 — sprint:18, task:28",
+            "under_commission": "R1 pooled sum",
+            "adopted": serde_json::Value::Null,
+            "fresh_families": families,
+            "verdict": format!("{verdict:?}"),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?
+        );
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+fn fmt_or_dash(value: f64) -> String {
+    if value.is_nan() {
+        "—".to_owned()
+    } else {
+        format!("{value:.4}")
+    }
 }

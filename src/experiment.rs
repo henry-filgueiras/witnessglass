@@ -48,6 +48,10 @@ pub mod boundary_page;
 // sprint:13's challenger to the sprint:11 statistic. Same permutation null,
 // asked a conditional question and evaluated exactly. Touches nothing it tests.
 pub mod conditional_null;
+// sprint:18's fresh gauntlet, built so that the frozen statistic and the
+// pooled candidate make different numerical predictions. The old families
+// discriminate nothing between them and are regressions now.
+pub mod discriminating;
 // sprint:16's exposure study: where two known failure surfaces lie relative to
 // the recordings this project actually has. Measures; repairs nothing.
 pub mod envelope;
