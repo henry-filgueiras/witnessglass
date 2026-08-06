@@ -47,6 +47,9 @@ pub mod boundary_page;
 // here reads.
 // sprint:13's challenger to the sprint:11 statistic. Same permutation null,
 // asked a conditional question and evaluated exactly. Touches nothing it tests.
+// sprint:19's search-aware null calibration. Computes T once and calls it from
+// both paths; the existing boundary-fixed null machinery is not reused.
+pub mod calibration;
 pub mod conditional_null;
 // sprint:18's fresh gauntlet, built so that the frozen statistic and the
 // pooled candidate make different numerical predictions. The old families

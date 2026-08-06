@@ -2,8 +2,9 @@
 id: spr_01KZCA9DMMGRAEBF9G31VKMWN5
 sequence: 19
 kind: sprint
-status: active
+status: closed
 created: 2026-08-06
+closed: 2026-08-06
 ---
 
 # Datum

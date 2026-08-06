@@ -28,7 +28,8 @@ use witnessglass::experiment::event_sequence::{
     timing_null, top_pairs, top_pairs_where,
 };
 use witnessglass::experiment::{
-    adversarial, boundary_page, discriminating, envelope, gauntlet, identifiability, repair,
+    adversarial, boundary_page, calibration, discriminating, envelope, gauntlet, identifiability,
+    repair,
 };
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
@@ -103,6 +104,13 @@ USAGE:
     --adversarial        sprint:15. Commission `rarity_of_agreements` against a
                          gauntlet built for its own failure modes. The statistic
                          is frozen and is not adopted by this mode.
+    --calibrate          sprint:19. Calibrate the complete search procedure
+                         against the order null: controls first, then every
+                         --corpus specimen. Adopts nothing.
+
+    --replicates <N>     Null replicates for --calibrate. Defaults to the
+                         preregistered 999.
+
     --discriminating     sprint:18. Commission R1 pooled sum against a
                          gauntlet built so that it and the frozen statistic
                          make different numerical predictions. Adopts nothing.
@@ -190,6 +198,8 @@ struct Options {
     envelope: bool,
     repair: bool,
     discriminating: bool,
+    calibrate: bool,
+    replicates: Option<usize>,
     corpus: Vec<PathBuf>,
     nulls: usize,
     frontier_nulls: usize,
@@ -213,6 +223,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.render.is_some() {
         return render_mode(&options);
+    }
+
+    if options.calibrate {
+        return calibrate_mode(&options);
     }
 
     if options.discriminating {
@@ -429,6 +443,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut envelope_on = false;
     let mut repair_on = false;
     let mut discriminating_on = false;
+    let mut calibrate_on = false;
+    let mut replicates = None;
     let mut corpus = Vec::new();
     let mut nulls = 0usize;
     let mut frontier_nulls = 0usize;
@@ -483,6 +499,14 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--envelope" => envelope_on = true,
             "--repair" => repair_on = true,
             "--discriminating" => discriminating_on = true,
+            "--calibrate" => calibrate_on = true,
+            "--replicates" => {
+                replicates = Some(
+                    value("--replicates")?
+                        .parse()
+                        .map_err(|_| "--replicates needs a number".to_owned())?,
+                )
+            }
             "--corpus" => corpus.push(PathBuf::from(value("--corpus")?)),
             "--nulls" => nulls = number(&value("--nulls")?, "--nulls")?,
             "--frontier-nulls" => {
@@ -524,6 +548,8 @@ fn parse(args: &[String]) -> Result<Options, String> {
         envelope: envelope_on,
         repair: repair_on,
         discriminating: discriminating_on,
+        calibrate: calibrate_on,
+        replicates,
         corpus,
         nulls,
         frontier_nulls,
@@ -2523,4 +2549,268 @@ fn fmt_or_dash(value: f64) -> String {
     } else {
         format!("{value:.4}")
     }
+}
+
+// ---------------------------------------------------------------------------
+// The search-aware null calibration — sprint:19, task:29
+// ---------------------------------------------------------------------------
+
+fn calibrate_mode(options: &Options) -> Result<ExitCode, String> {
+    let replicates = options.replicates.unwrap_or(calibration::REPLICATES);
+
+    println!("event-motif — the sprint:19 search-aware null calibration");
+    println!(
+        "Calibrates the COMPLETE search procedure, not R1 in isolation. The search ranks by\n\
+         alignment total; R1 is the readout at the winner it chose. Every null replicate reruns\n\
+         the whole search. B = {replicates}, seeds from the existing deterministic scheme.\n"
+    );
+
+    // PHASE 3 and PHASE 4 run before any observational specimen is touched.
+    let negative = calibration::negative_control();
+    let positive = calibration::positive_control();
+
+    println!(
+        "  selection effect — task:29 §PHASE 3, on a specimen generated from the null itself:"
+    );
+    let effect = calibration::selection_effect(&negative.first, &negative.second, 8, 4_000, 400);
+    println!(
+        "    arbitrary candidates: median {:.4}   q99 {:.4}   n = {}",
+        effect.arbitrary_median,
+        effect.arbitrary_q99,
+        effect.arbitrary.len()
+    );
+    println!(
+        "    search-selected maxima: median {:.4}   n = {}",
+        effect.selected_median,
+        effect.selected.len()
+    );
+    println!(
+        "    median(selected) − q99(arbitrary) = {:+.4}    ordering {}",
+        effect.margin,
+        if effect.confirmed {
+            "CONFIRMED"
+        } else {
+            "NOT confirmed"
+        }
+    );
+
+    let mut control_rows = Vec::new();
+    for (label, control, expect_exceptional) in [
+        ("negative control", &negative, false),
+        ("positive control", &positive, true),
+    ] {
+        println!("\n  {label} — task:29 §PHASE 4:");
+        println!(
+            "    {:<6} {:>10} {:>10} {:>10} {:>10} {:>7} {:>8}",
+            "k", "T obs", "null med", "null q99", "null max", "exceed", "p-hat"
+        );
+        for k in calibration::LADDER {
+            let result =
+                calibration::calibrate(label, &control.first, &control.second, k, replicates);
+            println!(
+                "    {:<6} {:>10} {:>10.4} {:>10.4} {:>10.4} {:>7} {:>8.4}{}",
+                k,
+                result
+                    .observed
+                    .map(|t| format!("{t:.4}"))
+                    .unwrap_or_else(|| "—".to_owned()),
+                result.null_median,
+                result.null_quantiles.get(5).copied().unwrap_or(f64::NAN),
+                result.null_max,
+                result.exceedances,
+                result.tail,
+                if result.exceptional { "  *" } else { "" },
+            );
+            control_rows.push((label, expect_exceptional, result));
+        }
+    }
+
+    // The preregistered control rules.
+    let negative_ok = !control_rows
+        .iter()
+        .any(|(label, _, row)| *label == "negative control" && row.exceptional);
+    let positive_ok = control_rows
+        .iter()
+        .any(|(label, _, row)| *label == "positive control" && row.k == 12 && row.exceptional);
+    println!(
+        "\n  control rules — negative (no k exceptional): {}   positive (k=12 exceptional): {}",
+        if negative_ok { "PASS" } else { "FAIL" },
+        if positive_ok { "PASS" } else { "FAIL" },
+    );
+
+    let mut real_rows: Vec<calibration::Calibration> = Vec::new();
+    let mut structural: Vec<(String, Vec<calibration::StructuralSummary>)> = Vec::new();
+
+    if options.corpus.len() >= 2 {
+        let mut replays = Vec::new();
+        for path in &options.corpus {
+            replays.push((
+                path.clone(),
+                replay_file(path)
+                    .map_err(|err| format!("could not replay {}: {err}", path.display()))?,
+            ));
+        }
+        let inspections: Vec<_> = replays
+            .iter()
+            .map(|(path, replay)| (path.clone(), inspect(replay)))
+            .collect();
+        let mut sequences = Vec::new();
+        for (path, inspection) in &inspections {
+            if let Some(sequence) = project(inspection, options.scope) {
+                sequences.push(sequence);
+            } else {
+                eprintln!("skipping {}: no records in scope", path.display());
+            }
+        }
+
+        println!("\n  real corpus — task:29 §PHASE 5. Counts and ranks only; no span is named.");
+        println!(
+            "    {:<26} {:>4} {:>9} {:>9} {:>9} {:>7} {:>8}",
+            "specimen", "k", "T obs", "null med", "null max", "exceed", "p-hat"
+        );
+        for (index, left) in sequences.iter().enumerate() {
+            for right in sequences.iter().skip(index + 1) {
+                let label = format!("{} x {}", short(left.session_id), short(right.session_id));
+                for k in calibration::LADDER {
+                    let result = calibration::calibrate(&label, left, right, k, replicates);
+                    println!(
+                        "    {:<26} {:>4} {:>9} {:>9.4} {:>9.4} {:>7} {:>8.4}{}",
+                        result.specimen,
+                        k,
+                        result
+                            .observed
+                            .map(|t| format!("{t:.4}"))
+                            .unwrap_or_else(|| "—".to_owned()),
+                        result.null_median,
+                        result.null_max,
+                        result.exceedances,
+                        result.tail,
+                        if result.exceptional { "  *" } else { "" },
+                    );
+                    real_rows.push(result);
+                }
+            }
+        }
+
+        println!("\n  null adequacy — task:29 §PHASE 7. Domain-neutral sequence summaries:");
+        println!(
+            "    {:<12} {:<26} {:>10} {:>10} {:>10} {:>10}",
+            "specimen", "summary", "observed", "null med", "null min", "null max"
+        );
+        for sequence in &sequences {
+            let label = short(sequence.session_id);
+            let summaries = calibration::structural_summaries(sequence, 199);
+            for summary in &summaries {
+                println!(
+                    "    {:<12} {:<26} {:>10.4} {:>10.4} {:>10.4} {:>10.4}{}",
+                    label,
+                    summary.name,
+                    summary.observed,
+                    summary.null_median,
+                    summary.null_min,
+                    summary.null_max,
+                    if summary.outside_null_range {
+                        "  OUTSIDE"
+                    } else {
+                        ""
+                    },
+                );
+            }
+            structural.push((label, summaries));
+        }
+    } else {
+        println!("\n  real corpus not replayed: --calibrate needs at least two --corpus <PATH>.");
+    }
+
+    // PHASE 9's partition, by precedence.
+    let defined: Vec<&calibration::Calibration> = real_rows
+        .iter()
+        .filter(|row| row.observed.is_some())
+        .collect();
+    let separating = defined.iter().filter(|row| row.exceptional).count();
+    let verdict = if !negative_ok || !positive_ok {
+        "C NULL / CALIBRATION INADEQUATE — a control failed its preregistered rule"
+    } else if defined.is_empty() {
+        "C NULL / CALIBRATION INADEQUATE — T undefined for every specimen"
+    } else if separating * 2 >= defined.len() {
+        "A NULL-SEPARATING — the search detects sequential structure not explained by this order null"
+    } else {
+        "B NOT SEPARATING — observed maxima are ordinary under the search-aware order null"
+    };
+    println!("\n  verdict — task:29 §PHASE 9, by precedence:");
+    println!("    {verdict}");
+    if !defined.is_empty() {
+        println!(
+            "    {separating} of {} specimens with defined T have p-hat <= {}",
+            defined.len(),
+            calibration::TAIL_THRESHOLD
+        );
+    }
+    let confounded: Vec<&str> = structural
+        .iter()
+        .flat_map(|(_, summaries)| summaries.iter())
+        .filter(|summary| summary.outside_null_range)
+        .map(|summary| summary.name)
+        .collect();
+    if !confounded.is_empty() {
+        println!(
+            "    LIMITATION — observed sequences lie outside the null range on: {}.\n\
+             \x20   An exceptional T under this order null may reject exchangeable ordering\n\
+             \x20   without establishing motif structure.",
+            dedupe_labels(&confounded).join("; ")
+        );
+    }
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "calibration",
+            "role": "search-aware null calibration — sprint:19, task:29",
+            "replicates": replicates,
+            "tail_threshold": calibration::TAIL_THRESHOLD,
+            "adopted": serde_json::Value::Null,
+            "selection_effect": {
+                "arbitrary_median": effect.arbitrary_median,
+                "arbitrary_q99": effect.arbitrary_q99,
+                "selected_median": effect.selected_median,
+                "margin": effect.margin,
+                "confirmed": effect.confirmed,
+                "arbitrary": effect.arbitrary,
+                "selected": effect.selected,
+            },
+            "controls": control_rows.iter().map(|(label, expect, row)| serde_json::json!({
+                "control": label,
+                "expect_exceptional": expect,
+                "row": row,
+            })).collect::<Vec<_>>(),
+            "control_rules": { "negative": negative_ok, "positive": positive_ok },
+            "real": real_rows,
+            "structural": structural.iter().map(|(label, summaries)| serde_json::json!({
+                "specimen": label,
+                "summaries": summaries,
+            })).collect::<Vec<_>>(),
+            "verdict": verdict,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?
+        );
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+fn short(session: Option<&str>) -> String {
+    session
+        .map(|id| id.chars().take(8).collect())
+        .unwrap_or_else(|| "<none>".to_owned())
+}
+
+fn dedupe_labels<'a>(labels: &[&'a str]) -> Vec<&'a str> {
+    let mut seen: Vec<&str> = Vec::new();
+    for label in labels {
+        if !seen.contains(label) {
+            seen.push(label);
+        }
+    }
+    seen
 }

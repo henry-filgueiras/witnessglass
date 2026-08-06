@@ -679,6 +679,248 @@ fn adversarial_card(document: &serde_json::Value) -> String {
 
 /// The sprint:16 operating-envelope card.
 ///
+/// Selected when a document carries `selection_effect`. sprint:19, task:29.
+///
+/// Two pictures carry this card. The first is the winner-selection effect —
+/// arbitrary candidate scores against maxima the full search selects, both on
+/// data with no structure — because that is why a search-aware null is needed
+/// at all. The second marks each observed T against the distribution of T under
+/// complete null searches.
+///
+/// The card renders the null-adequacy table beside them deliberately: an
+/// exceptional T that is explained by the instrument's own alternation must not
+/// be legible as a motif finding, and separating the two tables would let it be.
+fn calibration_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let effect = &document["selection_effect"];
+    let controls = document["controls"].as_array().unwrap_or(&empty);
+    let real = document["real"].as_array().unwrap_or(&empty);
+    let structural = document["structural"].as_array().unwrap_or(&empty);
+
+    let arbitrary: Vec<f64> = numbers(&effect["arbitrary"]);
+    let selected: Vec<f64> = numbers(&effect["selected"]);
+    let selection_plot = two_histograms(
+        &arbitrary,
+        &selected,
+        "arbitrary candidates",
+        "search-selected maxima",
+    );
+
+    let mut control_rows = String::new();
+    for entry in controls {
+        let row = &entry["row"];
+        control_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{}</td>\
+             <td class=\"{}\">{:.4}</td></tr>",
+            escape(entry["control"].as_str().unwrap_or("")),
+            row["k"].as_u64().unwrap_or(0),
+            number(row["observed"].as_f64()),
+            row["null_median"].as_f64().unwrap_or(f64::NAN),
+            row["null_max"].as_f64().unwrap_or(f64::NAN),
+            row["exceedances"].as_u64().unwrap_or(0),
+            if row["exceptional"].as_bool().unwrap_or(false) {
+                "held"
+            } else {
+                ""
+            },
+            row["tail"].as_f64().unwrap_or(f64::NAN),
+        ));
+    }
+
+    let mut real_rows = String::new();
+    for row in real {
+        real_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{}</td>\
+             <td class=\"{}\">{:.4}</td></tr>",
+            escape(row["specimen"].as_str().unwrap_or("")),
+            row["k"].as_u64().unwrap_or(0),
+            number(row["observed"].as_f64()),
+            row["null_median"].as_f64().unwrap_or(f64::NAN),
+            row["null_max"].as_f64().unwrap_or(f64::NAN),
+            row["exceedances"].as_u64().unwrap_or(0),
+            if row["exceptional"].as_bool().unwrap_or(false) {
+                "held"
+            } else {
+                ""
+            },
+            row["tail"].as_f64().unwrap_or(f64::NAN),
+        ));
+    }
+
+    let mut structural_rows = String::new();
+    let mut any_outside = false;
+    for specimen in structural {
+        for summary in specimen["summaries"].as_array().unwrap_or(&empty) {
+            let outside = summary["outside_null_range"].as_bool().unwrap_or(false);
+            any_outside |= outside;
+            structural_rows.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td class=\"{}\">{:.4}</td><td>{:.4}</td>\
+                 <td>{:.4}</td><td>{:.4}</td><td class=\"{}\">{}</td></tr>",
+                escape(specimen["specimen"].as_str().unwrap_or("")),
+                escape(summary["name"].as_str().unwrap_or("")),
+                if outside { "broken" } else { "" },
+                summary["observed"].as_f64().unwrap_or(f64::NAN),
+                summary["null_median"].as_f64().unwrap_or(f64::NAN),
+                summary["null_min"].as_f64().unwrap_or(f64::NAN),
+                summary["null_max"].as_f64().unwrap_or(f64::NAN),
+                if outside { "broken" } else { "held" },
+                if outside {
+                    "outside null range"
+                } else {
+                    "inside"
+                },
+            ));
+        }
+    }
+
+    let limitation = if any_outside {
+        "<p class=\"broken\"><strong>Calibration limitation, confirmed.</strong> Observed sequences \
+         lie outside the entire null range on the summaries marked above. Every observed recording \
+         has an immediate repetition rate of exactly zero: no mark ever follows itself, because the \
+         schema correlates a tool request with its own outcome. The null, which shuffles marks, \
+         produces repeats constantly. <strong>An exceptional T under this order null rejects \
+         exchangeable ordering; it does not establish motif structure.</strong></p>"
+    } else {
+        ""
+    };
+
+    format!(
+        "<section class=\"card\">\
+         <h2>Calibrating the complete search against the order null</h2>\
+         <p class=\"muted\">sprint:19, task:29. <strong>Nothing here is adopted.</strong> This \
+         calibrates the <em>whole search procedure</em>, not R1 in isolation: the search ranks by \
+         alignment cost and R1 is the readout at the winner it chose. Every null replicate reruns \
+         the complete search — candidate generation, ranking, deduplication and readout — rather \
+         than rescoring boundaries chosen on observed data. B = {}, tail estimates are \
+         (1 + exceedances)/(B + 1) under this null and this search, and nothing more.</p>\
+         <h3>Why a search-aware null is necessary</h3>\
+         <p class=\"muted\">Both distributions below come from data with <em>no structure at \
+         all</em>. The lower band is R1 at arbitrary admissible candidates; the upper band is what \
+         the full search selects, on the same axis. The median of what the search picks sits above the 99th percentile of what \
+         an arbitrary candidate scores, so comparing an observed maximum against arbitrary \
+         candidates would measure the search rather than the data.</p>\
+         {selection_plot}\
+         <p class=\"muted\">arbitrary median {:.4}, q99 {:.4} &nbsp;|&nbsp; selected median {:.4} \
+         &nbsp;|&nbsp; difference {:+.4} nats</p>\
+         <h3>Controlled fixtures</h3>\
+         <p class=\"muted\">Synthetic, and obviously so. The negative control is generated from the \
+         null hypothesis itself and must look ordinary; the positive control plants one figure and \
+         must be recovered at the length it was planted at.</p>\
+         <table><thead><tr><th>control</th><th>k</th><th>T observed</th><th>null median</th>\
+         <th>null max</th><th>exceedances</th><th>p&#770;</th></tr></thead>\
+         <tbody>{control_rows}</tbody></table>\
+         <h3>Real corpus</h3>\
+         <p class=\"muted\">Opaque specimen prefixes, counts and ranks only. No discovered span is \
+         named, described or inspected, and these recordings are observational specimens rather than \
+         ground truth.</p>\
+         <table><thead><tr><th>specimen</th><th>k</th><th>T observed</th><th>null median</th>\
+         <th>null max</th><th>exceedances</th><th>p&#770;</th></tr></thead>\
+         <tbody>{real_rows}</tbody></table>\
+         <h3>What the null destroys</h3>\
+         <table><thead><tr><th>specimen</th><th>summary</th><th>observed</th><th>null median</th>\
+         <th>null min</th><th>null max</th><th></th></tr></thead>\
+         <tbody>{structural_rows}</tbody></table>\
+         {limitation}\
+         <p><strong>Verdict:</strong> {}</p>\
+         </section>",
+        document["replicates"].as_u64().unwrap_or(0),
+        effect["arbitrary_median"].as_f64().unwrap_or(f64::NAN),
+        effect["arbitrary_q99"].as_f64().unwrap_or(f64::NAN),
+        effect["selected_median"].as_f64().unwrap_or(f64::NAN),
+        effect["margin"].as_f64().unwrap_or(f64::NAN),
+        escape(document["verdict"].as_str().unwrap_or("")),
+    )
+}
+
+/// Read a JSON array of numbers, dropping anything that is not one.
+fn numbers(value: &serde_json::Value) -> Vec<f64> {
+    value
+        .as_array()
+        .map(|items| items.iter().filter_map(|item| item.as_f64()).collect())
+        .unwrap_or_default()
+}
+
+/// Two histograms on one shared x-axis, so the two distributions are directly
+/// comparable rather than merely adjacent.
+fn two_histograms(left: &[f64], right: &[f64], left_label: &str, right_label: &str) -> String {
+    if left.is_empty() || right.is_empty() {
+        return "<p class=\"muted\">No distribution to plot. That is an absence, not a zero.</p>"
+            .to_owned();
+    }
+    let min = left
+        .iter()
+        .chain(right)
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let max = left
+        .iter()
+        .chain(right)
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let span = if (max - min).abs() < 1e-9 {
+        1.0
+    } else {
+        max - min
+    };
+
+    const BINS: usize = 40;
+    let bin = |values: &[f64]| -> Vec<usize> {
+        let mut counts = vec![0usize; BINS];
+        for value in values {
+            let index = (((value - min) / span) * (BINS as f64 - 1.0)).round() as usize;
+            counts[index.min(BINS - 1)] += 1;
+        }
+        counts
+    };
+    let (left_counts, right_counts) = (bin(left), bin(right));
+    let tallest = left_counts
+        .iter()
+        .chain(&right_counts)
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    // Two stacked rows on one axis: the lower band is `left`, the upper `right`.
+    let bars = |counts: &[usize], class: &str, baseline: f64| -> String {
+        counts
+            .iter()
+            .enumerate()
+            .filter(|(_, count)| **count > 0)
+            .map(|(index, count)| {
+                let x = 6.0 + (index as f64 / BINS as f64) * 88.0;
+                let height = (*count as f64 / tallest as f64) * 15.0;
+                format!(
+                    "<rect class=\"{class}\" x=\"{x:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{height:.2}\"/>",
+                    baseline - height,
+                    88.0 / BINS as f64 * 0.8
+                )
+            })
+            .collect::<String>()
+    };
+
+    format!(
+        "<figure class=\"panel\"><figcaption>{} (lower band) and {} (upper band), \
+         one shared axis, both on structureless data</figcaption>\
+         <svg viewBox=\"0 0 100 40\" preserveAspectRatio=\"none\" role=\"img\" \
+         aria-label=\"Two score distributions on a shared axis\">\
+         {}{}\
+         <line class=\"rule\" x1=\"6\" y1=\"36\" x2=\"94\" y2=\"36\"/>\
+         <line class=\"rule\" x1=\"6\" y1=\"18\" x2=\"94\" y2=\"18\"/>\
+         </svg></figure>\
+         <p class=\"legend\"><span class=\"key cloud\"></span>{} \
+         <span class=\"key front\"></span>{} &nbsp; x-axis: R1 in nats, {:.2} to {:.2}</p>",
+        escape(left_label),
+        escape(right_label),
+        bars(&left_counts, "bin", 36.0),
+        bars(&right_counts, "front", 18.0),
+        escape(left_label),
+        escape(right_label),
+        min,
+        max,
+    )
+}
+
 /// Selected when a document carries `fresh_families`. sprint:18, task:28.
 ///
 /// Presentation only. The one thing this card must not do is let a LIMITATION
@@ -1272,6 +1514,7 @@ circle.notemark { fill: #2ea043; stroke: var(--paper); stroke-width: .5; }
 circle.rawmark { fill: #d1495b; stroke: var(--paper); stroke-width: .5; }
 line.rule { stroke: var(--line); stroke-width: .4; }
 rect.bin { fill: var(--ink); opacity: .45; }
+rect.front { fill: var(--pick); opacity: .8; }
 line.observed { stroke: #d1495b; stroke-width: 1; }
 .legend { font-size: .85em; opacity: .85; }
 .key { display: inline-block; width: .7rem; height: .7rem; border-radius: 50%; margin: 0 .2rem 0 .8rem;
@@ -1306,7 +1549,9 @@ pub fn render(documents: &[serde_json::Value]) -> String {
     let cards: String = documents
         .iter()
         .map(|document| {
-            if document.get("fresh_families").is_some() {
+            if document.get("selection_effect").is_some() {
+                calibration_card(document)
+            } else if document.get("fresh_families").is_some() {
                 discriminating_card(document)
             } else if document.get("candidates").is_some() {
                 repair_card(document)

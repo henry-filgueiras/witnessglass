@@ -2,9 +2,10 @@
 id: tsk_01KZCACB1RZBPRTVVF9B00PX97
 sequence: 29
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZCA9DMMGRAEBF9G31VKMWN5
 created: 2026-08-06
+closed: 2026-08-06
 ---
 
 # Calibrate the complete search procedure against the order null
@@ -260,3 +261,194 @@ selector. No new score, no second detector, no aggregate statistic invented to s
 adoption. No threshold chosen after seeing data. No interpretation, naming or inspection of any
 discovered span. No treatment of observational recordings as ground truth. No recording content in any
 artifact. Nothing pushed.
+
+## Result
+
+**Verdict: A — NULL-SEPARATING**, by the preregistered partition: both controls passed and **23 of 30**
+specimens with defined `T` have `p̂ ≤ 0.01`. **§PHASE 7's limitation confirmed in the strongest form
+available**, which was also predicted in advance. R1 was not changed, not adopted, and not promoted.
+
+### 1. Verified premises
+
+All five confirmed from code (§PHASE 0). **Two discrepancies, both material, both recorded before any
+criterion was written:**
+
+- **D1 — the search does not rank by R1.** `cross_pairs` sorts by `alignment.total` ascending. R1 is a
+  readout applied to an alignment-selected set. `T` was derived from the machinery instead of from the
+  commissioning prompt's formula, which would have described a pipeline that does not exist.
+- **D2 — the existing null machinery is not search-aware.** `null_evidence` states in its own
+  documentation that it holds candidate boundaries fixed and randomizes only identity. That is the
+  comparison this round forbids. It was **not called**; a new path reruns the complete search inside
+  every replicate, and a test proves the difference is real rather than nominal.
+
+### 2. The complete search statistic
+
+```text
+T_k(A, B) = max over c in dedupe_overlapping(cross_pairs(A, B, k, usize::MAX), 5) of R1(c)
+```
+
+Candidate generation is every ordered window pair at `k`; no prefilter; self-matches excluded at the
+recording level; ladder `k ∈ {3,4,6,8,12}`; ranking by alignment total then `a.start` then `b.start`, a
+total order; no truncation before deduplication; greedy dedupe to 5 with clash at
+`|start_i − start_j| < max(k_i, k_j)` on either side. `complete_search` is the only implementation and
+**both paths call it**.
+
+### 3–4. The order null, and what it does
+
+Preserved: event count, vocabulary, **mark marginal frequencies exactly**, offsets and the whole timing
+skeleton, `window_count`, session identity. Destroyed: local adjacency, runs, first-order transitions,
+higher-order structure, **the mark-to-gap association**, receipts.
+
+Because marginals survive exactly, **R1's per-mark weights are identical on both paths** — only which
+marks land in agreeing positions moves. Asserted by a test.
+
+### 5–6. Preregistration and feasibility audit
+
+Committed alone at `89f53d2`, before any calibration code existed. `B = 999` from a measured 0.097 s
+complete search; thresholds checked for reachability **on both sides**, the negative control's FAIL
+condition included, which was sprint:18's lesson applied.
+
+### 7. Selection effect — the reason this round exists
+
+On a specimen generated from the null hypothesis itself:
+
+| | median | q99 |
+|---|---|---|
+| arbitrary candidates (n = 4 000) | **1.6094** | 7.3843 |
+| search-selected maxima (n = 400) | **11.0187** | — |
+
+`median(selected) − q99(arbitrary) = +3.6344` nats. **The median of what the search selects sits well
+above the 99th percentile of what an arbitrary candidate scores** — on data with no structure at all.
+Any comparison of an observed search-selected score against a distribution of arbitrary candidate
+scores would have been meaningless, and this is that stated as a measurement.
+
+### 8. Controlled fixtures
+
+| control | k=3 | k=4 | k=6 | k=8 | k=12 | rule |
+|---|---|---|---|---|---|---|
+| **negative** `p̂` | 0.657 | 0.825 | 0.425 | 0.035 | 0.358 | **PASS** — no `k` exceptional |
+| **positive** `p̂` | 0.396 | 0.109 | **0.005** | **0.001** | **0.001** | **PASS** — exceptional at the planted length |
+
+The positive control's `T` climbs 13.82 → 18.28 → 27.57 across `k = 6, 8, 12` against null medians near
+10–13, and at `k ∈ {8, 12}` **no null search in 999 reached it**. The machinery detects a planted
+figure and does not flag a specimen drawn from the null.
+
+### 9. Real corpus — search-aware null
+
+30 specimens, `B = 999`. **23 separate at `p̂ ≤ 0.01`; 7 do not.** Specimen-level, as required:
+
+| pair | k=3 | k=4 | k=6 | k=8 | k=12 |
+|---|---|---|---|---|---|
+| `8b68dece × 57f18ff9` | 0.157 | **0.004** | **0.005** | **0.004** | **0.007** |
+| `8b68dece × f5c18299` | **0.004** | **0.003** | 0.015 | **0.002** | 0.075 |
+| `8b68dece × 7d95c414` | 0.133 | 0.031 | 0.027 | **0.003** | **0.002** |
+| `57f18ff9 × f5c18299` | 0.035 | **0.001** | **0.001** | **0.001** | **0.001** |
+| `57f18ff9 × 7d95c414` | **0.002** | **0.001** | **0.001** | **0.001** | **0.001** |
+| `f5c18299 × 7d95c414` | **0.001** | **0.001** | **0.001** | **0.001** | **0.001** |
+
+The seven non-separating specimens cluster at `k = 3`, the shortest span, where a three-mark agreement
+is cheap for a shuffle to reproduce. The strongest separation is `57f18ff9 × f5c18299` at `k = 12`:
+`T = 31.68` against a null maximum of `18.18`. sprint:9 established those two are executions of one
+runbook and decision:8 carries that dependence; it is **not** treated as ground truth here, and the
+observation is reported as a mechanically derived quantity only.
+
+### 10. Top-k descriptive check — ambiguous, and reported as such
+
+Per-rank exceedance counts over the top 5 split into two shapes:
+
+- **Broad excess.** `57f18ff9 × f5c18299` returns `[0,0,0,0,0]` at every `k ≥ 4`: the entire kept set
+  clears every null search at every rank. `f5c18299 × 7d95c414` at `k = 12` likewise.
+- **Rank-1 only, and non-monotonic.** `57f18ff9 × 7d95c414` at `k = 12` gives `[0, 712, 0, 0, 0]` —
+  rank 1 exceptional, rank 2 thoroughly ordinary, ranks 3–5 exceptional again. `8b68dece × 7d95c414` at
+  `k = 8` gives `[2, 0, 49, 3, 0]`.
+
+**The non-monotonic pattern is ambiguous and is not resolved here.** Each observed rank is compared
+against the null's distribution *for that rank*, and those distributions differ, so a dip at one rank
+does not order against its neighbours. §PHASE 6 preregistered that ambiguity would be reported rather
+than resolved, and no verdict branch reads this section.
+
+### 11. Null adequacy — the finding that bounds everything above
+
+| specimen | immediate repetition rate | mean run length | transition entropy ratio |
+|---|---|---|---|
+| `8b68dece` | **0.0000** vs null 0.2857 *(0.179–0.375)* | **1.0000** vs 1.3967 | **0.6024** vs 0.9265 |
+| `57f18ff9` | 0.0000 vs 0.0645 *(0.000–0.194)* | 1.0000 vs 1.0667 | **0.5931** vs 0.6448 |
+| `f5c18299` | 0.0000 vs 0.0625 *(0.000–0.188)* | 1.0000 vs 1.0645 | **0.5727** vs 0.6456 |
+| `7d95c414` | **0.0000** vs 0.2632 *(0.145–0.382)* | **1.0000** vs 1.3509 | **0.6348** vs 0.8795 |
+
+Bold entries lie **outside the entire null range** over 199 replicates.
+
+**Every observed recording has an immediate repetition rate of exactly zero and a mean run length of
+exactly one: no mark ever follows itself.** The null, which shuffles marks, produces repeats
+constantly — a median of 26–29% on the two larger recordings. Transition entropy is far below null on
+all four.
+
+This is the confound §PHASE 2 predicted from the schema before any measurement: tool events are
+correlated request→outcome pairs, so consecutive events carry different kinds and therefore different
+marks. **The alternation is a property of the instrument, not a reusable workflow motif.**
+
+**Therefore the calibration limitation is confirmed at full strength: an exceptional `T` under this
+order null rejects exchangeable ordering, and does not establish motif structure.** The recordings
+depart from exchangeability on the most trivial local statistic there is, and the search cannot help
+but see it.
+
+### 12. Specimen-level verdicts
+
+`57f18ff9 × 7d95c414` and `f5c18299 × 7d95c414` separate at every `k`. `57f18ff9 × f5c18299` separates
+at every `k ≥ 4`. `8b68dece × 57f18ff9` separates at every `k ≥ 4`. `8b68dece × f5c18299` and
+`8b68dece × 7d95c414` separate at three of five `k` each. No specimen fails to separate anywhere, and
+no specimen separates everywhere except the three named. The corpus is not forced to one verdict beyond
+the preregistered majority rule.
+
+### 13. The narrowest supported claim
+
+> **The complete search procedure — alignment-ranked candidate generation, greedy deduplication, and an
+> R1 readout — produces maxima on 23 of 30 real cross-recording specimens that no more than 1% of
+> order-null replicates of the same search reach.** The controls establish that the procedure does not
+> flag a specimen drawn from the null and does recover a planted figure.
+
+### 14. Explicitly unsupported
+
+Not earned, and not asserted: a calibrated probability that any span is a motif; workflow identity for
+any discovered span; semantic reuse; any causal reading; and — because of §PHASE 11 — **any claim that
+the separation reflects reusable motif structure rather than the instrument's own request→outcome
+alternation.** Observational recordings remain specimens, not ground truth. No discovered span was
+named, described, or inspected, and no recording content appears in any artifact.
+
+R1 remains a proposal. Nothing was adopted, nothing was promoted to production, and no second score
+was invented.
+
+### 15. One next experiment
+
+The order null is too weak, and §PHASE 11 says exactly how: it destroys an instrument regularity that
+has nothing to do with motifs. The narrowest better null that fixes this is a **transition-preserving
+null** — resample each sequence from its own first-order Markov chain, so vocabulary, marginals, length
+and the request→outcome alternation all survive while longer-range reuse does not.
+
+The next round should rerun **this exact machinery** against that null, changing nothing else: same
+`T`, same search, same controls, same `B`, same thresholds. If separation survives a null that already
+reproduces the alternation, the claim strengthens materially. If it collapses, this round's separation
+was the alternation all along — and that is the more valuable outcome to know.
+
+### 16. Gates
+
+`scripts/check.sh` green and unweakened. **393 tests**, up from 375; 18 new in `tests/calibration.rs`.
+`scarp doctor` clean. Nothing pushed. Counts, scores, ranks, quantiles and exceedances only, per
+decision:8.
+
+**One criterion defect, this round's own, caught by the suite.** The first draft of
+`tests/calibration.rs` asserted the positive control was `exceptional` at `B = 49`, where the best
+attainable tail is `1/50 = 0.02` and the preregistered `0.01` threshold can never be reached. The
+assertion could not pass at that `B`. It was fixed by giving the test a `B` that resolves the
+threshold — never by loosening the threshold — and a new test now asserts the general relation
+`1/(B+1) ≤ threshold`, so the class is caught by construction rather than by luck. **The experiment's
+own `B = 999` was unaffected**; the defect lived only in the test's replicate count.
+
+The calibration renders as one card on the existing evidence page. It draws both distributions of
+§PHASE 7 on **one shared axis**, because the selection effect is a statement about where one sits
+relative to the other and two separate plots would let a reader miss it. The null-adequacy table sits
+beside the separation table rather than in a section of its own: an exceptional `T` that the
+instrument's own alternation explains must not be legible as a motif finding, and separating the two
+would allow exactly that.
+
+Commits: preregistration `89f53d2`, alone and before implementation; experiment and rendering below.
