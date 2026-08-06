@@ -333,3 +333,36 @@ fn every_family_names_its_computed_quantity_and_avoids_vague_wording() {
         }
     }
 }
+
+/// The card must keep the three outcome kinds distinct. task:28 §PHASE 3 makes
+/// the PASS/LIMITATION split load-bearing, and a page that styled a confirmed
+/// limitation as a pass — or as a failure — would decide by presentation what
+/// the preregistration deliberately left separate.
+#[test]
+fn the_card_keeps_limitations_distinct_from_passes_and_failures() {
+    let document = serde_json::json!({
+        "fresh_families": families(),
+        "verdict": format!("{:?}", verdict(&families())),
+    });
+    let page = witnessglass::experiment::boundary_page::render(std::slice::from_ref(&document));
+
+    assert!(page.contains("Nothing here is adopted"));
+    assert!(page.contains("adjudicates") && page.contains("bounds"));
+    assert!(
+        page.contains("confirmed"),
+        "a confirmed limitation must be named as such, not shown as a pass"
+    );
+    assert!(
+        page.contains("USEFUL HEURISTIC"),
+        "the verdict must be stated, not left for the reader to total"
+    );
+    assert!(
+        !page.contains("not promoted as calibrated evidence.</p>\n<p>Adopted"),
+        "nothing may read as adoption"
+    );
+    // F5's unreachable gate must survive into the rendering as unconfirmed.
+    assert!(
+        page.contains("not confirmed"),
+        "F5's failed gate must remain visible on the page"
+    );
+}

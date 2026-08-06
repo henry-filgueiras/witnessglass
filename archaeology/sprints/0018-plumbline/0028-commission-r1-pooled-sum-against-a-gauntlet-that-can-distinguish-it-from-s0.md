@@ -482,8 +482,15 @@ That is the one measurement that would convert "self-information under a model" 
 
 ### 17. Gates
 
-`scripts/check.sh` green and unweakened. **374 tests**, up from 360; 14 new in `tests/discriminating.rs`.
+`scripts/check.sh` green and unweakened. **375 tests**, up from 360; 15 new in `tests/discriminating.rs`.
 `scarp doctor` clean. Nothing pushed. No recording content in any artifact — counts, frequencies and
 margins only, per decision:8.
 
-Commits: preregistration `59d0553`, alone and before implementation; experiment as recorded below.
+Commits: preregistration `59d0553`, alone and before implementation; experiment `9cbac62`; rendering
+separately after it.
+
+The gauntlet renders as one card on the existing static evidence page, above sprint:17's. It keeps the
+three outcome kinds distinct — a family that *adjudicates* against one that *bounds*, and a confirmed
+limitation against both a pass and a failure — because §PHASE 3 makes that split load-bearing and a
+page that styled them alike would decide by presentation what the preregistration left separate. F5's
+unreachable gate is rendered as *not confirmed* rather than quietly omitted.

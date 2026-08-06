@@ -679,6 +679,122 @@ fn adversarial_card(document: &serde_json::Value) -> String {
 
 /// The sprint:16 operating-envelope card.
 ///
+/// Selected when a document carries `fresh_families`. sprint:18, task:28.
+///
+/// Presentation only. The one thing this card must not do is let a LIMITATION
+/// read as a failure or as a pass: task:28 §PHASE 3 makes the distinction
+/// load-bearing, and a page that coloured them the same would be deciding by
+/// styling what the preregistration deliberately left separate.
+fn discriminating_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let families = document["fresh_families"].as_array().unwrap_or(&empty);
+
+    let mut summary = String::new();
+    for family in families {
+        let rule = family["rule"].as_str().unwrap_or("");
+        let outcome = family["outcome"].as_str().unwrap_or("");
+        let discriminating = family["discriminating"].as_bool().unwrap_or(false);
+        let (label, class) = match (rule, outcome) {
+            ("Pass", "Held") => ("held", "held"),
+            ("Pass", _) => ("BROKEN", "broken"),
+            ("Limitation", "Held") => ("confirmed", "mixed"),
+            _ => ("not confirmed", "broken"),
+        };
+        summary.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td class=\"{class}\">{label}</td></tr>",
+            escape(family["name"].as_str().unwrap_or("")),
+            if rule == "Pass" {
+                "adjudicates"
+            } else {
+                "bounds"
+            },
+            if discriminating { "yes" } else { "no" },
+        ));
+    }
+
+    let mut detail = String::new();
+    for family in families {
+        let mut points = String::new();
+        for entry in family["points"].as_array().unwrap_or(&empty) {
+            let matched = entry["matched"].as_bool().unwrap_or(false);
+            points.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td>{}</td><td class=\"{}\">{}</td></tr>",
+                escape(entry["params"].as_str().unwrap_or("")),
+                number(entry["frozen"].as_f64()),
+                number(entry["pooled"].as_f64()),
+                if matched { "held" } else { "broken" },
+                if matched {
+                    "matches prediction"
+                } else {
+                    "off prediction"
+                },
+            ));
+        }
+        let precondition = match family["precondition"].as_str() {
+            Some(text) => format!(
+                "<p class=\"muted\">precondition ({}): {}</p>",
+                if family["precondition_held"].as_bool().unwrap_or(false) {
+                    "held"
+                } else {
+                    "FAILED"
+                },
+                escape(text)
+            ),
+            None => String::new(),
+        };
+        detail.push_str(&format!(
+            "<h3>{}</h3><p class=\"muted\">{}</p>\
+             <p class=\"muted\"><strong>quantity:</strong> {}</p>\
+             <p class=\"muted\"><strong>semantics:</strong> {}</p>{precondition}\
+             <table><thead><tr><th>point</th><th>S0</th><th>R1</th><th>vs predicted</th></tr>\
+             </thead><tbody>{points}</tbody></table>",
+            escape(family["name"].as_str().unwrap_or("")),
+            escape(family["construction"].as_str().unwrap_or("")),
+            escape(family["quantity"].as_str().unwrap_or("")),
+            escape(family["semantic_expectation"].as_str().unwrap_or("")),
+        ));
+    }
+
+    let verdict = document["verdict"].as_str().unwrap_or("");
+    let verdict_text = match verdict {
+        "CoherentSurvivor" => {
+            "A — COHERENT SURVIVOR. Earns a subsequent adoption experiment, and nothing else."
+        }
+        "Reject" => "C — REJECT. A family the contract adjudicates failed.",
+        _ => {
+            "B — USEFUL HEURISTIC / MODEL LIMITATION. Preserved, not promoted as calibrated evidence."
+        }
+    };
+
+    format!(
+        "<section class=\"card\">\
+         <h2>R1 pooled sum, against a gauntlet that can see it</h2>\
+         <p class=\"muted\">sprint:18, task:28. <strong>Nothing here is adopted.</strong> \
+         sprint:17 left R1 the one eligible candidate on weak evidence — it and the frozen \
+         statistic were numerically identical at 65 of 68 points of the old gauntlet, because \
+         nine of its ten families give both recordings the same marginals. Nine of the ten \
+         families below separate them. Every predicted value was derived analytically before \
+         this code existed, so each family checks a closed form rather than its own output.</p>\
+         <p class=\"muted\">A family that <em>adjudicates</em> can reject R1. A family that \
+         <em>bounds</em> records a real consequence of pooling that no preregistered clause \
+         settles — confirming one limits what the score may be claimed to mean, and calling it \
+         a failure would mean inventing a clause after seeing the result.</p>\
+         <table><thead><tr><th>family</th><th>rule</th><th>discriminates S0 from R1</th>\
+         <th>outcome</th></tr></thead><tbody>{summary}</tbody></table>\
+         <p><strong>Verdict:</strong> {verdict_text}</p>\
+         {detail}\
+         </section>"
+    )
+}
+
+/// Render a number, or an em dash where the family computes nothing.
+fn number(value: Option<f64>) -> String {
+    match value {
+        Some(number) if number.is_finite() => format!("{number:.4}"),
+        _ => "&mdash;".to_owned(),
+    }
+}
+
 /// Selected when a document carries `candidates`. sprint:17, task:27.
 ///
 /// Presentation only: every number is read from the computed comparison, and
@@ -1190,7 +1306,9 @@ pub fn render(documents: &[serde_json::Value]) -> String {
     let cards: String = documents
         .iter()
         .map(|document| {
-            if document.get("candidates").is_some() {
+            if document.get("fresh_families").is_some() {
+                discriminating_card(document)
+            } else if document.get("candidates").is_some() {
                 repair_card(document)
             } else if document.get("profiles").is_some() {
                 envelope_card(document)
