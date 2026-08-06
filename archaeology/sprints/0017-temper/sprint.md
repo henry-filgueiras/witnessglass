@@ -2,8 +2,9 @@
 id: spr_01KZA86CT59H3WXB1BZ33F61RG
 sequence: 17
 kind: sprint
-status: active
+status: closed
 created: 2026-08-05
+closed: 2026-08-06
 ---
 
 # Temper

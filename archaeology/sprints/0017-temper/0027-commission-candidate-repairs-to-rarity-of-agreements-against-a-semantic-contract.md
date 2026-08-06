@@ -341,6 +341,12 @@ strong form of C2 and the whole of C3 are provably incompatible, and §2 exhibit
 
 ### 8. Numbers
 
-`scripts/check.sh` green, unweakened. **358 tests**, up from 343; 15 new, all in `tests/repair.rs`.
+`scripts/check.sh` green, unweakened. **360 tests**, up from 343; 17 new, all in `tests/repair.rs`.
 `scarp doctor`: no problems. Nothing pushed. No recording content in any artifact — counts,
 frequencies and margins only, per decision:8.
+
+The comparison renders as one card on the existing static evidence page, alongside sprint:16's. It
+totals nothing and ranks nothing — §I reserves selection, and a page that summed the tick column would
+be making that choice by presentation. A document with no envelope replay renders the absence in
+words rather than as empty cells, which is decision:5's third condition and the one most easily broken
+by accident.

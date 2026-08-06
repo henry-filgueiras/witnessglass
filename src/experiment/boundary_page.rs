@@ -679,6 +679,206 @@ fn adversarial_card(document: &serde_json::Value) -> String {
 
 /// The sprint:16 operating-envelope card.
 ///
+/// Selected when a document carries `candidates`. sprint:17, task:27.
+///
+/// Presentation only: every number is read from the computed comparison, and
+/// the page decides nothing. In particular it does not rank the candidates —
+/// task:27 §I forbids selection by aggregate pass count, and a table that
+/// totalled the ticks would be doing exactly that.
+fn repair_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let contract = document["contract"].as_array().unwrap_or(&empty);
+    let witnesses = document["crossing_witnesses"].as_array().unwrap_or(&empty);
+    let matrix = document["family_matrix"].as_array().unwrap_or(&empty);
+    let envelope = document["envelope"].as_array().unwrap_or(&empty);
+    let candidates = document["candidates"].as_array().unwrap_or(&empty);
+
+    let mut interpretations = String::new();
+    for entry in candidates {
+        interpretations.push_str(&format!(
+            "<tr><td><strong>{}</strong></td><td class=\"mono\">{}</td><td>{}</td></tr>",
+            escape(entry["name"].as_str().unwrap_or("")),
+            escape(entry["formula"].as_str().unwrap_or("")),
+            escape(entry["interpretation"].as_str().unwrap_or("")),
+        ));
+    }
+
+    let mut clauses = String::new();
+    let mut headers = String::new();
+    if let Some(first) = contract
+        .first()
+        .and_then(|report| report["clauses"].as_array())
+    {
+        for clause in first {
+            let free = clause["free_by_construction"].as_bool().unwrap_or(false);
+            headers.push_str(&format!(
+                "<th>{}{}</th>",
+                escape(clause["clause"].as_str().unwrap_or("")),
+                if free {
+                    " <span class=\"muted\">(free)</span>"
+                } else {
+                    ""
+                }
+            ));
+        }
+    }
+    for report in contract {
+        let mut cells = String::new();
+        for clause in report["clauses"].as_array().unwrap_or(&empty) {
+            let ok = clause["satisfied"].as_bool().unwrap_or(false);
+            cells.push_str(&format!(
+                "<td class=\"{}\">{}</td>",
+                if ok { "held" } else { "broken" },
+                if ok { "ok" } else { "NO" }
+            ));
+        }
+        clauses.push_str(&format!(
+            "<tr><td>{}</td>{cells}</tr>",
+            escape(report["candidate"].as_str().unwrap_or(""))
+        ));
+    }
+
+    let mut violations = String::new();
+    for report in contract {
+        for clause in report["clauses"].as_array().unwrap_or(&empty) {
+            if clause["satisfied"].as_bool().unwrap_or(false) {
+                continue;
+            }
+            violations.push_str(&format!(
+                "<li><strong>{}</strong> violates {}: {} = {:+.4} <span class=\"muted\">[{}]</span></li>",
+                escape(report["candidate"].as_str().unwrap_or("")),
+                escape(clause["clause"].as_str().unwrap_or("")),
+                escape(clause["quantity"].as_str().unwrap_or("")),
+                clause["value"].as_f64().unwrap_or(f64::NAN),
+                escape(clause["witness"].as_str().unwrap_or("")),
+            ));
+        }
+    }
+
+    let mut crossings = String::new();
+    for witness in witnesses {
+        let crossed = witness["crossed"].as_bool().unwrap_or(false);
+        crossings.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.3}</td><td>{:.3}</td>\
+             <td class=\"{}\">{}</td></tr>",
+            escape(witness["candidate"].as_str().unwrap_or("")),
+            witness["fewer"].as_u64().unwrap_or(0),
+            witness["more"].as_u64().unwrap_or(0),
+            witness["fewer_score"].as_f64().unwrap_or(f64::NAN),
+            witness["more_score"].as_f64().unwrap_or(f64::NAN),
+            if crossed { "broken" } else { "held" },
+            if crossed { "yes" } else { "no" },
+        ));
+    }
+
+    let mut families = String::new();
+    for row in matrix {
+        let mut cells = String::new();
+        for verdict in row["verdicts"].as_array().unwrap_or(&empty) {
+            let text = verdict["verdict"].as_str().unwrap_or("");
+            cells.push_str(&format!(
+                "<td class=\"{}\">{}</td>",
+                match text {
+                    "PASS" => "held",
+                    "FAIL" => "broken",
+                    _ => "mixed",
+                },
+                escape(text)
+            ));
+        }
+        families.push_str(&format!(
+            "<tr><td>{}</td>{cells}</tr>",
+            escape(row["family"].as_str().unwrap_or(""))
+        ));
+    }
+
+    let mut candidate_headers = String::new();
+    for entry in candidates {
+        candidate_headers.push_str(&format!(
+            "<th>{}</th>",
+            escape(
+                entry["name"]
+                    .as_str()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .next()
+                    .unwrap_or("")
+            )
+        ));
+    }
+
+    let mut real = String::new();
+    for row in envelope {
+        real.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{} / {}</td><td>{:.3}</td><td>{:.3}</td>\
+             <td>{}</td><td>{} / {}</td><td>{} / {}</td></tr>",
+            escape(row["candidate"].as_str().unwrap_or("")),
+            row["pairs"].as_u64().unwrap_or(0),
+            row["exchange_invariant_pairs"].as_u64().unwrap_or(0),
+            row["pairs"].as_u64().unwrap_or(0),
+            row["median_delta"].as_f64().unwrap_or(f64::NAN),
+            row["max_delta"].as_f64().unwrap_or(f64::NAN),
+            row["crossings"].as_u64().unwrap_or(0),
+            row["picks_moved"].as_u64().unwrap_or(0),
+            row["candidate_sets"].as_u64().unwrap_or(0),
+            row["orders_reversed"].as_u64().unwrap_or(0),
+            row["orders_compared"].as_u64().unwrap_or(0),
+        ));
+    }
+
+    let shared = document["shared_marginal_points"].as_u64().unwrap_or(0);
+    let total = document["total_family_points"].as_u64().unwrap_or(0);
+
+    let real_section = if real.is_empty() {
+        "<p class=\"muted\">The real operating envelope was not replayed in this document. \
+         That is an absence, not a zero.</p>"
+            .to_owned()
+    } else {
+        format!(
+            "<h3>The real operating envelope</h3>\
+             <p class=\"muted\">sprint:16's exact candidate sets, same machinery, same parameters. \
+             Counts and margins only — decision:8 forbids publishing recording contents.</p>\
+             <table><thead><tr><th>candidate</th><th>pairs</th><th>S(A,B) = S(B,A)</th>\
+             <th>median δ</th><th>max δ</th><th>crossings</th><th>picks moved</th>\
+             <th>orders reversed</th></tr></thead><tbody>{real}</tbody></table>"
+        )
+    };
+
+    format!(
+        "<section class=\"card\">\
+         <h2>Candidate repairs, compared against a semantic contract</h2>\
+         <p class=\"muted\">sprint:17, task:27. <strong>Nothing here is adopted.</strong> The \
+         statistic under test is still <code>{}</code>. Candidates were derived from what the \
+         statistic is supposed to mean, not from the tests they face.</p>\
+         <h3>What each candidate claims to be</h3>\
+         <table><thead><tr><th>candidate</th><th>formula</th><th>interpretation</th></tr></thead>\
+         <tbody>{interpretations}</tbody></table>\
+         <h3>The semantic contract</h3>\
+         <p class=\"muted\">Clauses marked <em>(free)</em> hold by construction for every pooled \
+         candidate, so satisfying one is evidence of correct code and nothing more. They confer no \
+         eligibility.</p>\
+         <table><thead><tr><th>candidate</th>{headers}</tr></thead><tbody>{clauses}</tbody></table>\
+         <ul>{violations}</ul>\
+         <h3>The crossing theorem, exhibited</h3>\
+         <p class=\"muted\">Any statistic summing a per-mark weight over agreeing positions admits \
+         a candidate with strictly fewer agreements outscoring one with more, whenever that weight \
+         is non-constant — which is exactly what &ldquo;rare agreement is more informative&rdquo; \
+         demands. Accumulation is a consequence of rarity weighting, not a defect of one statistic.\
+         </p>\
+         <table><thead><tr><th>candidate</th><th>fewer k</th><th>more k</th><th>fewer</th>\
+         <th>more</th><th>crosses</th></tr></thead><tbody>{crossings}</tbody></table>\
+         <h3>The ten sprint:15 families, constructions unchanged</h3>\
+         <table><thead><tr><th>family</th>{candidate_headers}</tr></thead>\
+         <tbody>{families}</tbody></table>\
+         <p class=\"muted\">The frozen statistic and the pooled sum are numerically identical at \
+         {shared} of {total} family points, because nine of the ten families build both recordings \
+         from one set of marginals. Those {shared} points distinguish nothing.</p>\
+         {real_section}\
+         </section>",
+        escape(document["under_test"].as_str().unwrap_or("")),
+    )
+}
+
 /// Selected when a document carries `profiles`. Presentation only: every number
 /// is read from the computed study, and the page measures nothing.
 fn envelope_card(document: &serde_json::Value) -> String {
@@ -976,6 +1176,11 @@ tr.mixed td { color: var(--truth); }
 tr.fail td { color: #d1495b; }
 h3 { font-size: .95rem; margin: 1.2rem 0 .3rem; }
 td.marks { font-size: .78em; opacity: .8; text-align: left; }
+td.held { color: #2ea043; }
+td.broken { color: #d1495b; font-weight: 600; }
+td.mixed { color: var(--truth); }
+.muted { font-size: .88em; opacity: .8; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; }
 td.stat { opacity: .7; }
 tr.fail td { color: #d1495b; }
 ";
@@ -985,7 +1190,9 @@ pub fn render(documents: &[serde_json::Value]) -> String {
     let cards: String = documents
         .iter()
         .map(|document| {
-            if document.get("profiles").is_some() {
+            if document.get("candidates").is_some() {
+                repair_card(document)
+            } else if document.get("profiles").is_some() {
                 envelope_card(document)
             } else if document.get("adversarial_families").is_some() {
                 adversarial_card(document)

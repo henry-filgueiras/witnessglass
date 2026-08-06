@@ -372,3 +372,64 @@ fn the_pooled_frequency_is_symmetric_in_the_two_recordings() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// The rendering — presentation only
+// ---------------------------------------------------------------------------
+
+/// The card must not rank the candidates or total their ticks: task:27 §I
+/// forbids selection by aggregate pass count, and a page that summed the
+/// column would be making the selection the contract reserves for §I.
+#[test]
+fn the_repair_card_reports_clauses_without_totalling_them() {
+    let document = serde_json::json!({
+        "under_test": "rarity_of_agreements",
+        "candidates": [{
+            "name": "R1 pooled sum",
+            "formula": "Σ_agreeing −ln p̂(m)",
+            "interpretation": "total surprisal under the shared-source model",
+            "frozen": false,
+        }],
+        "contract": contracts(),
+        "crossing_witnesses": crossing_witnesses(1, 500),
+        "family_matrix": [],
+        "shared_marginal_points": 65,
+        "total_family_points": 68,
+        "envelope": [],
+    });
+    let page = witnessglass::experiment::boundary_page::render(std::slice::from_ref(&document));
+
+    assert!(page.contains("Nothing here is adopted"));
+    assert!(
+        page.contains("confer no eligibility"),
+        "the free clauses must be marked as conferring nothing"
+    );
+    for banned in ["score:", "total:", "passes:", "rank"] {
+        assert!(
+            !page.to_lowercase().contains(banned),
+            "the card must not aggregate or rank; found `{banned}`"
+        );
+    }
+}
+
+/// task:27's third condition on a decision:5 projection: an absence is rendered
+/// as an absence. A document with no envelope replay must say so rather than
+/// show zeros.
+#[test]
+fn an_unreplayed_envelope_is_rendered_as_an_absence_not_a_zero() {
+    let document = serde_json::json!({
+        "under_test": "rarity_of_agreements",
+        "candidates": [],
+        "contract": [],
+        "crossing_witnesses": [],
+        "family_matrix": [],
+        "shared_marginal_points": 0,
+        "total_family_points": 0,
+        "envelope": [],
+    });
+    let page = witnessglass::experiment::boundary_page::render(std::slice::from_ref(&document));
+    assert!(
+        page.contains("That is an absence, not a zero"),
+        "an unreplayed envelope must be named, not implied by empty cells"
+    );
+}

@@ -2188,17 +2188,54 @@ fn repair_mode(options: &Options) -> Result<ExitCode, String> {
         println!("    they differ only at: {}", differing.join(", "));
     }
 
-    if options.corpus.len() < 2 {
+    let envelope_rows = if options.corpus.len() < 2 {
         println!(
             "\n  real operating envelope not replayed: --repair needs at least two --corpus <PATH>."
         );
-        return Ok(ExitCode::SUCCESS);
+        Vec::new()
+    } else {
+        repair_envelope(options)?
+    };
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "repair",
+            "role": "comparative repair experiment — sprint:17, task:27",
+            "outcome": "O2 partially repaired; O3 was predicted",
+            "under_test": adversarial::UNDER_TEST,
+            "adopted": serde_json::Value::Null,
+            "candidates": repair::CANDIDATES.iter().map(|entry| serde_json::json!({
+                "name": entry.name,
+                "formula": entry.formula,
+                "interpretation": entry.interpretation,
+                "frozen": entry.frozen,
+            })).collect::<Vec<_>>(),
+            "contract": reports,
+            "crossing_witnesses": repair::crossing_witnesses(WITNESS_RARE, WITNESS_COMMON),
+            "family_matrix": names.iter().enumerate().map(|(index, name)| serde_json::json!({
+                "family": name,
+                "invariant": per_candidate[0].1[index].invariant,
+                "verdicts": per_candidate.iter().map(|(entry, families)| serde_json::json!({
+                    "candidate": entry.name,
+                    "verdict": format!("{:?}", families[index].verdict).to_uppercase(),
+                    "boundary": families[index].boundary,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "shared_marginal_points": identical,
+            "total_family_points": identical + differing.len(),
+            "envelope": envelope_rows,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?
+        );
     }
-    repair_envelope(options)
+
+    Ok(ExitCode::SUCCESS)
 }
 
 /// §E — replay every candidate against sprint:16's exact candidate sets.
-fn repair_envelope(options: &Options) -> Result<ExitCode, String> {
+fn repair_envelope(options: &Options) -> Result<Vec<serde_json::Value>, String> {
     let mut replays = Vec::new();
     for path in &options.corpus {
         replays.push((
@@ -2227,6 +2264,7 @@ fn repair_envelope(options: &Options) -> Result<ExitCode, String> {
     );
 
     let mut crossing_signatures: Vec<(String, Vec<String>)> = Vec::new();
+    let mut rows: Vec<serde_json::Value> = Vec::new();
 
     for entry in repair::CANDIDATES.iter() {
         let mut samples = Vec::new();
@@ -2303,6 +2341,21 @@ fn repair_envelope(options: &Options) -> Result<ExitCode, String> {
             println!("      pairwise orders reversed: {reversals} of {orders}");
         }
 
+        rows.push(serde_json::json!({
+            "candidate": entry.name,
+            "formula": entry.formula,
+            "frozen": entry.frozen,
+            "pairs": samples.len(),
+            "exchange_invariant_pairs": exact,
+            "median_delta": median,
+            "max_delta": max,
+            "crossings": crossings.len(),
+            "picks_moved": picks_moved,
+            "candidate_sets": sets,
+            "orders_reversed": reversals,
+            "orders_compared": orders,
+        }));
+
         let mut signature: Vec<String> = crossings
             .iter()
             .map(|c| format!("{}|{}|{}", c.origin, c.fewer_agreements, c.more_agreements))
@@ -2335,5 +2388,5 @@ fn repair_envelope(options: &Options) -> Result<ExitCode, String> {
         "\n  Output derived from real recordings is as sensitive as those recordings.\n\
          Counts and frequencies only; decision:8 forbids publishing contents."
     );
-    Ok(ExitCode::SUCCESS)
+    Ok(rows)
 }
