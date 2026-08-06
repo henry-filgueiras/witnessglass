@@ -142,6 +142,13 @@ Project archaeology lives in `archaeology/` and is managed with Scarp (currently
 - Prefer `scarp new ... --body-file <path>` with a temporary UTF-8 Markdown file whose
   `## ` headings match the collection's own sections.
 - Run `scarp doctor` before completing work. `scripts/check.sh` already includes it.
+- **Preregistering an experiment: decision:7 governs how criteria are written.** Every prediction,
+  feasibility check, and verdict rule names the exact quantity the code will compute, and the
+  preregistration carries an explicit propagation pass over every mechanism the feasibility check
+  found. Eight rounds were spoiled by a criterion that did not mean what it said.
+- **Using a real recording as evidence: decision:8 governs which are admitted and what may be
+  reported.** Mechanically derived counts and frequencies may be published; contents may not, including
+  to make evidence easier to inspect.
 - Preserve history. Append results and follow-ups; do not rewrite previous conclusions to
   make them look correct in hindsight.
 - Product recordings are runtime data. Scarp archaeology is durable project knowledge.
