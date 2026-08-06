@@ -223,3 +223,54 @@ fn quantiles_are_the_six_the_report_prints() {
     assert!((found[5] - 4.0).abs() < EPSILON, "max");
     assert!(quantiles(&[]).is_empty());
 }
+
+#[test]
+fn the_page_renders_the_envelope_numbers_the_study_computed() {
+    // Presentation fidelity: the card must carry computed values, not
+    // transcribed ones. Built from a committed fixture so the test needs no
+    // untracked recording.
+    sequence_of!(oracle::ndjson(), replay, inspection, sequence);
+    sequence_of!(
+        oracle::sparse::ndjson(),
+        other_replay,
+        other_inspection,
+        other
+    );
+
+    let measured = profile(&sequence);
+    let found = approaches(&measured, &[3, 4, 8]);
+    let sample = asymmetry_of(&sequence, (20, 24), &other, (20, 24), "test");
+
+    let document = serde_json::json!({
+        "label": "envelope",
+        "role": "operating-envelope exposure study",
+        "under_study": UNDER_STUDY,
+        "profiles": [measured],
+        "approaches": [{ "session": "fixture", "approaches": found }],
+        "asymmetry": sample.iter().collect::<Vec<_>>(),
+        "orderings": [],
+        "crossings": [],
+    });
+    let page = witnessglass::experiment::boundary_page::render(std::slice::from_ref(&document));
+
+    assert!(page.contains("Operating envelope"));
+    assert!(page.contains(UNDER_STUDY));
+    let profile_value = &document["profiles"][0];
+    assert!(page.contains(&format!(
+        "<td>{}</td>",
+        profile_value["events"].as_u64().expect("events")
+    )));
+    for approach in document["approaches"][0]["approaches"]
+        .as_array()
+        .expect("approaches")
+    {
+        let boundary = format!("{:.1}", approach["boundary"].as_f64().expect("a boundary"));
+        assert!(
+            page.contains(&boundary),
+            "the page omits boundary {boundary}"
+        );
+    }
+    // And it says plainly that the corpus is not ground truth.
+    assert!(page.contains("not ground truth"));
+    assert!(!page.contains("9.999e9"));
+}

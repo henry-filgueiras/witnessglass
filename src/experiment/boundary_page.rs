@@ -677,6 +677,136 @@ fn adversarial_card(document: &serde_json::Value) -> String {
     )
 }
 
+/// The sprint:16 operating-envelope card.
+///
+/// Selected when a document carries `profiles`. Presentation only: every number
+/// is read from the computed study, and the page measures nothing.
+fn envelope_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let profiles = document["profiles"].as_array().unwrap_or(&empty);
+    let approaches = document["approaches"].as_array().unwrap_or(&empty);
+    let asymmetry = document["asymmetry"].as_array().unwrap_or(&empty);
+    let orderings = document["orderings"].as_array().unwrap_or(&empty);
+    let crossings = document["crossings"].as_array().unwrap_or(&empty);
+
+    let mut envelope = String::new();
+    for profile in profiles {
+        let top = profile["frequencies"]
+            .as_array()
+            .and_then(|marks| marks.first())
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        envelope.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{}</td>\
+             <td class=\"marks\">{}</td></tr>",
+            escape(profile["session"].as_str().unwrap_or("")),
+            as_integer(&profile["events"]),
+            as_integer(&profile["vocabulary"]),
+            as_integer(&profile["max_count"]),
+            as_number(&top["frequency"]),
+            as_integer(&profile["singletons"]),
+            escape(top["mark"].as_str().unwrap_or("")),
+        ));
+    }
+
+    let mut surface = String::new();
+    for entry in approaches {
+        let session = entry["session"].as_str().unwrap_or("");
+        for approach in entry["approaches"].as_array().into_iter().flatten() {
+            let crossed = approach["constructible"].as_bool() == Some(true);
+            surface.push_str(&format!(
+                "<tr class=\"{}\"><td>{}</td><td>{}</td><td>{:.1}</td><td>{}</td>\
+                 <td>{:+.1}</td><td>{:.2}</td><td>{}</td><td class=\"strong\">{}</td></tr>",
+                if crossed { "fail" } else { "" },
+                escape(session),
+                as_integer(&approach["k"]),
+                as_number(&approach["boundary"]),
+                as_integer(&approach["max_count"]),
+                as_number(&approach["absolute_margin"]),
+                as_number(&approach["relative_margin"]),
+                as_integer(&approach["marks_above"]),
+                if crossed { "YES" } else { "no" },
+            ));
+        }
+    }
+
+    let deltas: Vec<f64> = asymmetry
+        .iter()
+        .map(|sample| as_number(&sample["delta"]))
+        .filter(|delta| delta.is_finite())
+        .collect();
+    let zero = deltas.iter().filter(|delta| **delta < 1e-12).count();
+    let worst = deltas.iter().copied().fold(0.0f64, f64::max);
+    let moved = orderings
+        .iter()
+        .filter(|check| check["pick_changed"].as_bool() == Some(true))
+        .count();
+
+    let mut moves = String::new();
+    for check in orderings
+        .iter()
+        .filter(|check| check["pick_changed"].as_bool() == Some(true))
+    {
+        moves.push_str(&format!(
+            "<tr class=\"fail\"><td class=\"marks\">{}</td><td>{}</td><td>#{}</td>\
+             <td>#{}</td></tr>",
+            escape(check["origin"].as_str().unwrap_or("")),
+            as_integer(&check["candidates"]),
+            as_integer(&check["forward_pick"]),
+            as_integer(&check["backward_pick"]),
+        ));
+    }
+
+    let mut crossing_rows = String::new();
+    for crossing in crossings {
+        crossing_rows.push_str(&format!(
+            "<tr class=\"fail\"><td class=\"marks\">{}</td><td>{}</td><td>{:.3}</td>\
+             <td>{}</td><td>{:.3}</td><td class=\"strong\">{:+.3}</td></tr>",
+            escape(crossing["origin"].as_str().unwrap_or("")),
+            as_integer(&crossing["fewer_agreements"]),
+            as_number(&crossing["fewer_score"]),
+            as_integer(&crossing["more_agreements"]),
+            as_number(&crossing["more_score"]),
+            as_number(&crossing["margin"]),
+        ));
+    }
+
+    format!(
+        "<section class=\"card\"><h2>Operating envelope</h2>\
+         <p class=\"role\">{}</p>\
+         <p class=\"meta\">Statistic under study: <code>{}</code>. Frozen. This measures exposure \
+         to two known failure surfaces, not accuracy — these recordings have no known true motif \
+         boundaries and are not ground truth for anything.</p>\
+         <h3>corpus</h3>\
+         <table><thead><tr><th>session</th><th>events</th><th>vocab</th><th>max count</th>\
+         <th>max freq</th><th>singletons</th><th>commonest mark</th></tr></thead>\
+         <tbody>{envelope}</tbody></table>\
+         <h3>accumulation surface <span class=\"axis\">a singleton beats a k-motif when \
+         c &gt; N^((k−1)/k)</span></h3>\
+         <table><thead><tr><th>session</th><th>k</th><th>boundary</th><th>max count</th>\
+         <th>abs margin</th><th>rel</th><th>above</th><th>constructible</th></tr></thead>\
+         <tbody>{surface}</tbody></table>\
+         <h3>observed crossings <span class=\"axis\">fewer agreements outscoring more, from the \
+         unmodified machinery</span></h3>\
+         <table><thead><tr><th>candidate set</th><th>fewer</th><th>scored</th><th>more</th>\
+         <th>scored</th><th>margin</th></tr></thead><tbody>{crossing_rows}</tbody></table>\
+         <h3>A/B asymmetry</h3>\
+         <p class=\"meta\">delta = 0 in <strong>{} of {}</strong> real candidate pairs; largest \
+         <strong>{:.3}</strong> nats; designated pick moved in <strong>{} of {}</strong> candidate \
+         sets.</p>\
+         <table><thead><tr><th>candidate set</th><th>candidates</th><th>forward pick</th>\
+         <th>backward pick</th></tr></thead><tbody>{moves}</tbody></table>\
+         </section>",
+        escape(document["role"].as_str().unwrap_or("")),
+        escape(document["under_study"].as_str().unwrap_or("")),
+        zero,
+        deltas.len(),
+        worst,
+        moved,
+        orderings.len(),
+    )
+}
+
 fn specimen_card(document: &serde_json::Value) -> String {
     let refinement = &document["refinement"];
     let seed = &refinement["seed"];
@@ -855,7 +985,9 @@ pub fn render(documents: &[serde_json::Value]) -> String {
     let cards: String = documents
         .iter()
         .map(|document| {
-            if document.get("adversarial_families").is_some() {
+            if document.get("profiles").is_some() {
+                envelope_card(document)
+            } else if document.get("adversarial_families").is_some() {
                 adversarial_card(document)
             } else if document.get("families").is_some() {
                 gauntlet_card(document)
@@ -867,7 +999,7 @@ pub fn render(documents: &[serde_json::Value]) -> String {
     format!(
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
-         <title>WitnessGlass — boundary refinement (experimental)</title>\
+         <title>WitnessGlass — boundary evidence (experimental)</title>\
          <style>{PAGE_STYLE}</style></head><body>\
          <h1>WitnessGlass — boundary evidence</h1>\
          <div class=\"intro\">\
