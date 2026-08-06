@@ -29,7 +29,7 @@ use witnessglass::experiment::event_sequence::{
 };
 use witnessglass::experiment::{
     adversarial, boundary_page, calibration, discriminating, envelope, gauntlet, identifiability,
-    repair,
+    repair, transition_null,
 };
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
@@ -107,6 +107,13 @@ USAGE:
     --calibrate          sprint:19. Calibrate the complete search procedure
                          against the order null: controls first, then every
                          --corpus specimen. Adopts nothing.
+
+    --first-order-adequacy
+                         sprint:20. Measure what each null construction
+                         preserves and destroys, before any calibration reads
+                         it: the three sprint:19 summaries, transition
+                         fidelity, degeneracy, and repeated n-grams. Runs no
+                         search and reaches no verdict.
 
     --replicates <N>     Null replicates for --calibrate. Defaults to the
                          preregistered 999.
@@ -199,6 +206,7 @@ struct Options {
     repair: bool,
     discriminating: bool,
     calibrate: bool,
+    first_order_adequacy: bool,
     replicates: Option<usize>,
     corpus: Vec<PathBuf>,
     nulls: usize,
@@ -227,6 +235,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.calibrate {
         return calibrate_mode(&options);
+    }
+
+    if options.first_order_adequacy {
+        return first_order_adequacy_mode(&options);
     }
 
     if options.discriminating {
@@ -444,6 +456,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut repair_on = false;
     let mut discriminating_on = false;
     let mut calibrate_on = false;
+    let mut first_order_adequacy_on = false;
     let mut replicates = None;
     let mut corpus = Vec::new();
     let mut nulls = 0usize;
@@ -500,6 +513,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--repair" => repair_on = true,
             "--discriminating" => discriminating_on = true,
             "--calibrate" => calibrate_on = true,
+            "--first-order-adequacy" => first_order_adequacy_on = true,
             "--replicates" => {
                 replicates = Some(
                     value("--replicates")?
@@ -549,6 +563,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         repair: repair_on,
         discriminating: discriminating_on,
         calibrate: calibrate_on,
+        first_order_adequacy: first_order_adequacy_on,
         replicates,
         corpus,
         nulls,
@@ -2813,4 +2828,323 @@ fn dedupe_labels<'a>(labels: &[&'a str]) -> Vec<&'a str> {
         }
     }
     seen
+}
+
+// ---------------------------------------------------------------------------
+// sprint:20, task:30 — what each null construction preserves and destroys
+// ---------------------------------------------------------------------------
+
+/// The replicate count for every construction diagnostic below, fixed at
+/// sprint:19's own structural-summary count so the two rounds' adequacy tables
+/// are read at the same resolution.
+const ADEQUACY_REPLICATES: usize = 199;
+
+/// The n-gram length the destroy-side diagnostic counts repeats of.
+const DESTROY_NGRAM: usize = 4;
+
+fn median(values: &mut [f64]) -> f64 {
+    if values.is_empty() {
+        return f64::NAN;
+    }
+    values.sort_by(|l, r| l.partial_cmp(r).unwrap_or(std::cmp::Ordering::Equal));
+    values[values.len() / 2]
+}
+
+/// Every sequence the diagnostics run over: the controls first, then whatever
+/// corpus the caller supplied.
+fn diagnostic_sequences<'a>(
+    negative: &'a transition_null::FirstOrderControl<'a>,
+    positive: &'a transition_null::FirstOrderControl<'a>,
+    corpus: &'a [EventSequence<'a>],
+) -> Vec<(String, &'a EventSequence<'a>)> {
+    let mut rows: Vec<(String, &EventSequence<'_>)> = vec![
+        ("fo-neg-a".to_owned(), &negative.first),
+        ("fo-neg-b".to_owned(), &negative.second),
+        ("fo-pos-a".to_owned(), &positive.first),
+        ("fo-pos-b".to_owned(), &positive.second),
+    ];
+    for sequence in corpus {
+        rows.push((short(sequence.session_id), sequence));
+    }
+    rows
+}
+
+/// Replay every `--corpus` path. The inspections that read these borrow from
+/// them, so the replays are returned for the caller to hold.
+fn corpus_replays(options: &Options) -> Result<Vec<witnessglass::Replay>, String> {
+    let mut replays = Vec::new();
+    for path in &options.corpus {
+        replays.push(
+            replay_file(path)
+                .map_err(|err| format!("could not replay {}: {err}", path.display()))?,
+        );
+    }
+    Ok(replays)
+}
+
+fn first_order_adequacy_mode(options: &Options) -> Result<ExitCode, String> {
+    println!(
+        "event-motif — sprint:20 null-construction diagnostics, task:30 §PHASE 2 and §PHASE 3"
+    );
+    println!(
+        "No search runs here and no verdict is reached here. These measurements decide whether a\n\
+         construction may be called transition-preserving, before any criterion about T is written.\n\
+         R = {ADEQUACY_REPLICATES} replicates per construction per sequence.\n"
+    );
+
+    let negative = transition_null::first_order_negative();
+    let positive = transition_null::first_order_positive();
+    println!(
+        "  positive control planted at {:?} in the longer sequence and {:?} in the shorter.",
+        positive.planted.0, positive.planted.1
+    );
+
+    let replays = corpus_replays(options)?;
+    let inspections: Vec<_> = replays.iter().map(inspect).collect();
+    let corpus: Vec<EventSequence<'_>> = inspections
+        .iter()
+        .filter_map(|inspection| project(inspection, options.scope))
+        .collect();
+    let rows = diagnostic_sequences(&negative, &positive, &corpus);
+
+    println!(
+        "\n  A. sequence summaries — the three sprint:19 measures, observed against each null:"
+    );
+    println!(
+        "    {:<10} {:<9} {:<26} {:>9} {:>9} {:>9} {:>9}",
+        "specimen", "null", "summary", "observed", "null med", "null min", "null max"
+    );
+    let mut summary_rows = Vec::new();
+    for (label, sequence) in &rows {
+        for (name, construct) in transition_null::CONSTRUCTIONS {
+            for summary in
+                calibration::structural_summaries_with(sequence, ADEQUACY_REPLICATES, construct)
+            {
+                println!(
+                    "    {:<10} {:<9} {:<26} {:>9.4} {:>9.4} {:>9.4} {:>9.4}{}",
+                    label,
+                    name,
+                    summary.name,
+                    summary.observed,
+                    summary.null_median,
+                    summary.null_min,
+                    summary.null_max,
+                    if summary.outside_null_range {
+                        "  OUTSIDE"
+                    } else {
+                        ""
+                    },
+                );
+                summary_rows.push((label.clone(), name, summary));
+            }
+        }
+    }
+
+    println!(
+        "\n  B. transition fidelity — median over replicates, read through the observed vocabulary:"
+    );
+    println!(
+        "    {:<10} {:<9} {:>14} {:>14} {:>18} {:>13}",
+        "specimen", "null", "transition tv", "max state tv", "absent transitions", "marginal tv"
+    );
+    let mut fidelity_rows = Vec::new();
+    for (label, sequence) in &rows {
+        for (name, construct) in transition_null::CONSTRUCTIONS {
+            let measured: Vec<transition_null::Fidelity> = (0..ADEQUACY_REPLICATES)
+                .map(|index| {
+                    transition_null::fidelity(
+                        sequence,
+                        &construct(
+                            sequence,
+                            witnessglass::experiment::event_sequence::null_seed(index, 0),
+                        ),
+                    )
+                })
+                .collect();
+            let mut transition: Vec<f64> = measured.iter().map(|f| f.transition_tv).collect();
+            let mut state: Vec<f64> = measured.iter().map(|f| f.max_state_tv).collect();
+            let mut absent: Vec<f64> = measured
+                .iter()
+                .map(|f| f.absent_transitions as f64)
+                .collect();
+            let mut marginal: Vec<f64> = measured.iter().map(|f| f.marginal_tv).collect();
+            let row = (
+                label.clone(),
+                name,
+                median(&mut transition),
+                median(&mut state),
+                median(&mut absent),
+                median(&mut marginal),
+            );
+            println!(
+                "    {:<10} {:<9} {:>14.4} {:>14.4} {:>18.1} {:>13.4}",
+                row.0, row.1, row.2, row.3, row.4, row.5
+            );
+            fidelity_rows.push(row);
+        }
+    }
+
+    println!("\n  C. degeneracy — how many distinct sequences the construction can reach:");
+    println!(
+        "    {:<10} {:<9} {:>10} {:>10} {:>10}",
+        "specimen", "null", "identical", "distinct", "identical f"
+    );
+    let mut degeneracy_rows = Vec::new();
+    for (label, sequence) in &rows {
+        for (name, construct) in transition_null::CONSTRUCTIONS {
+            let measured =
+                transition_null::degeneracy(sequence, ADEQUACY_REPLICATES, |sequence, index| {
+                    construct(
+                        sequence,
+                        witnessglass::experiment::event_sequence::null_seed(index, 0),
+                    )
+                });
+            println!(
+                "    {:<10} {:<9} {:>10} {:>10} {:>10.4}",
+                label, name, measured.identical, measured.distinct, measured.identical_fraction
+            );
+            degeneracy_rows.push((label.clone(), name, measured));
+        }
+    }
+
+    println!(
+        "\n  D. repeated {DESTROY_NGRAM}-grams — the destroy side, descriptive and read by no criterion:"
+    );
+    println!(
+        "    {:<10} {:<9} {:>9} {:>9} {:>9} {:>9}",
+        "specimen", "null", "observed", "null med", "null min", "null max"
+    );
+    let mut ngram_rows = Vec::new();
+    for (label, sequence) in &rows {
+        let observed = transition_null::repeated_ngrams(sequence, DESTROY_NGRAM) as f64;
+        for (name, construct) in transition_null::CONSTRUCTIONS {
+            let mut values: Vec<f64> = (0..ADEQUACY_REPLICATES)
+                .map(|index| {
+                    transition_null::repeated_ngrams(
+                        &construct(
+                            sequence,
+                            witnessglass::experiment::event_sequence::null_seed(index, 0),
+                        ),
+                        DESTROY_NGRAM,
+                    ) as f64
+                })
+                .collect();
+            let minimum = values.iter().copied().fold(f64::INFINITY, f64::min);
+            let maximum = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let middle = median(&mut values);
+            println!(
+                "    {:<10} {:<9} {:>9.1} {:>9.1} {:>9.1} {:>9.1}",
+                label, name, observed, middle, minimum, maximum
+            );
+            ngram_rows.push((label.clone(), name, observed, middle, minimum, maximum));
+        }
+    }
+
+    println!(
+        "\n  E. longest shared run — the cross-sequence destroy side, and the fixture feasibility\n\
+         \x20    check: a planted figure puts a run of its own length into a pair. Descriptive.\n\
+         \x20 vocabulary sizes: {}",
+        rows.iter()
+            .map(|(label, sequence)| format!(
+                "{label} {}/{}",
+                transition_null::vocabulary_size(sequence),
+                sequence.len()
+            ))
+            .collect::<Vec<_>>()
+            .join("  ")
+    );
+    println!(
+        "    {:<24} {:<9} {:>9} {:>9} {:>9} {:>9}",
+        "pair", "null", "observed", "null med", "null min", "null max"
+    );
+    let mut shared_rows = Vec::new();
+    let pairs: Vec<(String, &EventSequence<'_>, &EventSequence<'_>)> = {
+        let mut pairs = vec![
+            (
+                "fo-neg-a x fo-neg-b".to_owned(),
+                &negative.first,
+                &negative.second,
+            ),
+            (
+                "fo-pos-a x fo-pos-b".to_owned(),
+                &positive.first,
+                &positive.second,
+            ),
+        ];
+        for (index, left) in corpus.iter().enumerate() {
+            for right in corpus.iter().skip(index + 1) {
+                pairs.push((
+                    format!("{} x {}", short(left.session_id), short(right.session_id)),
+                    left,
+                    right,
+                ));
+            }
+        }
+        pairs
+    };
+    for (label, left, right) in &pairs {
+        let observed = transition_null::longest_shared_run(left, right) as f64;
+        for (name, construct) in transition_null::CONSTRUCTIONS {
+            let mut values: Vec<f64> = (0..ADEQUACY_REPLICATES)
+                .map(|index| {
+                    transition_null::longest_shared_run(
+                        &construct(
+                            left,
+                            witnessglass::experiment::event_sequence::null_seed(index, 0),
+                        ),
+                        &construct(
+                            right,
+                            witnessglass::experiment::event_sequence::null_seed(index, 1),
+                        ),
+                    ) as f64
+                })
+                .collect();
+            let minimum = values.iter().copied().fold(f64::INFINITY, f64::min);
+            let maximum = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+            let middle = median(&mut values);
+            println!(
+                "    {:<24} {:<9} {:>9.1} {:>9.1} {:>9.1} {:>9.1}",
+                label, name, observed, middle, minimum, maximum
+            );
+            shared_rows.push((label.clone(), name, observed, middle, minimum, maximum));
+        }
+    }
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "first-order-adequacy",
+            "role": "sprint:20 null-construction diagnostics — task:30 §PHASE 2, §PHASE 3",
+            "replicates": ADEQUACY_REPLICATES,
+            "planted": { "first": positive.planted.0, "second": positive.planted.1 },
+            "summaries": summary_rows.iter().map(|(specimen, construction, summary)| serde_json::json!({
+                "specimen": specimen, "construction": construction, "summary": summary,
+            })).collect::<Vec<_>>(),
+            "fidelity": fidelity_rows.iter().map(|row| serde_json::json!({
+                "specimen": row.0, "construction": row.1, "transition_tv": row.2,
+                "max_state_tv": row.3, "absent_transitions": row.4, "marginal_tv": row.5,
+            })).collect::<Vec<_>>(),
+            "degeneracy": degeneracy_rows.iter().map(|(specimen, construction, measured)| serde_json::json!({
+                "specimen": specimen, "construction": construction, "degeneracy": measured,
+            })).collect::<Vec<_>>(),
+            "vocabulary": rows.iter().map(|(label, sequence)| serde_json::json!({
+                "specimen": label,
+                "vocabulary": transition_null::vocabulary_size(sequence),
+                "events": sequence.len(),
+            })).collect::<Vec<_>>(),
+            "shared_runs": shared_rows.iter().map(|row| serde_json::json!({
+                "pair": row.0, "construction": row.1, "observed": row.2,
+                "null_median": row.3, "null_min": row.4, "null_max": row.5,
+            })).collect::<Vec<_>>(),
+            "ngrams": ngram_rows.iter().map(|row| serde_json::json!({
+                "specimen": row.0, "construction": row.1, "n": DESTROY_NGRAM, "observed": row.2,
+                "null_median": row.3, "null_min": row.4, "null_max": row.5,
+            })).collect::<Vec<_>>(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?
+        );
+    }
+
+    Ok(ExitCode::SUCCESS)
 }

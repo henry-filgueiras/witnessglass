@@ -180,6 +180,28 @@ pub fn calibrate(
     k: usize,
     replicates: usize,
 ) -> Calibration {
+    calibrate_with(specimen, first, second, k, replicates, order_null_seeded)
+}
+
+/// The same calibration, with the null construction supplied by the caller.
+///
+/// **sprint:20's one extension to this module, and it extends nothing else.**
+/// The construction may only produce a replacement [`EventSequence`] from a
+/// sequence and a seed; every data-dependent stage of the search still reruns
+/// inside every replicate, through the same [`complete_search`] both paths call.
+/// [`calibrate`] is this function with sprint:19's order null passed in, so the
+/// two rounds cannot drift apart in anything but the null.
+pub fn calibrate_with<'a, F>(
+    specimen: &str,
+    first: &EventSequence<'a>,
+    second: &EventSequence<'a>,
+    k: usize,
+    replicates: usize,
+    construct: F,
+) -> Calibration
+where
+    F: Fn(&EventSequence<'a>, u64) -> EventSequence<'a>,
+{
     let observed = complete_search(first, second, k);
 
     let mut null_t: Vec<f64> = Vec::with_capacity(replicates);
@@ -187,8 +209,8 @@ pub fn calibrate(
     let mut null_tops: Vec<Vec<f64>> = Vec::with_capacity(replicates);
 
     for index in 0..replicates {
-        let left = order_null_seeded(first, null_seed(index, 0));
-        let right = order_null_seeded(second, null_seed(index, 1));
+        let left = construct(first, null_seed(index, 0));
+        let right = construct(second, null_seed(index, 1));
         // The complete search, rerun. Not a rescoring of observed boundaries.
         let outcome = complete_search(&left, &right, k);
         if let Some(value) = outcome.t {
@@ -445,6 +467,22 @@ pub fn structural_summaries(
     sequence: &EventSequence<'_>,
     replicates: usize,
 ) -> Vec<StructuralSummary> {
+    structural_summaries_with(sequence, replicates, order_null_seeded)
+}
+
+/// The same three summaries against a null construction the caller supplies.
+///
+/// sprint:20 asks the adequacy question sprint:19 answered for the order null of
+/// two further constructions, and asks it with the *same* three measures, so the
+/// answers are comparable. The measures themselves do not move.
+pub fn structural_summaries_with<'a, F>(
+    sequence: &EventSequence<'a>,
+    replicates: usize,
+    construct: F,
+) -> Vec<StructuralSummary>
+where
+    F: Fn(&EventSequence<'a>, u64) -> EventSequence<'a>,
+{
     let measures: [Measure; 3] = [
         ("immediate repetition rate", immediate_repetition),
         ("mean run length", mean_run_length),
@@ -456,7 +494,7 @@ pub fn structural_summaries(
         .map(|(name, measure)| {
             let observed = measure(sequence);
             let mut nulls: Vec<f64> = (0..replicates)
-                .map(|index| measure(&order_null_seeded(sequence, null_seed(index, 0))))
+                .map(|index| measure(&construct(sequence, null_seed(index, 0))))
                 .collect();
             nulls.sort_by(|l, r| l.partial_cmp(r).unwrap_or(std::cmp::Ordering::Equal));
             let min = nulls.first().copied().unwrap_or(f64::NAN);
@@ -486,7 +524,10 @@ pub const ROUND_SEED: u64 = ORDER_NULL_SEED;
 ///
 /// Obviously synthetic, per `CLAUDE.md` §5: the tool names are `synthetic-00`
 /// and friends, and no fixture here derives from any recording.
-const SYNTHETIC_TOOLS: [&str; 12] = [
+///
+/// Public so sprint:20's first-order controls draw from the same alphabet
+/// rather than inventing a second one.
+pub const SYNTHETIC_TOOLS: [&str; 12] = [
     "synthetic-00",
     "synthetic-01",
     "synthetic-02",
@@ -504,7 +545,11 @@ const SYNTHETIC_TOOLS: [&str; 12] = [
 /// The fixed categorical distribution both controls draw marks from, as
 /// cumulative weights over [`SYNTHETIC_TOOLS`]. Deliberately uneven, so the
 /// pooled rarity weights are not all equal.
-const SYNTHETIC_WEIGHTS: [u32; 12] = [22, 18, 14, 11, 9, 7, 6, 5, 4, 2, 1, 1];
+///
+/// Public for the same reason as [`SYNTHETIC_TOOLS`]: sprint:20's first-order
+/// controls weight their own transitions with this vector rather than adding a
+/// second uneven distribution to the round.
+pub const SYNTHETIC_WEIGHTS: [u32; 12] = [22, 18, 14, 11, 9, 7, 6, 5, 4, 2, 1, 1];
 
 /// The figure the positive control plants, as indices into
 /// [`SYNTHETIC_TOOLS`]. Twelve marks, matching the ladder's longest span, and

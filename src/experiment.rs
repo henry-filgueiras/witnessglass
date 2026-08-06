@@ -77,6 +77,9 @@ pub mod oracle;
 // from. Proposes; adopts nothing, and changes no statistic anything else uses.
 pub mod repair;
 pub mod signal;
+// sprint:20's first-order categorical nulls and the fixtures that discriminate
+// them. Adds two null constructions and changes no line of the search.
+pub mod transition_null;
 // sprint:7's Behavioral Spectroscope projection. Behind the same feature as the
 // Matrix Profile it renders, since it cannot be assembled without one.
 #[cfg(feature = "experiment-matrix-profile")]
