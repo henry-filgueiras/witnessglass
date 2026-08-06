@@ -587,6 +587,18 @@ fn spawn_view(recording: &Path) -> (std::process::Child, String) {
         }
     }
     let url = url.expect("the viewer should print its URL to stderr");
+
+    // Keep draining stderr for the child's lifetime. Dropping the reader here
+    // would close the read end of the pipe, and the viewer still has a line to
+    // write after the URL — `eprintln!` to a closed pipe is an EPIPE panic, so
+    // the viewer would die before `serve_forever`, and a request already
+    // accepted onto the backlog would come back as a connection reset. That
+    // race is narrow enough to pass locally and fail on a loaded CI runner.
+    std::thread::spawn(move || {
+        let mut drained = String::new();
+        let _ = reader.read_to_string(&mut drained);
+    });
+
     (child, url)
 }
 
