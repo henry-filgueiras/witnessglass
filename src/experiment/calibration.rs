@@ -153,6 +153,10 @@ pub struct Calibration {
     pub null_max: f64,
     /// `count(T_null >= T_observed)`.
     pub exceedances: usize,
+    /// `count(T_null < T_observed)`. sprint:20 reports the observed value's
+    /// percentile within each null distribution, and a percentile needs the
+    /// other side of the same count.
+    pub below: usize,
     /// `(1 + exceedances) / (B + 1)` — a Monte Carlo null tail estimate under
     /// this null and this search, and nothing else.
     pub tail: f64,
@@ -167,6 +171,14 @@ pub struct Calibration {
     /// task:29 §PHASE 6: per-rank exceedance counts over the top-k order
     /// statistics. Descriptive; no verdict branch reads it.
     pub top_k_exceedances: Vec<usize>,
+    /// Every `T_null` this calibration produced, ascending.
+    ///
+    /// Held so a paired plot can draw two null distributions on one axis, and
+    /// **not serialized**: a document carrying one array per specimen per null
+    /// would be megabytes of duplicated numbers, and the caller that wants them
+    /// has them here.
+    #[serde(skip)]
+    pub samples: Vec<f64>,
 }
 
 /// Calibrate one pair at one span length.
@@ -226,6 +238,10 @@ where
         Some(value) => null_t.iter().filter(|null| **null >= value).count(),
         None => null_t.len(),
     };
+    let below = match observed.t {
+        Some(value) => null_t.iter().filter(|null| **null < value).count(),
+        None => 0,
+    };
     let tail = (1.0 + exceedances as f64) / (replicates as f64 + 1.0);
 
     let top_k_exceedances = (0..TOP_K)
@@ -256,6 +272,7 @@ where
             .collect(),
         null_max: null_t.last().copied().unwrap_or(f64::NAN),
         exceedances,
+        below,
         tail,
         exceptional: tail <= TAIL_THRESHOLD,
         observed_considered: observed.considered,
@@ -265,6 +282,7 @@ where
             considered.iter().sum::<usize>() as f64 / considered.len() as f64
         },
         top_k_exceedances,
+        samples: null_t,
     }
 }
 

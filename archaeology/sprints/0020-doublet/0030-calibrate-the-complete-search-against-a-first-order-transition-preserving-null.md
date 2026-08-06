@@ -2,9 +2,10 @@
 id: tsk_01KZCDZ09SBN52C3MY0GG1ZAV0
 sequence: 30
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZCCTGTQM5J9CXX46A4R53C1
 created: 2026-08-06
+closed: 2026-08-06
 ---
 
 # Calibrate the complete search against a first-order transition-preserving null
@@ -366,3 +367,196 @@ detector, no aggregate invented to tidy §PHASE 6. No adoption and no promotion 
 threshold chosen after seeing data. No interpretation, naming or inspection of any discovered span. No
 specimen added to decision:8's inventory. No treatment of an observational recording as ground truth.
 No recording content in any artifact. Nothing pushed.
+
+## Result
+
+**Verdict: B — COLLAPSES UNDER THE FIRST-ORDER NULL**, by the preregistered partition. Both controls
+passed and **0 of 30** eligible cells have `p̂ ≤ 0.01` under the exact first-order null, against **23 of
+30** under sprint:19's order null. **Retention 0/23 = 0.0000.** The prediction recorded in §PHASE 10 was
+B; the one exception it named did not survive either. R1 was not changed, not adopted, not promoted.
+
+### 1. Verified premises
+
+sprint:19's published numbers reproduced cell for cell in 3 min 16 s — the selection effect to four
+decimals, the 23-of-30 separation table, and all twelve null-adequacy rows. Four discrepancies were
+recorded before any criterion was written (§PHASE 0): **D3** the fitted chain is not
+transition-preserving at these lengths; **D4** the primary null's adequacy rule cannot fail and is
+demoted to an implementation check; **D5** the exact null is 37% concentrated on the observed sequence
+for the largest specimen; **D6** the repository holds recordings decision:8 does not admit, and none
+was used.
+
+**A fifth, D7, found during this round and recorded here rather than in a later one.** §PHASE 6's
+per-rank exceedance counter — sprint:19's, unchanged — returns zero for a rank the observed or null
+kept set does not have. `dedupe_overlapping` requires survivors to be at least `k` apart on **both**
+sides, so the survivor count is capped at `⌊(n−k)/k⌋+1` on the shorter sequence: **2 at `k = 12` for
+the 32- and 33-event specimens, 4 at `k = 8`.** Ranks 3 to 5 are therefore *geometrically unavailable*
+there, and the zeros §PHASE 6 reports at those ranks are absences rather than exceptional agreements.
+§PHASE 6 is interpretable at rank 1 — which is `T` — and, on much of the grid, nowhere else. No verdict
+branch in either round reads it, and neither round's conclusions move.
+
+### 2. The first-order null, as built
+
+`doublet_null_seeded`: an Eulerian trail of the sequence's own adjacency multigraph, drawn from the
+observed first mark. **Exactly preserved, asserted by tests replicate for replicate:** every
+first-order transition count, every per-state outgoing distribution, the mark multiset, the length,
+the first mark and the last. Transition TV, per-state TV, absent transitions and marginal TV are
+**0.0000 on every specimen at B = 999**. Immediate repetition rate, mean run length and transition
+entropy ratio are preserved identically, because each is a function of the counts it holds fixed.
+
+It is also an **exact conditional test**: transition counts and the first mark are sufficient
+statistics of a first-order chain, so conditional on them every path with those counts is equally
+likely, and no parameter is estimated at a 32-event recording. And it is a permutation, so **R1's
+pooled weights are identical on observed and null paths**, exactly as in sprint:19.
+
+### 3. Exact versus in-expectation, measured
+
+| construction | transition TV | absent transitions | marginal TV | adequate |
+|---|---|---|---|---|
+| order (sprint:19) | 0.6053 – 0.8750 | 11 – 19 | 0.0000 | **no** — outside range on all three summaries |
+| **doublet (primary)** | **0.0000** | **0** | **0.0000** | **yes**, by theorem |
+| markov (fitted) | 0.0952 – 0.2903 | 4 – 7 | 0.0710 – 0.1875 | **no** — outside its own null range on `fo-neg-a`'s transition entropy |
+
+Medians over 199 replicates, on the four observational specimens. "Preserved in expectation" is not
+preserved, and this is what says so.
+
+### 4. Controlled fixtures
+
+Contamination of the plant, measured against the same background walks: transition TV **0.1321** and
+**0.2472**, marginal TV **0.0500** and **0.1111**, and **no transition outside the background chain's
+support** — asserted by a test, not claimed.
+
+| control | k=3 | k=4 | k=6 | k=8 | k=12 | rule |
+|---|---|---|---|---|---|---|
+| **first-order negative** `p̂` | 0.238 | 0.612 | 0.557 | 0.356 | 0.800 | **PASS** — no `k` exceptional |
+| **first-order positive** `p̂` | 0.814 | 0.424 | 0.048 | **0.002** | **0.001** | **PASS** — exceptional at the planted length |
+
+At `k = 12` the positive control's `T = 31.6793` against a null maximum of `26.0202`: **no first-order
+null search in 999 reached it.** The machinery recovers a long-range figure whose every transition the
+null already reproduces, and does not flag a specimen drawn from the null.
+
+**The bridge.** sprint:19's i.i.d. controls under this null behave as they did under theirs: negative
+ordinary at every `k` (largest 0.034), positive exceptional at `k = 8` (0.002) and `k = 12` (0.001).
+
+**One measurement worth keeping.** The first-order *negative* control — a specimen drawn from a chain,
+containing nothing — scores `p̂ = 0.015` at `k = 8` against sprint:19's order null and `0.356` against
+the null that matches its own law. No `k` crosses the threshold, so it is a tendency and not a flag,
+but it is sprint:19's confound reproduced in a fixture with no planted structure at all.
+
+### 5. The corpus, paired
+
+30 cells, `B = 999`, the same `T` in both columns by construction. **23 separate under the order null;
+0 under the first-order null.**
+
+| pair | k | order `p̂` | 1st-order `p̂` | median shift |
+|---|---|---|---|---|
+| `8b68dece × 57f18ff9` | 3 / 4 / 6 / 8 / 12 | 0.157 / **0.004** / **0.005** / **0.004** / **0.007** | 1.000 / 0.744 / 0.773 / 0.764 / 0.675 | +3.46 … +8.29 |
+| `8b68dece × f5c18299` | 3 / 4 / 6 / 8 / 12 | **0.004** / **0.003** / 0.015 / **0.002** / 0.075 | 0.742 / 0.815 / 0.804 / 0.675 / 0.905 | +3.88 … +7.99 |
+| `8b68dece × 7d95c414` | 3 / 4 / 6 / 8 / 12 | 0.133 / 0.031 / 0.027 / **0.003** / **0.002** | 0.182 / 0.263 / 0.493 / 0.570 / 0.477 | −2.43 … +6.83 |
+| `57f18ff9 × f5c18299` | 3 / 4 / 6 / 8 / 12 | 0.035 / **0.001** / **0.001** / **0.001** / **0.001** | 0.986 / 0.929 / 0.633 / **0.045** / 0.060 | +3.48 … +14.66 |
+| `57f18ff9 × 7d95c414` | 3 / 4 / 6 / 8 / 12 | **0.002** / **0.001** / **0.001** / **0.001** / **0.001** | 0.452 / 0.578 / 0.839 / 0.611 / 0.468 | +2.46 … +9.92 |
+| `f5c18299 × 7d95c414` | 3 / 4 / 6 / 8 / 12 | **0.001** ×5 | 0.442 / 0.376 / 0.624 / 0.540 / 0.430 | +4.94 … +11.06 |
+
+**The preregistered change quantities.** Retention `0/23 = 0.0000`. Median over cells of
+(first-order null median − order null median) = **+6.3399 nats**, range −2.4314 to +14.6604. Median
+over cells of (first-order percentile − order percentile) = **−0.6106**, range −0.9519 to −0.0440.
+**Zero of 30 observed values sit at or below the order null's median; 19 of 30 sit at or below the
+first-order null's.** The lowest first-order tail on the corpus is `0.045`, four and a half times the
+threshold; the highest is `1.000`, where every one of 999 replicates matched or beat the observation.
+
+**No cell was excluded.** Degeneracy at `B = 999`: `8b68dece` 352 identical of 999 (0.3524, 648
+distinct), `7d95c414` 0.0100, `57f18ff9` 0.0030, `f5c18299` 0.0010. The largest pairwise product is
+`0.3524 × 0.0100 = 0.0035`, below the 0.01 attainability rule, so all 30 cells are eligible and the
+verdict counts all of them.
+
+### 6. The reference null nobody's criteria read
+
+The fitted-chain null was run and is reported because §PHASE 1 promised it. **1 of 30 cells separates**
+under it. More usefully, its tail lies **between** the order null's and the exact null's in **30 of 30
+cells, without exception**: the more first-order structure a null preserves, the less this corpus
+separates from it, monotonically, cell by cell. That ordering is the round's result stated a second way,
+and it came from a construction disqualified for inadequacy — so it is reported as a description, and
+no criterion reads it.
+
+### 7. Top-k descriptive comparison
+
+**Absent / ambiguous**, and D7 explains why: 16 of 30 cells carry at least one rank clearing 0.01, but
+the zeros concentrate at ranks the deduplication cannot supply. Reported as ambiguity rather than
+resolved, exactly as §PHASE 6 preregistered, and read by no verdict branch.
+
+### 8. Specimen-level verdicts
+
+Every pair collapses. `57f18ff9 × f5c18299` — decision:8's known runbook siblings, and the pair whose
+longest shared run is the only one outside its null's entire range — retains the most, reaching 0.045
+at `k = 8` and 0.060 at `k = 12` without crossing the threshold. `8b68dece × 57f18ff9` at `k = 3` moves
+furthest, from 0.157 to 1.000. No specimen separates anywhere, so the corpus is not forced to one
+verdict over a disagreement: there is no disagreement.
+
+`8b68dece`'s 35% degeneracy makes its ten cells the weakest evidence in this branch, as §PHASE 9 said
+in advance. The other 20 cells collapse without that caveat.
+
+### 9. The narrowest supported claim
+
+> **On this corpus, the separation sprint:19 measured is fully explained by first-order categorical
+> transition structure.** Holding each recording's transition counts, mark marginals, length and
+> endpoints exactly fixed, and destroying only longer-range reuse, the complete search's maxima become
+> ordinary in all 30 specimen–span cells, from 23 exceptional. The controls establish that the
+> procedure still recovers a planted long-range figure under this null, and does not flag a specimen
+> drawn from it.
+
+### 10. Explicitly unsupported
+
+R1 is **not** shown to be wrong, and this round measures no error of it. What is not earned: that any
+span is a motif; that no longer-range structure exists in agent recordings; that a larger or different
+corpus would collapse the same way; that the search is useless. A negative result on four recordings
+from two projects is an envelope, not a distribution. sprint:19's own claim is **not retracted** — it
+said the search detects structure not explained by exchangeable ordering, and that remains true; this
+round establishes that the structure in question is first-order.
+
+Also not earned, and now carrying a measurement: **absence of separation is not absence of
+structure.** Both nulls destroy the mark-to-gap association, and `align()` reads gaps; and the exact
+null is partly degenerate on the largest specimen. Neither is repaired here.
+
+### 11. One next experiment
+
+Not another null. The corpus is the binding constraint: four recordings, two projects, 32 to 169
+events, and a vocabulary-to-length ratio at which conditioning on first-order counts leaves a 169-event
+sequence with 648 distinct alternatives and 352 copies of itself. Before any further calibration,
+**measure what recording length and vocabulary size a first-order-null calibration can resolve at all**
+— a power study on synthetic first-order backgrounds with planted figures, sweeping length and
+vocabulary, reporting the smallest planted figure the procedure recovers at each. That is a controlled
+question, needs no new specimen, and would say whether this corpus could have produced an A verdict
+under any circumstances.
+
+### 12. Gates
+
+`scripts/check.sh` green and unweakened. **417 tests**, up from 393; 24 new in
+`tests/transition_null.rs`. `scarp doctor` clean. Nothing pushed. Counts, scores, ranks, quantiles,
+lengths and exceedances only, per decision:8 — no discovered span was named, described or inspected,
+and no recording content appears in any artifact.
+
+Two cards render on the existing evidence page. The construction card sits **above** the calibration
+card deliberately: a reader who sees the new tails without the fidelity measurement has no way to tell
+why the null changed. The calibration card draws both nulls for one specimen on **one shared axis**
+with the observed `T` marked, because the round's whole question is whether the second distribution
+moves onto the observation — and on all six pairs it visibly does.
+
+Commits: preregistration `d2dc21d`, alone and before any calibration code existed; construction and
+measurement `58cbf07` before it; the calibration and rendering below.
+
+### 13. Scarp desire paths
+
+**idea:1 recurred, as it has every round.** This Result was written to the task file with a shell
+append before `scarp close task:30`, because closing and recording a result are two writes and only one
+of them is a Scarp command. Nothing new to add to the idea.
+
+**idea:5 recurred, and this round is the strongest case for it so far.** The whole evidential weight of
+§PHASE 4 onward rests on those criteria having been fixed before any `T` was computed under any
+first-order null, and the only mechanism available to demonstrate that is commit ordering: `58cbf07`
+for the constructions and their measurements, `d2dc21d` for the preregistration alone, the calibration
+after. That works, and a reader who does not have the repository has to take the ordering on trust.
+A sealed section would carry the claim in the artifact rather than in the history around it.
+
+The workflow attempted was ordinary — measure, preregister, execute — and the friction is that Scarp
+records *what* was written but not *when it stopped being writable*. No workaround beyond the commit
+discipline was used, and none is needed for this repository; the affordance would matter to a reader
+outside it.

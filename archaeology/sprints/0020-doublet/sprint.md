@@ -2,8 +2,9 @@
 id: spr_01KZCCTGTQM5J9CXX46A4R53C1
 sequence: 20
 kind: sprint
-status: active
+status: closed
 created: 2026-08-06
+closed: 2026-08-06
 ---
 
 # Doublet

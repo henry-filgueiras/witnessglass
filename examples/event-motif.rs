@@ -108,6 +108,10 @@ USAGE:
                          against the order null: controls first, then every
                          --corpus specimen. Adopts nothing.
 
+    --first-order        sprint:20. Rerun the identical search-aware
+                         calibration against the exact first-order transition
+                         null, paired against sprint:19's order null over the
+                         same specimen and k grid. Adopts nothing.
     --first-order-adequacy
                          sprint:20. Measure what each null construction
                          preserves and destroys, before any calibration reads
@@ -206,6 +210,7 @@ struct Options {
     repair: bool,
     discriminating: bool,
     calibrate: bool,
+    first_order: bool,
     first_order_adequacy: bool,
     replicates: Option<usize>,
     corpus: Vec<PathBuf>,
@@ -239,6 +244,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.first_order_adequacy {
         return first_order_adequacy_mode(&options);
+    }
+
+    if options.first_order {
+        return first_order_mode(&options);
     }
 
     if options.discriminating {
@@ -456,6 +465,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut repair_on = false;
     let mut discriminating_on = false;
     let mut calibrate_on = false;
+    let mut first_order_on = false;
     let mut first_order_adequacy_on = false;
     let mut replicates = None;
     let mut corpus = Vec::new();
@@ -513,6 +523,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--repair" => repair_on = true,
             "--discriminating" => discriminating_on = true,
             "--calibrate" => calibrate_on = true,
+            "--first-order" => first_order_on = true,
             "--first-order-adequacy" => first_order_adequacy_on = true,
             "--replicates" => {
                 replicates = Some(
@@ -563,6 +574,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         repair: repair_on,
         discriminating: discriminating_on,
         calibrate: calibrate_on,
+        first_order: first_order_on,
         first_order_adequacy: first_order_adequacy_on,
         replicates,
         corpus,
@@ -3139,6 +3151,410 @@ fn first_order_adequacy_mode(options: &Options) -> Result<ExitCode, String> {
                 "specimen": row.0, "construction": row.1, "n": DESTROY_NGRAM, "observed": row.2,
                 "null_median": row.3, "null_min": row.4, "null_max": row.5,
             })).collect::<Vec<_>>(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?
+        );
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+// ---------------------------------------------------------------------------
+// sprint:20, task:30 — the same calibration against the first-order null
+// ---------------------------------------------------------------------------
+
+/// The construction task:30 §PHASE 2 fixed as primary.
+const PRIMARY: transition_null::Construction = transition_null::doublet_null_seeded;
+
+/// The span length whose paired null distributions are drawn on the page. A
+/// presentation choice, made after the preregistration and stated as one: it is
+/// the ladder's longest span, and every cell is in the table regardless.
+const PLOTTED_K: usize = 12;
+
+/// One paired cell: the same observed `T`, against two null distributions.
+struct Paired {
+    order: calibration::Calibration,
+    first_order: calibration::Calibration,
+    markov: Option<calibration::Calibration>,
+}
+
+fn percentile(row: &calibration::Calibration) -> f64 {
+    if row.realizations == 0 {
+        f64::NAN
+    } else {
+        row.below as f64 / row.realizations as f64
+    }
+}
+
+fn first_order_mode(options: &Options) -> Result<ExitCode, String> {
+    let replicates = options.replicates.unwrap_or(calibration::REPLICATES);
+
+    println!("event-motif — the sprint:20 first-order transition-null calibration");
+    println!(
+        "The same complete search, the same T, the same ladder, the same B, the same threshold.\n\
+         Only the null moves: from sprint:19's exchangeable order null to a draw over sequences\n\
+         with exactly the observed first-order transition counts. B = {replicates}.\n\
+         Nothing here is adopted, and R1 is not changed.\n"
+    );
+
+    // PHASE 4 — controls, before any observational specimen is touched.
+    let fo_negative = transition_null::first_order_negative();
+    let fo_positive = transition_null::first_order_positive();
+    let iid_negative = calibration::negative_control();
+    let iid_positive = calibration::positive_control();
+
+    println!(
+        "  positive control planted at {:?} and {:?}; contamination against the unplanted walks:",
+        fo_positive.planted.0, fo_positive.planted.1
+    );
+    for (side, without, with) in [
+        ("longer", &fo_negative.first, &fo_positive.first),
+        ("shorter", &fo_negative.second, &fo_positive.second),
+    ] {
+        let measured = transition_null::divergence(without, with);
+        println!(
+            "    {side:<8} transition tv {:.4}   marginal tv {:.4}   background transitions absent \
+             from the planted walk {}",
+            measured.transition_tv, measured.marginal_tv, measured.absent_transitions
+        );
+    }
+
+    let mut control_rows = Vec::new();
+    for (label, first, second, primary_only) in [
+        (
+            "first-order negative",
+            &fo_negative.first,
+            &fo_negative.second,
+            false,
+        ),
+        (
+            "first-order positive",
+            &fo_positive.first,
+            &fo_positive.second,
+            false,
+        ),
+        (
+            "sprint:19 negative",
+            &iid_negative.first,
+            &iid_negative.second,
+            true,
+        ),
+        (
+            "sprint:19 positive",
+            &iid_positive.first,
+            &iid_positive.second,
+            true,
+        ),
+    ] {
+        println!("\n  {label} — task:30 §PHASE 4:");
+        println!(
+            "    {:<6} {:>10} {:>10} {:>10} {:>7} {:>8}   {:>8}",
+            "k", "T obs", "null med", "null max", "exceed", "p-hat", "order p"
+        );
+        for k in calibration::LADDER {
+            let first_order =
+                calibration::calibrate_with(label, first, second, k, replicates, PRIMARY);
+            let order = if primary_only {
+                None
+            } else {
+                Some(calibration::calibrate(label, first, second, k, replicates))
+            };
+            println!(
+                "    {:<6} {:>10} {:>10.4} {:>10.4} {:>7} {:>8.4}{}  {:>8}",
+                k,
+                first_order
+                    .observed
+                    .map(|t| format!("{t:.4}"))
+                    .unwrap_or_else(|| "—".to_owned()),
+                first_order.null_median,
+                first_order.null_max,
+                first_order.exceedances,
+                first_order.tail,
+                if first_order.exceptional { "  *" } else { "" },
+                order
+                    .as_ref()
+                    .map(|row| format!("{:.4}", row.tail))
+                    .unwrap_or_else(|| "—".to_owned()),
+            );
+            control_rows.push((label, first_order, order));
+        }
+    }
+
+    // The preregistered control rules read the first-order controls only.
+    let negative_ok = !control_rows
+        .iter()
+        .any(|(label, row, _)| *label == "first-order negative" && row.exceptional);
+    let positive_ok = control_rows
+        .iter()
+        .any(|(label, row, _)| *label == "first-order positive" && row.k == 12 && row.exceptional);
+    println!(
+        "\n  control rules — negative (no k exceptional): {}   positive (k=12 exceptional): {}",
+        if negative_ok { "PASS" } else { "FAIL" },
+        if positive_ok { "PASS" } else { "FAIL" },
+    );
+
+    // PHASE 5 — the corpus.
+    let replays = corpus_replays(options)?;
+    let inspections: Vec<_> = replays.iter().map(inspect).collect();
+    let corpus: Vec<EventSequence<'_>> = inspections
+        .iter()
+        .filter_map(|inspection| project(inspection, options.scope))
+        .collect();
+
+    let mut adequacy_ok = true;
+    let mut degeneracies = Vec::new();
+    if !corpus.is_empty() {
+        println!(
+            "\n  primary-null fidelity and degeneracy at B = {replicates}, task:30 §PHASE 2 and §PHASE 9:"
+        );
+        println!(
+            "    {:<12} {:>13} {:>10} {:>10} {:>13}",
+            "specimen", "transition tv", "identical", "distinct", "identical f"
+        );
+        for sequence in &corpus {
+            let label = short(sequence.session_id);
+            let worst = (0..replicates)
+                .map(|index| {
+                    transition_null::fidelity(
+                        sequence,
+                        &PRIMARY(
+                            sequence,
+                            witnessglass::experiment::event_sequence::null_seed(index, 0),
+                        ),
+                    )
+                    .transition_tv
+                })
+                .fold(0.0f64, f64::max);
+            if worst > 0.0 {
+                adequacy_ok = false;
+            }
+            let measured = transition_null::degeneracy(sequence, replicates, |sequence, index| {
+                PRIMARY(
+                    sequence,
+                    witnessglass::experiment::event_sequence::null_seed(index, 0),
+                )
+            });
+            println!(
+                "    {:<12} {:>13.4} {:>10} {:>10} {:>13.4}",
+                label, worst, measured.identical, measured.distinct, measured.identical_fraction
+            );
+            degeneracies.push((label, measured));
+        }
+    }
+
+    let mut paired: Vec<(String, usize, Paired)> = Vec::new();
+    if corpus.len() >= 2 {
+        println!(
+            "\n  real corpus — task:30 §PHASE 5 and §PHASE 7. Counts and ranks only; no span is named."
+        );
+        println!(
+            "    {:<24} {:>3} {:>9} | {:>9} {:>7} {:>7} | {:>9} {:>7} {:>7} | {:>8}",
+            "specimen",
+            "k",
+            "T obs",
+            "ord med",
+            "ord ex",
+            "ord p",
+            "1st med",
+            "1st ex",
+            "1st p",
+            "med shift"
+        );
+        for (index, left) in corpus.iter().enumerate() {
+            for right in corpus.iter().skip(index + 1) {
+                let label = format!("{} x {}", short(left.session_id), short(right.session_id));
+                for k in calibration::LADDER {
+                    let order = calibration::calibrate(&label, left, right, k, replicates);
+                    let first_order =
+                        calibration::calibrate_with(&label, left, right, k, replicates, PRIMARY);
+                    let markov = calibration::calibrate_with(
+                        &label,
+                        left,
+                        right,
+                        k,
+                        replicates,
+                        transition_null::markov_null_seeded,
+                    );
+                    println!(
+                        "    {:<24} {:>3} {:>9} | {:>9.4} {:>7} {:>7.4} | {:>9.4} {:>7} {:>7.4}{} | {:>+8.4}",
+                        label,
+                        k,
+                        first_order
+                            .observed
+                            .map(|t| format!("{t:.4}"))
+                            .unwrap_or_else(|| "—".to_owned()),
+                        order.null_median,
+                        order.exceedances,
+                        order.tail,
+                        first_order.null_median,
+                        first_order.exceedances,
+                        first_order.tail,
+                        if first_order.exceptional { "*" } else { " " },
+                        first_order.null_median - order.null_median,
+                    );
+                    paired.push((
+                        label.clone(),
+                        k,
+                        Paired {
+                            order,
+                            first_order,
+                            markov: Some(markov),
+                        },
+                    ));
+                }
+            }
+        }
+    } else {
+        println!("\n  real corpus not replayed: --first-order needs at least two --corpus <PATH>.");
+    }
+
+    // PHASE 9's attainability rule: a cell whose null contains the observed pair
+    // more often than the threshold cannot reach the threshold whatever the data
+    // does, and is excluded from the verdict rather than counted as collapse.
+    let fraction = |label: &str| {
+        degeneracies
+            .iter()
+            .find(|(name, _)| name == label)
+            .map(|(_, measured)| measured.identical_fraction)
+            .unwrap_or(0.0)
+    };
+    let degenerate = |specimen: &str| -> bool {
+        let mut parts = specimen.split(" x ");
+        match (parts.next(), parts.next()) {
+            (Some(left), Some(right)) => {
+                fraction(left) * fraction(right) > calibration::TAIL_THRESHOLD
+            }
+            _ => false,
+        }
+    };
+
+    let defined: Vec<&(String, usize, Paired)> = paired
+        .iter()
+        .filter(|(_, _, cell)| cell.first_order.observed.is_some())
+        .collect();
+    let eligible: Vec<&&(String, usize, Paired)> = defined
+        .iter()
+        .filter(|(specimen, _, _)| !degenerate(specimen))
+        .collect();
+    let separating = eligible
+        .iter()
+        .filter(|(_, _, cell)| cell.first_order.exceptional)
+        .count();
+    let order_separating = defined
+        .iter()
+        .filter(|(_, _, cell)| cell.order.exceptional)
+        .count();
+    let retained = defined
+        .iter()
+        .filter(|(_, _, cell)| cell.order.exceptional && cell.first_order.exceptional)
+        .count();
+
+    println!("\n  paired change — task:30 §PHASE 7:");
+    println!(
+        "    cells separating under the order null: {order_separating} of {}",
+        defined.len()
+    );
+    println!(
+        "    cells separating under the first-order null: {separating} of {}",
+        eligible.len()
+    );
+    println!(
+        "    retention = {retained}/{order_separating} = {:.4}",
+        if order_separating == 0 {
+            f64::NAN
+        } else {
+            retained as f64 / order_separating as f64
+        }
+    );
+    let mut shifts: Vec<f64> = defined
+        .iter()
+        .map(|(_, _, cell)| cell.first_order.null_median - cell.order.null_median)
+        .collect();
+    let mut percentiles: Vec<f64> = defined
+        .iter()
+        .map(|(_, _, cell)| percentile(&cell.first_order) - percentile(&cell.order))
+        .collect();
+    println!(
+        "    median over cells of (first-order null median − order null median): {:+.4} nats",
+        median(&mut shifts)
+    );
+    println!(
+        "    median over cells of (first-order percentile − order percentile): {:+.4}",
+        median(&mut percentiles)
+    );
+
+    // PHASE 10's partition, by precedence.
+    let degenerate_majority = !defined.is_empty() && eligible.len() * 2 < defined.len();
+    let verdict = if !adequacy_ok {
+        "C FIRST-ORDER NULL INADEQUATE — the primary construction did not preserve transition counts"
+    } else if !negative_ok || !positive_ok {
+        "C FIRST-ORDER NULL INADEQUATE — a control failed its preregistered rule"
+    } else if defined.is_empty() {
+        "C FIRST-ORDER NULL INADEQUATE — T undefined for every specimen"
+    } else if degenerate_majority {
+        "C FIRST-ORDER NULL INADEQUATE — a majority of cells are null-degenerate"
+    } else if separating * 2 >= eligible.len() {
+        "A SURVIVES THE FIRST-ORDER NULL — the search detects sequence structure not explained by \
+         the exact first-order categorical null"
+    } else {
+        "B COLLAPSES UNDER THE FIRST-ORDER NULL — first-order transition structure suffices to \
+         explain what the search finds on this corpus"
+    };
+    println!("\n  verdict — task:30 §PHASE 10, by precedence:");
+    println!("    {verdict}");
+
+    if options.json {
+        let plotted: Vec<serde_json::Value> = paired
+            .iter()
+            .filter(|(_, k, _)| *k == PLOTTED_K)
+            .map(|(specimen, k, cell)| {
+                serde_json::json!({
+                    "specimen": specimen,
+                    "k": k,
+                    "observed": cell.first_order.observed,
+                    "order": cell.order.samples,
+                    "first_order": cell.first_order.samples,
+                })
+            })
+            .collect();
+        let document = serde_json::json!({
+            "label": "first-order-calibration",
+            "role": "first-order transition-null calibration — sprint:20, task:30",
+            "replicates": replicates,
+            "tail_threshold": calibration::TAIL_THRESHOLD,
+            "plotted_k": PLOTTED_K,
+            "adopted": serde_json::Value::Null,
+            "planted": { "first": fo_positive.planted.0, "second": fo_positive.planted.1 },
+            "controls": control_rows.iter().map(|(label, row, order)| serde_json::json!({
+                "control": label, "row": row, "order": order,
+            })).collect::<Vec<_>>(),
+            "control_rules": { "negative": negative_ok, "positive": positive_ok },
+            "degeneracy": degeneracies.iter().map(|(label, measured)| serde_json::json!({
+                "specimen": label, "degeneracy": measured,
+            })).collect::<Vec<_>>(),
+            "paired": paired.iter().map(|(specimen, k, cell)| serde_json::json!({
+                "specimen": specimen,
+                "k": k,
+                "observed": cell.first_order.observed,
+                "degenerate": degenerate(specimen),
+                "order": cell.order,
+                "first_order": cell.first_order,
+                "markov": cell.markov,
+                "median_shift": cell.first_order.null_median - cell.order.null_median,
+                "percentile_order": percentile(&cell.order),
+                "percentile_first_order": percentile(&cell.first_order),
+            })).collect::<Vec<_>>(),
+            "plotted": plotted,
+            "summary": {
+                "defined": defined.len(),
+                "eligible": eligible.len(),
+                "order_separating": order_separating,
+                "first_order_separating": separating,
+                "retained": retained,
+            },
+            "verdict": verdict,
         });
         println!(
             "{}",

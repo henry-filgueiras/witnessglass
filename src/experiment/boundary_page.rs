@@ -832,6 +832,383 @@ fn calibration_card(document: &serde_json::Value) -> String {
     )
 }
 
+/// The sprint:20 first-order transition-null card.
+///
+/// Selected when a document carries `paired`. task:30.
+///
+/// **The one thing this card exists to make visible** is where the null
+/// distribution sits after the local grammar it destroyed is put back. sprint:19
+/// drew one null against one observed value; this draws two nulls against the
+/// same observed value on one shared axis, because the round's whole question is
+/// whether the second one moves toward the observation. Two separate plots would
+/// let a reader miss exactly that.
+fn first_order_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let controls = document["controls"].as_array().unwrap_or(&empty);
+    let paired = document["paired"].as_array().unwrap_or(&empty);
+    let plotted = document["plotted"].as_array().unwrap_or(&empty);
+    let degeneracy = document["degeneracy"].as_array().unwrap_or(&empty);
+    let summary = &document["summary"];
+
+    let mut control_rows = String::new();
+    for entry in controls {
+        let row = &entry["row"];
+        control_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td><td>{}</td>\
+             <td class=\"{}\">{:.4}</td><td class=\"stat\">{}</td></tr>",
+            escape(entry["control"].as_str().unwrap_or("")),
+            row["k"].as_u64().unwrap_or(0),
+            number(row["observed"].as_f64()),
+            row["null_median"].as_f64().unwrap_or(f64::NAN),
+            row["null_max"].as_f64().unwrap_or(f64::NAN),
+            row["exceedances"].as_u64().unwrap_or(0),
+            if row["exceptional"].as_bool().unwrap_or(false) {
+                "held"
+            } else {
+                ""
+            },
+            row["tail"].as_f64().unwrap_or(f64::NAN),
+            entry["order"]["tail"]
+                .as_f64()
+                .map(|tail| format!("{tail:.4}"))
+                .unwrap_or_else(|| "&mdash;".to_owned()),
+        ));
+    }
+
+    let mut paired_rows = String::new();
+    for row in paired {
+        let order_exceptional = row["order"]["exceptional"].as_bool().unwrap_or(false);
+        let first_exceptional = row["first_order"]["exceptional"].as_bool().unwrap_or(false);
+        let change = match (order_exceptional, first_exceptional) {
+            (true, true) => ("retained", "held"),
+            (true, false) => ("lost", "broken"),
+            (false, true) => ("gained", "mixed"),
+            (false, false) => ("neither", "stat"),
+        };
+        paired_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td>{:.4}</td><td>{:.4}</td>\
+             <td>{:.4}</td><td>{:.4}</td><td>{:+.4}</td><td class=\"{}\">{}</td></tr>",
+            escape(row["specimen"].as_str().unwrap_or("")),
+            row["k"].as_u64().unwrap_or(0),
+            number(row["observed"].as_f64()),
+            row["order"]["null_median"].as_f64().unwrap_or(f64::NAN),
+            row["order"]["tail"].as_f64().unwrap_or(f64::NAN),
+            row["first_order"]["null_median"]
+                .as_f64()
+                .unwrap_or(f64::NAN),
+            row["first_order"]["tail"].as_f64().unwrap_or(f64::NAN),
+            row["median_shift"].as_f64().unwrap_or(f64::NAN),
+            change.1,
+            change.0,
+        ));
+    }
+
+    let mut degeneracy_rows = String::new();
+    let mut any_degenerate = false;
+    for entry in degeneracy {
+        let measured = &entry["degeneracy"];
+        let fraction = measured["identical_fraction"].as_f64().unwrap_or(0.0);
+        any_degenerate |= fraction > 0.0;
+        degeneracy_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td class=\"{}\">{:.4}</td></tr>",
+            escape(entry["specimen"].as_str().unwrap_or("")),
+            measured["identical"].as_u64().unwrap_or(0),
+            measured["distinct"].as_u64().unwrap_or(0),
+            if fraction > 0.0 { "mixed" } else { "held" },
+            fraction,
+        ));
+    }
+
+    let mut plots = String::new();
+    for entry in plotted {
+        plots.push_str(&paired_null_plot(
+            &numbers(&entry["order"]),
+            &numbers(&entry["first_order"]),
+            entry["observed"].as_f64(),
+            entry["specimen"].as_str().unwrap_or(""),
+            entry["k"].as_u64().unwrap_or(0),
+        ));
+    }
+
+    let degeneracy_note = if any_degenerate {
+        "<p class=\"mixed\"><strong>Partial degeneracy, reported rather than smoothed.</strong> \
+         Conditioning on every first-order transition count of a short sequence over a large \
+         vocabulary can leave the observed sequence as the only, or the most likely, path with \
+         those counts. Where that fraction is above zero, part of the null distribution <em>is</em> \
+         the observation, and the null is correspondingly less able to move.</p>"
+    } else {
+        ""
+    };
+
+    format!(
+        "<section class=\"card\">\
+         <h2>The same search, against a first-order transition null</h2>\
+         <p class=\"muted\">sprint:20, task:30. <strong>Nothing here is adopted.</strong> R1, the \
+         complete search, the ladder, the deduplication and the top-k reporting are sprint:19's, \
+         unchanged. <em>Only the null moved.</em> sprint:19's order null permutes marks across the \
+         whole sequence, which destroys the schema's own request&rarr;outcome adjacency and would \
+         separate on that alone. This null draws uniformly from the sequences that have <strong>\
+         exactly the observed first-order transition counts</strong> and the observed first mark, so \
+         vocabulary, marginals, immediate repetition, run structure and that adjacency all survive \
+         exactly, and only longer-range reuse is destroyed. B = {}, tail estimates are \
+         (1 + exceedances)/(B + 1) under this null and this search, and nothing more.</p>\
+         <h3>Controlled fixtures</h3>\
+         <p class=\"muted\">Synthetic and obviously so. The negative control is two walks of a known \
+         first-order chain and must look ordinary; the positive control plants a twelve-mark figure \
+         twice in each walk, at sites chosen so that <em>no transition outside the chain's own \
+         support is created</em>, and must be recovered at the planted length. The last column is \
+         the same fixture under sprint:19's order null.</p>\
+         <table><thead><tr><th>control</th><th>k</th><th>T observed</th><th>null median</th>\
+         <th>null max</th><th>exceedances</th><th>p&#770;</th><th>order p&#770;</th></tr></thead>\
+         <tbody>{control_rows}</tbody></table>\
+         <h3>Paired: the same observed T against both nulls</h3>\
+         <p class=\"muted\">Opaque specimen prefixes, counts and ranks only. No discovered span is \
+         named, described or inspected, and these recordings are observational specimens rather \
+         than ground truth. <em>T observed is identical in both columns by construction</em> — the \
+         observed search does not know which null it will be compared against.</p>\
+         <table><thead><tr><th>specimen</th><th>k</th><th>T observed</th><th>order median</th>\
+         <th>order p&#770;</th><th>1st-order median</th><th>1st-order p&#770;</th>\
+         <th>median shift</th><th>change</th></tr></thead><tbody>{paired_rows}</tbody></table>\
+         <h3>Where the null distribution moved</h3>\
+         <p class=\"muted\">Both nulls for one specimen, on one shared axis, with the observed T \
+         marked. The lower band is sprint:19's order null; the upper band is this round's \
+         first-order null. If the upper band sits where the lower one did, local grammar explained \
+         nothing; if it has moved toward the marked line, local grammar explained most of \
+         sprint:19's separation.</p>{plots}\
+         <h3>How far the null can move at all</h3>\
+         <p class=\"muted\">Replicates identical to the observed mark sequence, and distinct \
+         sequences reached, at B = {}.</p>\
+         <table><thead><tr><th>specimen</th><th>identical</th><th>distinct</th>\
+         <th>identical fraction</th></tr></thead><tbody>{degeneracy_rows}</tbody></table>\
+         {degeneracy_note}\
+         <p class=\"line\"><span class=\"num strong\">{} of {}</span> cells separate under the order \
+         null; <span class=\"num strong\">{} of {}</span> under the first-order null; \
+         <span class=\"num\">retention {} of {}.</span></p>\
+         <p><strong>Verdict:</strong> {}</p>\
+         <p class=\"muted\">What separation under this null would earn, and nothing beyond it: that \
+         first-order categorical transition structure is insufficient to explain what the search \
+         finds. It would not establish semantic workflow recurrence, causality, independence of \
+         repeated evidence, or a calibrated probability that any span is a motif.</p>\
+         </section>",
+        document["replicates"].as_u64().unwrap_or(0),
+        document["replicates"].as_u64().unwrap_or(0),
+        summary["order_separating"].as_u64().unwrap_or(0),
+        summary["defined"].as_u64().unwrap_or(0),
+        summary["first_order_separating"].as_u64().unwrap_or(0),
+        summary["eligible"].as_u64().unwrap_or(0),
+        summary["retained"].as_u64().unwrap_or(0),
+        summary["order_separating"].as_u64().unwrap_or(0),
+        escape(document["verdict"].as_str().unwrap_or("")),
+    )
+}
+
+/// Two null distributions and one observed value, on one shared axis.
+fn paired_null_plot(
+    order: &[f64],
+    first_order: &[f64],
+    observed: Option<f64>,
+    specimen: &str,
+    k: u64,
+) -> String {
+    if order.is_empty() || first_order.is_empty() {
+        return format!(
+            "<p class=\"muted\">{} at k={k}: no null distribution to plot. That is an absence, not \
+             a zero.</p>",
+            escape(specimen)
+        );
+    }
+    let min = order
+        .iter()
+        .chain(first_order)
+        .chain(observed.iter())
+        .copied()
+        .fold(f64::INFINITY, f64::min);
+    let max = order
+        .iter()
+        .chain(first_order)
+        .chain(observed.iter())
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let span = if (max - min).abs() < 1e-9 {
+        1.0
+    } else {
+        max - min
+    };
+
+    const BINS: usize = 48;
+    let bin = |values: &[f64]| -> Vec<usize> {
+        let mut counts = vec![0usize; BINS];
+        for value in values {
+            let index = (((value - min) / span) * (BINS as f64 - 1.0)).round() as usize;
+            counts[index.min(BINS - 1)] += 1;
+        }
+        counts
+    };
+    let (lower, upper) = (bin(order), bin(first_order));
+    let tallest = lower
+        .iter()
+        .chain(&upper)
+        .copied()
+        .max()
+        .unwrap_or(1)
+        .max(1);
+
+    let bars = |counts: &[usize], class: &str, baseline: f64| -> String {
+        counts
+            .iter()
+            .enumerate()
+            .filter(|(_, count)| **count > 0)
+            .map(|(index, count)| {
+                let x = 6.0 + (index as f64 / BINS as f64) * 88.0;
+                let height = (*count as f64 / tallest as f64) * 15.0;
+                format!(
+                    "<rect class=\"{class}\" x=\"{x:.2}\" y=\"{:.2}\" width=\"{:.2}\" height=\"{height:.2}\"/>",
+                    baseline - height,
+                    88.0 / BINS as f64 * 0.8
+                )
+            })
+            .collect::<String>()
+    };
+    let marker = match observed {
+        Some(value) => {
+            let x = 6.0 + ((value - min) / span) * 88.0;
+            format!("<line class=\"observed\" x1=\"{x:.2}\" y1=\"2\" x2=\"{x:.2}\" y2=\"37\"/>")
+        }
+        // An undefined T is named, never drawn at zero.
+        None => String::new(),
+    };
+
+    format!(
+        "<figure class=\"panel\"><figcaption>{} at k={k} — order null (lower), first-order null \
+         (upper), observed T marked{}</figcaption>\
+         <svg viewBox=\"0 0 100 40\" preserveAspectRatio=\"none\" role=\"img\" \
+         aria-label=\"Two null distributions of T on a shared axis with the observed value\">\
+         {}{}{marker}\
+         <line class=\"rule\" x1=\"6\" y1=\"36\" x2=\"94\" y2=\"36\"/>\
+         <line class=\"rule\" x1=\"6\" y1=\"18\" x2=\"94\" y2=\"18\"/>\
+         </svg></figure>\
+         <p class=\"legend\">x-axis: R1 in nats, {:.2} to {:.2}</p>",
+        escape(specimen),
+        match observed {
+            Some(value) => format!(" at {value:.4}"),
+            None => " — T undefined, so nothing is marked".to_owned(),
+        },
+        bars(&lower, "bin", 36.0),
+        bars(&upper, "front", 18.0),
+        // A negative zero is an artefact of the float, not a score below zero.
+        if min == 0.0 { 0.0 } else { min },
+        if max == 0.0 { 0.0 } else { max },
+    )
+}
+
+/// The sprint:20 null-construction card: what each construction preserves.
+///
+/// Selected when a document carries `fidelity`. task:30 §PHASE 2.
+///
+/// This sits **above** the calibration card deliberately. The reason sprint:19's
+/// result needed rerunning is that its null destroyed structure that had nothing
+/// to do with motifs, and a reader who sees the new tails without seeing that
+/// measurement has no way to tell why the null changed.
+fn first_order_adequacy_card(document: &serde_json::Value) -> String {
+    let empty = Vec::new();
+    let fidelity = document["fidelity"].as_array().unwrap_or(&empty);
+    let summaries = document["summaries"].as_array().unwrap_or(&empty);
+    let shared = document["shared_runs"].as_array().unwrap_or(&empty);
+
+    let mut fidelity_rows = String::new();
+    for row in fidelity {
+        let transition = row["transition_tv"].as_f64().unwrap_or(f64::NAN);
+        fidelity_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td class=\"{}\">{:.4}</td><td>{:.4}</td><td>{:.1}</td>\
+             <td>{:.4}</td></tr>",
+            escape(row["specimen"].as_str().unwrap_or("")),
+            escape(row["construction"].as_str().unwrap_or("")),
+            if transition == 0.0 { "held" } else { "broken" },
+            transition,
+            row["max_state_tv"].as_f64().unwrap_or(f64::NAN),
+            row["absent_transitions"].as_f64().unwrap_or(f64::NAN),
+            row["marginal_tv"].as_f64().unwrap_or(f64::NAN),
+        ));
+    }
+
+    let mut summary_rows = String::new();
+    for row in summaries {
+        let summary = &row["summary"];
+        let outside = summary["outside_null_range"].as_bool().unwrap_or(false);
+        summary_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td>{}</td><td class=\"{}\">{:.4}</td><td>{:.4}</td>\
+             <td>{:.4}</td><td>{:.4}</td><td class=\"{}\">{}</td></tr>",
+            escape(row["specimen"].as_str().unwrap_or("")),
+            escape(row["construction"].as_str().unwrap_or("")),
+            escape(summary["name"].as_str().unwrap_or("")),
+            if outside { "broken" } else { "" },
+            summary["observed"].as_f64().unwrap_or(f64::NAN),
+            summary["null_median"].as_f64().unwrap_or(f64::NAN),
+            summary["null_min"].as_f64().unwrap_or(f64::NAN),
+            summary["null_max"].as_f64().unwrap_or(f64::NAN),
+            if outside { "broken" } else { "held" },
+            if outside {
+                "outside null range"
+            } else {
+                "inside"
+            },
+        ));
+    }
+
+    let mut shared_rows = String::new();
+    for row in shared {
+        let observed = row["observed"].as_f64().unwrap_or(f64::NAN);
+        let maximum = row["null_max"].as_f64().unwrap_or(f64::NAN);
+        shared_rows.push_str(&format!(
+            "<tr><td>{}</td><td>{}</td><td class=\"{}\">{:.0}</td><td>{:.0}</td><td>{:.0}</td>\
+             <td>{:.0}</td></tr>",
+            escape(row["pair"].as_str().unwrap_or("")),
+            escape(row["construction"].as_str().unwrap_or("")),
+            if observed > maximum { "mixed" } else { "" },
+            observed,
+            row["null_median"].as_f64().unwrap_or(f64::NAN),
+            row["null_min"].as_f64().unwrap_or(f64::NAN),
+            maximum,
+        ));
+    }
+
+    format!(
+        "<section class=\"card\">\
+         <h2>What each null construction preserves, measured before it was used</h2>\
+         <p class=\"muted\">sprint:20, task:30 &sect;PHASE 2. <strong>No search runs in this card \
+         and no verdict is reached in it.</strong> These measurements decide which construction may \
+         be called transition-preserving, and they were computed before any criterion about T was \
+         written. R = {} replicates per construction per sequence.</p>\
+         <h3>Transition fidelity — median over replicates</h3>\
+         <p class=\"muted\">The exact construction conditions on the observed transition counts and \
+         estimates nothing, so every distance is zero by construction. The fitted chain estimates \
+         them from one short sequence, and at these lengths that is a long way from preserving \
+         them: <em>preserved in expectation is not preserved</em>, and this is the table that says \
+         so.</p>\
+         <table><thead><tr><th>specimen</th><th>construction</th><th>transition TV</th>\
+         <th>max state TV</th><th>absent transitions</th><th>marginal TV</th></tr></thead>\
+         <tbody>{fidelity_rows}</tbody></table>\
+         <h3>The three summaries that condemned the order null</h3>\
+         <p class=\"muted\">sprint:19's own measures, unchanged. Every observational specimen has an \
+         immediate repetition rate of exactly zero — no mark ever follows itself, because the schema \
+         correlates a tool request with its own outcome — and the order null, which shuffles marks, \
+         produces repeats constantly. A row marked outside is a nuisance property the null destroyed \
+         and should not have.</p>\
+         <table><thead><tr><th>specimen</th><th>construction</th><th>summary</th><th>observed</th>\
+         <th>null median</th><th>null min</th><th>null max</th><th></th></tr></thead>\
+         <tbody>{summary_rows}</tbody></table>\
+         <h3>Longest shared run — descriptive, and read by no criterion</h3>\
+         <p class=\"muted\">The longest run of marks two sequences carry contiguously in common, \
+         observed against each null. It is a length, never a mark, and it ranks nothing: it exists \
+         to show what each null destroys across a pair, and to check that the controlled fixture \
+         can discriminate at all.</p>\
+         <table><thead><tr><th>pair</th><th>construction</th><th>observed</th><th>null median</th>\
+         <th>null min</th><th>null max</th></tr></thead><tbody>{shared_rows}</tbody></table>\
+         </section>",
+        document["replicates"].as_u64().unwrap_or(0),
+    )
+}
+
 /// Read a JSON array of numbers, dropping anything that is not one.
 fn numbers(value: &serde_json::Value) -> Vec<f64> {
     value
@@ -1549,7 +1926,11 @@ pub fn render(documents: &[serde_json::Value]) -> String {
     let cards: String = documents
         .iter()
         .map(|document| {
-            if document.get("selection_effect").is_some() {
+            if document.get("paired").is_some() {
+                first_order_card(document)
+            } else if document.get("fidelity").is_some() {
+                first_order_adequacy_card(document)
+            } else if document.get("selection_effect").is_some() {
                 calibration_card(document)
             } else if document.get("fresh_families").is_some() {
                 discriminating_card(document)

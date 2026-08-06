@@ -406,9 +406,38 @@ pub fn fidelity(observed: &EventSequence<'_>, replicate: &EventSequence<'_>) -> 
             None => return worst_case(),
         }
     }
+    compare(&path, &replicate_path, vocabulary.len())
+}
 
-    let observed_counts = transitions(&path);
-    let replicate_counts = transitions(&replicate_path);
+/// The same four quantities between **two sequences neither of which is a null
+/// replicate of the other**, over the union of their vocabularies.
+///
+/// [`fidelity`] treats a mark it has never seen as a defect, because a null
+/// construction that invents one is broken. Comparing a planted control against
+/// its own unplanted background is a different question: planting may well reach
+/// a state the background walk never visited, and that is contamination to
+/// measure rather than a defect to flag. task:30 §PHASE 4 reports the positive
+/// control's contamination through this.
+pub fn divergence(left: &EventSequence<'_>, right: &EventSequence<'_>) -> Fidelity {
+    let (mut vocabulary, left_path) = states(left);
+    let mut right_path: Vec<usize> = Vec::with_capacity(right.events.len());
+    for event in &right.events {
+        let index = match vocabulary.iter().position(|mark| *mark == event.mark) {
+            Some(found) => found,
+            None => {
+                vocabulary.push(event.mark);
+                vocabulary.len() - 1
+            }
+        };
+        right_path.push(index);
+    }
+    compare(&left_path, &right_path, vocabulary.len())
+}
+
+/// The arithmetic both of the above share, over one common state space.
+fn compare(path: &[usize], replicate_path: &[usize], vertices: usize) -> Fidelity {
+    let observed_counts = transitions(path);
+    let replicate_counts = transitions(replicate_path);
     let observed_pairs = path.len().saturating_sub(1) as f64;
     let replicate_pairs = replicate_path.len().saturating_sub(1) as f64;
 
@@ -436,7 +465,7 @@ pub fn fidelity(observed: &EventSequence<'_>, replicate: &EventSequence<'_>) -> 
 
     // Per-state outgoing distributions.
     let mut max_state_tv: f64 = 0.0;
-    for state in 0..vocabulary.len() {
+    for state in 0..vertices {
         let observed_out: usize = observed_counts
             .iter()
             .filter(|((from, _), _)| *from == state)
@@ -454,19 +483,19 @@ pub fn fidelity(observed: &EventSequence<'_>, replicate: &EventSequence<'_>) -> 
             max_state_tv = 1.0;
             continue;
         }
-        let mut divergence = 0.0;
-        for target in 0..vocabulary.len() {
+        let mut spread = 0.0;
+        for target in 0..vertices {
             let left =
                 *observed_counts.get(&(state, target)).unwrap_or(&0) as f64 / observed_out as f64;
             let right =
                 *replicate_counts.get(&(state, target)).unwrap_or(&0) as f64 / replicate_out as f64;
-            divergence += (left - right).abs();
+            spread += (left - right).abs();
         }
-        max_state_tv = max_state_tv.max(0.5 * divergence);
+        max_state_tv = max_state_tv.max(0.5 * spread);
     }
 
-    let observed_occupancy = occupancy(&path, vocabulary.len());
-    let replicate_occupancy = occupancy(&replicate_path, vocabulary.len());
+    let observed_occupancy = occupancy(path, vertices);
+    let replicate_occupancy = occupancy(replicate_path, vertices);
     let marginal_tv = 0.5
         * observed_occupancy
             .iter()
