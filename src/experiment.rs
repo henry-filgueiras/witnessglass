@@ -51,6 +51,11 @@ pub mod boundary_page;
 // both paths; the existing boundary-fixed null machinery is not reused.
 pub mod calibration;
 pub mod conditional_null;
+// sprint:21's local corpus report, authorized by decision:9. Reads a directory,
+// derives a second projection beside the raw one, calls the search without
+// changing it, and renders a document. Not a product surface: `src/main.rs` does
+// not reach it and must not start.
+pub mod corpus;
 // sprint:18's fresh gauntlet, built so that the frozen statistic and the
 // pooled candidate make different numerical predictions. The old families
 // discriminate nothing between them and are regressions now.
