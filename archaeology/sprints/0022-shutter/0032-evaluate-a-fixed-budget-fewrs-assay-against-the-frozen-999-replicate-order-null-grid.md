@@ -673,3 +673,54 @@ shape.
 cells, most likely 15 to 17, agreement 0.73 to 0.83 — landed on 17 and 0.8000, and the only evidence that
 it predated the run is that commit `1c1330e` contains the preregistration and no FewRS code. That works
 inside the repository and is worth nothing outside it.
+
+### 16. Correction, appended by maintenance:3 — 2026-08-11
+
+**Nothing above is rewritten.** §7 of `CLAUDE.md` keeps previous conclusions where they were written, so
+this section supersedes specific sentences rather than editing them, and maintenance:3 carries the full
+account. **The result itself is unchanged and was re-verified, not recomputed:** controls PASS, 17 of 30
+cells certified at `m = 459`, classification `STRONG`, agreement 24/30 and 26/30, 18 360 null searches.
+
+**The statistical explanation in §10, §11, §12 and §PHASE 0 D11 was wrong in its reasoning, and the
+conclusion it supported was right.** Those sections explain `m = 459` as the price of FewRS's family-wise
+pooled maximum, and conclude the budget is over-bought *because* this grid cannot form one. Withdrawn,
+and replaced by:
+
+> `m = ceil(ln(1/alpha)/ln(1/(1-alpha)))` is the cost of FewRS's **particular high-probability
+> upper-bound construction**. The formula reads `alpha` and nothing else, and **applies to a single
+> analysis exactly as it does to a family** — so the budget is not caused by pooling and does not shrink
+> if you stop pooling. What this round implemented is not FewRS's procedure but an **ordinary
+> strict-maximum randomization test** per cell, whose guarantee comes from exchangeability alone: the
+> probability the observation is the strict maximum of itself and `m` null statistics is at most
+> `1/(m+1)`. For one exchangeable scalar statistic at `alpha = 0.01`, `m = 99` already gives at most
+> `1/100 = 0.01`, and §10 measured it at 22 of 30 cells and 27 of 30 agreement against 459's 17 and 24.
+> FewRS is operationally dominated for this narrow binary per-cell question.
+
+Three boundaries the corrected reading does **not** cross. The 99-draw test is a per-cell test and
+confers **no** family-wise control over this heterogeneous 30-cell grid; a pooled max-statistic test
+would need a coherent null dataset, a family statistic on a commensurable or defensibly normalized
+scale, and its own error-control contract, none of which this round built. And the paper's stronger
+threshold guarantee should not be relied on operationally here without independent statistical review —
+its assumptions were never checked against this pipeline.
+
+**§12's nomination of sprint:21 is withdrawn.** It rested on the mistaken reasoning above — if 459 is not
+the price of pooling, "find something that pools" is not a reason to keep FewRS — and it pointed at a
+structure this round measured nothing about, read from task:31's acceptance criteria rather than
+exercised. What survives is narrower and is a different investigation: sprint:21's calibration may be a
+candidate for an *ordinary pooled max-statistic randomization test*, which is not FewRS. No sprint is
+opened for it.
+
+**Why `STRONG` and "retire" are compatible, stated plainly because §7 above left it implicit:**
+
+> The preregistered experiment produced a STRONG result under its frozen success criterion, but FewRS
+> was still retired because a simpler 99-draw scalar randomization test delivered at least the same
+> certification count — 22 of 30 against 459's 17 — with substantially less computation. The
+> classification and the adoption decision answer different questions.
+
+**Two engineering defects in this round's own deliverables, both repaired by maintenance:3 and neither
+touching a number above.** `--json` printed the human report to stdout and appended the document after
+it, so the runbook's documented redirection produced a file no parser accepts; nothing committed was
+malformed, because `.witnessglass/` is gitignored. And `classify` read only a control flag and a
+certified count, so **any** invocation was scored against the frozen 15-of-30 threshold —
+`--fewrs --replicates 99`, the diagnostic §10 rests on, printed `STRONG`. Both are now gated and tested;
+§10's numbers were computed by hand from the run's own output at the time and are unaffected.

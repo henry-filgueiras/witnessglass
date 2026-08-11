@@ -13,7 +13,7 @@
 use witnessglass::experiment::calibration::{self, LADDER, negative_control, positive_control};
 use witnessglass::experiment::event_sequence::{null_seed, order_null_seeded};
 use witnessglass::experiment::fewrs::{
-    self, ALPHA, BUDGET, BudgetError, Classification, HISTORICAL_REPLICATES,
+    self, ALPHA, BUDGET, BudgetError, Cell, Classification, HISTORICAL_REPLICATES, RunDescriptor,
     SPRINT_19_ORDER_NULL_GRID, STRONG_THRESHOLD, assay, classify, fewrs_budget, fewrs_certifies,
     historical_cell, refuting_nulls,
 };
@@ -317,20 +317,326 @@ fn a_cell_outside_the_frozen_grid_carries_no_historical_comparison() {
 }
 
 // ---------------------------------------------------------------------------
-// PHASE 9 — the classification, and PHASE 7 — cost
+// PHASE 9 — the classification, gated by maintenance:3's envelope
 // ---------------------------------------------------------------------------
 
-/// The partition tiles: falsification takes precedence, and the two remaining
-/// branches are complementary on the certified count.
+/// A cell carrying the frozen protocol's metadata, cheap enough to clone.
+///
+/// The envelope is a pure function of cell *metadata* — budget, seed range, null
+/// mode, identity — so the statistics behind these cells are irrelevant and one
+/// real `assay` at a one-replicate budget supplies them all. Overwriting the
+/// budget fields is what makes it a frozen-protocol template; a test that needed
+/// real 459-replicate statistics would be testing the assay, not the gate.
+fn frozen_template() -> Cell {
+    let control = negative_control();
+    let mut cell = assay("template", &control.first, &control.second, 3, 1);
+    cell.planned_budget = BUDGET;
+    cell.null_searches = BUDGET;
+    cell.null_datasets = BUDGET * 2;
+    cell.seed_range = fewrs::seed_range(BUDGET);
+    cell
+}
+
+/// One cell at a given identity, with its historical join set the way the runner
+/// would have set it.
+fn cell_at(template: &Cell, specimen: &str, k: usize) -> Cell {
+    let mut cell = template.clone();
+    cell.specimen = specimen.to_owned();
+    cell.k = k;
+    cell.historical_tail = historical_cell(specimen, k).map(|row| row.tail);
+    cell
+}
+
+/// The ten control cells §PHASE 4 requires.
+fn frozen_controls(template: &Cell) -> Vec<Cell> {
+    let mut cells = Vec::new();
+    for label in fewrs::EXPECTED_CONTROLS {
+        for k in LADDER {
+            cells.push(cell_at(template, label, k));
+        }
+    }
+    cells
+}
+
+/// The thirty observational cells, exactly the frozen grid.
+fn frozen_grid(template: &Cell) -> Vec<Cell> {
+    SPRINT_19_ORDER_NULL_GRID
+        .iter()
+        .map(|row| cell_at(template, row.specimen, row.k))
+        .collect()
+}
+
+fn frozen_specimens() -> Vec<String> {
+    fewrs::EXPECTED_SPECIMENS
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect()
+}
+
+/// **The gate maintenance:3 exists for.** The frozen envelope is classifiable
+/// and the partition still tiles inside it.
 #[test]
-fn the_classification_partition_tiles() {
+fn the_frozen_envelope_is_classifiable_and_the_partition_tiles() {
     assert_eq!(STRONG_THRESHOLD, 15);
-    assert_eq!(classify(false, 30), Classification::Falsification);
-    assert_eq!(classify(false, 0), Classification::Falsification);
-    assert_eq!(classify(true, 15), Classification::Strong);
-    assert_eq!(classify(true, 30), Classification::Strong);
-    assert_eq!(classify(true, 14), Classification::WeakMixed);
-    assert_eq!(classify(true, 0), Classification::WeakMixed);
+    let template = frozen_template();
+    let controls = frozen_controls(&template);
+    let cells = frozen_grid(&template);
+    let specimens = frozen_specimens();
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &specimens,
+        controls: &controls,
+        cells: &cells,
+    });
+
+    assert!(
+        envelope.protocol_established() && envelope.grid_complete(),
+        "the frozen run must be eligible; reasons {:?}",
+        envelope.reasons()
+    );
+    assert_eq!(classify(&envelope, true, 15), Classification::Strong);
+    assert_eq!(classify(&envelope, true, 30), Classification::Strong);
+    assert_eq!(classify(&envelope, true, 14), Classification::WeakMixed);
+    assert_eq!(classify(&envelope, true, 0), Classification::WeakMixed);
+    assert!(classify(&envelope, true, 17).is_preregistered());
+}
+
+/// **An eligible assay whose control fails is FALSIFIED, not merely
+/// diagnostic.** The frozen protocol stops before the observational stage when a
+/// control fails, so the empty grid is obedience and must not be read as a
+/// broken envelope.
+#[test]
+fn an_eligible_assay_with_a_failed_control_is_falsified_rather_than_diagnostic() {
+    let template = frozen_template();
+    let controls = frozen_controls(&template);
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &[],
+        controls: &controls,
+        cells: &[],
+    });
+
+    assert!(envelope.protocol_established(), "the protocol is intact");
+    assert!(
+        !envelope.grid_complete(),
+        "and the grid is empty, as it should be"
+    );
+    assert_eq!(
+        classify(&envelope, false, 0),
+        Classification::Falsification,
+        "a failed control on an intact protocol is a preregistered outcome"
+    );
+}
+
+/// Every altered run below must land on `DIAGNOSTIC / UNCLASSIFIED`, and must
+/// say which condition it broke.
+fn assert_unclassified(label: &str, envelope: &fewrs::Envelope, expect: &str) {
+    assert_eq!(
+        classify(envelope, true, 30),
+        Classification::DiagnosticUnclassified,
+        "{label}: a 30-certified count must not reach STRONG outside the envelope"
+    );
+    let reasons: Vec<String> = envelope.reasons().iter().map(|r| r.to_string()).collect();
+    assert!(
+        reasons.iter().any(|reason| reason.contains(expect)),
+        "{label}: reasons {reasons:?} should mention {expect:?}"
+    );
+}
+
+/// No observational corpus: the protocol is intact but the grid is not there.
+#[test]
+fn a_run_with_no_corpus_is_unclassified() {
+    let template = frozen_template();
+    let controls = frozen_controls(&template);
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &[],
+        controls: &controls,
+        cells: &[],
+    });
+    assert_unclassified("no corpus", &envelope, "unique observational cells");
+}
+
+/// **The defect that motivated the gate.** `--replicates 99` printed `STRONG`.
+#[test]
+fn a_run_at_99_replicates_is_unclassified() {
+    let control = negative_control();
+    let mut template = assay("template", &control.first, &control.second, 3, 1);
+    template.planned_budget = 99;
+    template.null_searches = 99;
+    template.seed_range = fewrs::seed_range(99);
+    let controls = frozen_controls(&template);
+    let cells = frozen_grid(&template);
+    let specimens = frozen_specimens();
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: 99,
+        specimens: &specimens,
+        controls: &controls,
+        cells: &cells,
+    });
+    assert!(!envelope.protocol_established());
+    assert_unclassified("99 replicates", &envelope, "budget is 99");
+    let reasons: Vec<String> = envelope.reasons().iter().map(|r| r.to_string()).collect();
+    assert!(
+        reasons.iter().any(|reason| reason.contains("seed range")),
+        "the seed prefix is a separate condition and must also fire: {reasons:?}"
+    );
+}
+
+/// Thirty cells is not the test. **Thirty of the right cells is.**
+#[test]
+fn thirty_cells_with_the_wrong_identities_are_unclassified() {
+    let template = frozen_template();
+    let controls = frozen_controls(&template);
+    let specimens = frozen_specimens();
+    // Same count, same span lengths, pairs that were never in the grid.
+    let cells: Vec<Cell> = SPRINT_19_ORDER_NULL_GRID
+        .iter()
+        .map(|row| {
+            let mut cell = cell_at(&template, row.specimen, row.k);
+            cell.specimen = format!("aaaaaaaa x {}", &row.specimen[11..]);
+            cell.historical_tail = None;
+            cell
+        })
+        .collect();
+    assert_eq!(cells.len(), 30, "the count alone would have passed");
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &specimens,
+        controls: &controls,
+        cells: &cells,
+    });
+    assert_unclassified("wrong identities", &envelope, "not the frozen 30 cells");
+}
+
+/// A missing, an extra, and a duplicated cell, each on its own.
+#[test]
+fn a_missing_extra_or_duplicate_cell_is_unclassified() {
+    let template = frozen_template();
+    let controls = frozen_controls(&template);
+    let specimens = frozen_specimens();
+    let descriptor = |cells: &[Cell]| {
+        fewrs::envelope(&RunDescriptor {
+            alpha: ALPHA,
+            budget: BUDGET,
+            specimens: &specimens,
+            controls: &controls,
+            cells,
+        })
+    };
+
+    let mut missing = frozen_grid(&template);
+    missing.pop();
+    assert_unclassified("missing", &descriptor(&missing), "not the frozen 30 cells");
+
+    let mut extra = frozen_grid(&template);
+    extra.push(cell_at(&template, "8b68dece x 57f18ff9", 5));
+    assert_unclassified("extra", &descriptor(&extra), "not the frozen 30 cells");
+
+    let mut duplicated = frozen_grid(&template);
+    duplicated.push(duplicated[0].clone());
+    assert_unclassified("duplicate", &descriptor(&duplicated), "duplicated cells");
+}
+
+/// A cell that cannot be joined to the published grid is named as such.
+#[test]
+fn a_cell_unmatched_to_the_historical_grid_is_unclassified() {
+    let template = frozen_template();
+    let controls = frozen_controls(&template);
+    let specimens = frozen_specimens();
+    let mut cells = frozen_grid(&template);
+    // Right identity, no historical join — the shape a widened grid would take.
+    cells[7].historical_tail = None;
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &specimens,
+        controls: &controls,
+        cells: &cells,
+    });
+    assert_unclassified(
+        "unmatched",
+        &envelope,
+        "no match in sprint:19's published grid",
+    );
+}
+
+/// The specimen identity set is compared, not counted.
+#[test]
+fn a_wrong_specimen_set_is_unclassified() {
+    let template = frozen_template();
+    let controls = frozen_controls(&template);
+    let cells = frozen_grid(&template);
+
+    for specimens in [
+        vec!["8b68dece", "57f18ff9", "f5c18299"],
+        vec!["8b68dece", "57f18ff9", "f5c18299", "7d95c414", "c3afa0ca"],
+        vec!["8b68dece", "57f18ff9", "f5c18299", "c3afa0ca"],
+    ] {
+        let owned: Vec<String> = specimens.iter().map(|s| (*s).to_owned()).collect();
+        let envelope = fewrs::envelope(&RunDescriptor {
+            alpha: ALPHA,
+            budget: BUDGET,
+            specimens: &owned,
+            controls: &controls,
+            cells: &cells,
+        });
+        assert_unclassified("specimen set", &envelope, "decision:8's four");
+    }
+}
+
+/// A different null construction or seed schedule breaks the protocol, and the
+/// cell reports it from the path it took rather than from a caller's claim.
+#[test]
+fn a_different_null_or_seed_schedule_is_unclassified() {
+    let template = frozen_template();
+    let specimens = frozen_specimens();
+
+    let mut controls = frozen_controls(&template);
+    controls[0].null_mode = "doublet (doublet_null_seeded)";
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &specimens,
+        controls: &controls,
+        cells: &frozen_grid(&template),
+    });
+    assert_unclassified("null mode", &envelope, "a null other than");
+
+    let controls = frozen_controls(&template);
+    let mut cells = frozen_grid(&template);
+    cells[3].seed_range = "null_seed(540..999, {0,1})".to_owned();
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &specimens,
+        controls: &controls,
+        cells: &cells,
+    });
+    assert_unclassified("seed schedule", &envelope, "seed range is not");
+}
+
+/// A run that never executed the controls cannot be classified, whatever its
+/// grid looks like.
+#[test]
+fn a_run_that_bypassed_the_controls_is_unclassified() {
+    let template = frozen_template();
+    let specimens = frozen_specimens();
+    let mut controls = frozen_controls(&template);
+    controls.retain(|cell| cell.specimen != "positive control");
+    let envelope = fewrs::envelope(&RunDescriptor {
+        alpha: ALPHA,
+        budget: BUDGET,
+        specimens: &specimens,
+        controls: &controls,
+        cells: &frozen_grid(&template),
+    });
+    assert_unclassified("no controls", &envelope, "controls not executed");
 }
 
 /// The cost figures are the commission's, computed rather than quoted.
@@ -421,4 +727,219 @@ fn the_positive_control_certifies_at_the_planted_length() {
         cell.observed, cell.null_max
     );
     assert_eq!(cell.refuting_nulls, 0);
+}
+
+// ---------------------------------------------------------------------------
+// The output contract — maintenance:3
+// ---------------------------------------------------------------------------
+//
+// These run the real example binary. Testing `serde_json::to_string` on the
+// document would prove nothing: the defect maintenance:3 repaired was that the
+// *human report* also went to stdout, so only capturing the process's stdout can
+// show it is gone, and only the process path can catch a stray `println!` added
+// later.
+
+/// A line only the example's own `--help` prints.
+const EXAMPLE_BANNER: &str = "event-motif — a disposable sprint:8 experiment";
+
+/// The flag under test, as its own `--help` advertises it. A build that predates
+/// sprint:22 prints the banner and not this.
+const EXAMPLE_MODE: &str = "--fewrs";
+
+/// The built, **runnable** `event-motif` example, found beside this test binary.
+///
+/// `CARGO_BIN_EXE_*` covers `[[bin]]` targets and not examples, so the directory
+/// is derived from `current_exe()`: a test runs from `<profile>/deps/`, and cargo
+/// puts examples in `<profile>/examples/`. That keeps debug and release runs
+/// pointing at their own build rather than at a hard-coded `target/debug`.
+///
+/// **Picking by name, by modification time, or by banner is not enough**, and
+/// finding that out is what this comment is for. Two distinct wrong builds sit in
+/// this directory:
+///
+/// - Under `--all-targets` — which `scripts/check.sh` uses — cargo compiles each
+///   example a *second* time as a libtest harness. It answers `--fewrs` with
+///   `error: Unrecognized option: 'fewrs'` and exit 101.
+/// - Builds from earlier sessions persist. One predating sprint:22 prints the
+///   example banner happily and then rejects `--fewrs` as an unexpected
+///   argument.
+///
+/// So candidates are selected by the **capability under test**: run `--help` and
+/// keep a build whose own usage advertises the mode these tests exercise. Newest
+/// first among those, so a current build wins over a current-but-older one.
+fn event_motif_binary() -> std::path::PathBuf {
+    let exe = std::env::current_exe().expect("the test binary knows its own path");
+    let profile = exe
+        .parent()
+        .and_then(std::path::Path::parent)
+        .expect("a test binary lives at <profile>/deps/<name>");
+    let directory = profile.join("examples");
+    let entries = std::fs::read_dir(&directory).unwrap_or_else(|err| {
+        panic!(
+            "{} should exist — `cargo test` builds examples by default: {err}",
+            directory.display()
+        )
+    });
+
+    let mut candidates: Vec<(std::time::SystemTime, std::path::PathBuf)> = Vec::new();
+    for entry in entries {
+        let entry = entry.expect("a readable directory entry");
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Cargo emits `event_motif-<hash>` plus `.d` and `.o` siblings.
+        if !name.starts_with("event_motif-") || name.contains('.') {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .expect("a modification time");
+        candidates.push((modified, entry.path()));
+    }
+    // Newest first, and by path when two share a timestamp, so a failure names
+    // the same build twice running.
+    candidates.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));
+
+    for (_, candidate) in &candidates {
+        let Ok(output) = std::process::Command::new(candidate).arg("--help").output() else {
+            continue;
+        };
+        let help = String::from_utf8_lossy(&output.stdout);
+        if help.contains(EXAMPLE_BANNER) && help.contains(EXAMPLE_MODE) {
+            return candidate.clone();
+        }
+    }
+    panic!(
+        "no runnable event-motif example under {} advertising {EXAMPLE_MODE} (found {} \
+         candidate(s); stale builds and libtest-harness builds are skipped by design)",
+        directory.display(),
+        candidates.len()
+    )
+}
+
+/// A controls-only diagnostic run, cheap enough for the suite. Two replicates is
+/// deliberately **not** the frozen budget: the run is diagnostic by construction,
+/// which is what makes it exercise both repairs at once.
+fn run_fewrs(json: bool) -> std::process::Output {
+    let mut command = std::process::Command::new(event_motif_binary());
+    command.args(["--fewrs", "--replicates", "2"]);
+    if json {
+        command.arg("--json");
+    }
+    command
+        .output()
+        .expect("the example should run to completion")
+}
+
+/// **The regression.** With `--json`, stdout is one JSON document and nothing
+/// else — no banner, no table, no trailing prose.
+#[test]
+fn json_output_is_a_single_parseable_document_on_stdout() {
+    let output = run_fewrs(true);
+    assert!(output.status.success(), "the example should exit 0");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout is UTF-8");
+    assert!(
+        stdout.trim_start().starts_with('{'),
+        "stdout must open with the document, not a banner: {:?}",
+        stdout.chars().take(120).collect::<String>()
+    );
+
+    // The whole stream, not a prefix of it: `from_str` refuses trailing content,
+    // which is exactly the defect — the old path appended JSON *after* a report.
+    let document: serde_json::Value =
+        serde_json::from_str(&stdout).expect("the entire stdout stream must parse as one document");
+    assert_eq!(document["label"], "fewrs");
+    assert_eq!(document["budget"], 2);
+
+    // And the human report is not lost — it moved to stderr.
+    let stderr = String::from_utf8(output.stderr).expect("stderr is UTF-8");
+    assert!(
+        stderr.contains("the sprint:22 fixed-budget FewRS retrospective assay"),
+        "the report must remain visible on stderr"
+    );
+    // Report-only markers. The document's own `role` field mentions the round,
+    // so the marker has to be something only the human rendering emits.
+    for marker in ["event-motif", "§PHASE 4", "control rules —", "null max"] {
+        assert!(
+            !stdout.contains(marker),
+            "no part of the report may reach stdout; found {marker:?}"
+        );
+    }
+}
+
+/// Without `--json` the human rendering is unchanged and stdout carries it.
+#[test]
+fn without_json_the_human_report_still_goes_to_stdout() {
+    let output = run_fewrs(false);
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).expect("stdout is UTF-8");
+    assert!(stdout.contains("the sprint:22 fixed-budget FewRS retrospective assay"));
+    assert!(stdout.contains("classification — task:32"));
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&stdout).is_err(),
+        "the human rendering is not JSON, and is not claimed to be"
+    );
+}
+
+/// **The two renderings must not disagree.** Same run, same classification, same
+/// eligibility, same reasons — one of them machine-readable and one of them not.
+#[test]
+fn json_and_human_output_agree_about_eligibility_classification_and_reasons() {
+    let json_run = run_fewrs(true);
+    let human_run = run_fewrs(false);
+
+    let document: serde_json::Value =
+        serde_json::from_str(&String::from_utf8(json_run.stdout).expect("UTF-8"))
+            .expect("one document");
+    let json_report = String::from_utf8(json_run.stderr).expect("UTF-8");
+    let human_report = String::from_utf8(human_run.stdout).expect("UTF-8");
+
+    let label = document["classification"]
+        .as_str()
+        .expect("a classification label");
+    assert_eq!(
+        label,
+        Classification::DiagnosticUnclassified.label(),
+        "a two-replicate controls-only run is a diagnostic"
+    );
+    assert_eq!(document["classification_is_preregistered"], false);
+    assert_eq!(document["eligibility"]["protocol_established"], false);
+    assert_eq!(document["eligibility"]["grid_complete"], false);
+
+    for report in [&json_report, &human_report] {
+        assert!(
+            report.contains(label),
+            "both renderings name the classification"
+        );
+        assert!(
+            !report.contains("STRONG needs >="),
+            "an unclassified run must never be shown against the frozen threshold"
+        );
+    }
+
+    let reasons = document["eligibility"]["reasons_text"]
+        .as_array()
+        .expect("machine-readable reasons");
+    assert!(!reasons.is_empty(), "an unclassified run must say why");
+    for reason in reasons {
+        let text = reason.as_str().expect("a reason line");
+        for report in [&json_report, &human_report] {
+            assert!(
+                report.contains(text),
+                "both renderings must carry the reason {text:?}"
+            );
+        }
+    }
+
+    // The typed reasons and their rendered text describe the same conditions.
+    let conditions: Vec<&str> = document["eligibility"]["protocol_reasons"]
+        .as_array()
+        .expect("typed protocol reasons")
+        .iter()
+        .map(|reason| reason["condition"].as_str().expect("a tagged condition"))
+        .collect();
+    assert!(
+        conditions.contains(&"budget_not_derived"),
+        "a two-replicate run breaks the budget condition: {conditions:?}"
+    );
 }

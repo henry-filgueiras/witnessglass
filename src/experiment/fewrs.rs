@@ -17,18 +17,44 @@
 //!
 //! # The guarantee, stated exactly, because it is smaller than the paper's
 //!
-//! task:32 §PHASE 0 D11. The published FewRS procedure compares every analysis
-//! against the maximum statistic over **all analyses and all `m` resamples**,
-//! and derives family-wise error control from that pooled maximum. This module
-//! compares each cell against **its own** null maximum, because `T_k` at
-//! different span lengths are R1 sums over different window sizes and are not on
-//! a common scale — there is no pooled maximum to form, and task:32 §PHASE 11
-//! forbids inventing one by normalization.
+//! task:32 §PHASE 0 D11, **as corrected by maintenance:3.** The original wording
+//! here explained `m = 459` as the price of pooling a family of analyses. That
+//! is wrong, and the correction matters because it is the only reason this
+//! module exists to be read.
 //!
-//! What a certified cell therefore earns is an **exact conditional test at level
-//! `1/(m+1) = 1/460`**, by exchangeability of the observed statistic with its own
-//! 459 null statistics. It earns **no** family-wise guarantee across the 30
-//! cells, and nothing here may be read as one.
+//! `m = ceil(ln(1/alpha)/ln(1/(1-alpha)))` is the cost of FewRS's **particular
+//! high-probability upper-bound construction** — the budget at which its bound on
+//! the null statistic's threshold holds with the probability it wants. The
+//! formula takes `alpha` and nothing else. **It applies to a single analysis just
+//! as it does to a family**, so the number is not caused by pooling and does not
+//! shrink if you stop pooling.
+//!
+//! What this module computes is not FewRS's procedure: it compares each cell
+//! against **its own** null maximum rather than against a maximum pooled over
+//! analyses and resamples. That per-cell rule is an ordinary strict-maximum
+//! randomization test, and its guarantee comes from exchangeability alone — under
+//! the null the observed statistic and its `m` null statistics are exchangeable,
+//! so the probability the observation is the strict maximum is at most
+//! `1/(m+1)`.
+//!
+//! **Which is why 459 is the wrong number for this question.** For one
+//! exchangeable scalar statistic at `alpha = 0.01`, `m = 99` already gives a null
+//! rejection probability of at most `1/(99+1) = 0.01`. task:32 measured both:
+//! the 99-draw test certified 22 of 30 cells and agreed with sprint:19's frozen
+//! grid on 27 of 30, against 17 and 24 for the 459-draw FewRS assay. For the
+//! narrow binary per-cell question, FewRS is **operationally dominated** — 4.6x
+//! the computation for fewer certifications.
+//!
+//! **Do not over-read the 99-draw alternative either.** It is a per-cell test.
+//! It does **not** confer family-wise control over this heterogeneous 30-cell
+//! grid; a pooled max-statistic test would need a coherent null dataset, a family
+//! statistic on a commensurable or defensibly normalized scale, and its own
+//! error-control contract, none of which this round built or defended.
+//!
+//! **And do not rely on the paper's stronger threshold guarantee here.** Its
+//! proof carries assumptions — subset pivotality, i.i.d. resamples — that this
+//! round did not check against this pipeline. Nothing operational in WitnessGlass
+//! should lean on it without independent statistical review.
 
 use serde::Serialize;
 
@@ -182,6 +208,26 @@ pub struct Cell {
     pub agrees_with_historical_max_rule: Option<bool>,
     /// The seed-range identity this cell consumed, for audit.
     pub seed_range: String,
+    /// Which null construction produced this cell's replicates.
+    ///
+    /// Set by [`cell_from`] from the path it actually called, not declared by a
+    /// caller: [`assay`] reaches `calibration::calibrate`, which is the order
+    /// null and nothing else. The eligibility envelope reads this rather than
+    /// taking a runner's word for which null ran.
+    pub null_mode: &'static str,
+}
+
+/// The null construction every FewRS cell in this round used.
+///
+/// A `&'static str` rather than an enum because there is exactly one, and this
+/// round adds no second construction — sprint:20's are reachable from
+/// `calibrate_with` and are deliberately **not** wired into [`assay`].
+pub const NULL_ORDER_PERMUTATION: &str = "order-permutation (order_null_seeded)";
+
+/// The seed-range identity a run at `budget` consumes, as one string, so the
+/// envelope compares an identity rather than re-deriving one.
+pub fn seed_range(budget: usize) -> String {
+    format!("null_seed(0..{budget}, {{0,1}})")
 }
 
 /// Run one cell at the FewRS budget.
@@ -227,7 +273,8 @@ pub fn cell_from(calibration: Calibration, budget: usize) -> Cell {
         historical_certified: historical.map(HistoricalCell::certified),
         agrees_with_historical_tail_rule: historical.map(|row| certified == row.exceptional()),
         agrees_with_historical_max_rule: historical.map(|row| certified == row.certified()),
-        seed_range: format!("null_seed(0..{budget}, {{0,1}})"),
+        seed_range: seed_range(budget),
+        null_mode: NULL_ORDER_PERMUTATION,
         specimen: calibration.specimen,
         k: calibration.k,
         observed: calibration.observed,
@@ -444,21 +491,379 @@ pub fn historical_cell(specimen: &str, k: usize) -> Option<HistoricalCell> {
 }
 
 // ---------------------------------------------------------------------------
-// PHASE 9 — classification, and PHASE 7 — cost
+// The classification envelope — maintenance:3
 // ---------------------------------------------------------------------------
+//
+// task:32's classification is a statement about **one** protocol: the frozen
+// alpha, the derived budget, the first 459 seeds of the existing schedule, the
+// order null, the controls, decision:8's four specimens, and that exact 30-cell
+// grid. The first implementation computed it from `controls_passed` and a
+// certified count alone, so `--fewrs --replicates 99` — a diagnostic — printed
+// `STRONG` beside the frozen 15-of-30 threshold as though it had run the assay.
+//
+// The repair is one gate, in one place, comparing identities and sets rather
+// than counts. Rendering code asks the gate; it does not re-derive it.
+
+/// The four specimens decision:8 admits, as the opaque prefixes the runner
+/// builds labels from. A **set**: the order paths are supplied in does not
+/// matter, but the membership does.
+pub const EXPECTED_SPECIMENS: [&str; 4] = ["8b68dece", "57f18ff9", "f5c18299", "7d95c414"];
+
+/// The two controls task:32 §PHASE 4 requires, by the labels the runner uses.
+pub const EXPECTED_CONTROLS: [&str; 2] = ["negative control", "positive control"];
+
+/// One reason a run is not the frozen assay.
+///
+/// Carries what was found as well as what was wanted, so a machine-readable
+/// document and a human line can be rendered from the same value and cannot
+/// disagree about why.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "condition", rename_all = "snake_case")]
+pub enum Ineligibility {
+    /// `alpha` was not the frozen significance level.
+    AlphaNotFrozen {
+        /// The `alpha` the run derived its budget from.
+        found: f64,
+        /// [`ALPHA`].
+        expected: f64,
+    },
+    /// The budget was not the one [`fewrs_budget`] derives from that `alpha`.
+    BudgetNotDerived {
+        /// The budget the run spent.
+        found: usize,
+        /// [`BUDGET`].
+        expected: usize,
+    },
+    /// Some cell consumed a seed range other than the first `expected` seeds.
+    SeedPrefixNotUsed {
+        /// [`seed_range`] at [`BUDGET`].
+        expected: String,
+        /// The distinct seed ranges the run's cells actually consumed.
+        found: Vec<String>,
+    },
+    /// Some cell was produced by a construction other than the order null.
+    NullModeNotOrderPermutation {
+        /// The distinct null constructions the run's cells report.
+        found: Vec<String>,
+    },
+    /// The controls were not executed over the whole ladder, both of them.
+    ControlsNotExecuted {
+        /// The `control k=N` cells the run did not produce.
+        missing: Vec<String>,
+    },
+    /// The specimen identities were not decision:8's four.
+    SpecimenSetMismatch {
+        /// Expected prefixes the run did not project.
+        missing: Vec<String>,
+        /// Prefixes the run projected that decision:8 does not admit.
+        unexpected: Vec<String>,
+    },
+    /// A `(pair, k)` cell appeared more than once.
+    DuplicateCells {
+        /// The repeated cell identities.
+        duplicates: Vec<String>,
+    },
+    /// The observational grid was not exactly the frozen 30 cells.
+    CellSetMismatch {
+        /// Frozen cells the run did not produce.
+        missing: Vec<String>,
+        /// Cells the run produced that the frozen grid does not contain.
+        unexpected: Vec<String>,
+    },
+    /// The unique observational cell count was not 30.
+    CellCountNotThirty {
+        /// Unique `(pair, k)` cells the run produced.
+        found: usize,
+    },
+    /// Some cell could not be joined to sprint:19's published grid.
+    CellsUnmatchedToHistoricalGrid {
+        /// The cell identities with no historical counterpart.
+        cells: Vec<String>,
+    },
+}
+
+impl std::fmt::Display for Ineligibility {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn list(items: &[String]) -> String {
+            if items.is_empty() {
+                "none".to_owned()
+            } else {
+                items.join(", ")
+            }
+        }
+        match self {
+            Self::AlphaNotFrozen { found, expected } => {
+                write!(out, "alpha is {found}, not the frozen {expected}")
+            }
+            Self::BudgetNotDerived { found, expected } => write!(
+                out,
+                "budget is {found}, not the {expected} derived from the frozen alpha"
+            ),
+            Self::SeedPrefixNotUsed { expected, found } => {
+                write!(out, "seed range is not {expected}; found {}", list(found))
+            }
+            Self::NullModeNotOrderPermutation { found } => write!(
+                out,
+                "a cell used a null other than {NULL_ORDER_PERMUTATION}; found {}",
+                list(found)
+            ),
+            Self::ControlsNotExecuted { missing } => {
+                write!(
+                    out,
+                    "controls not executed over the ladder; missing {}",
+                    list(missing)
+                )
+            }
+            Self::SpecimenSetMismatch {
+                missing,
+                unexpected,
+            } => write!(
+                out,
+                "specimen set is not decision:8's four; missing {}; unexpected {}",
+                list(missing),
+                list(unexpected)
+            ),
+            Self::DuplicateCells { duplicates } => {
+                write!(out, "duplicated cells: {}", list(duplicates))
+            }
+            Self::CellSetMismatch {
+                missing,
+                unexpected,
+            } => write!(
+                out,
+                "grid is not the frozen 30 cells; missing {}; unexpected {}",
+                list(missing),
+                list(unexpected)
+            ),
+            Self::CellCountNotThirty { found } => {
+                write!(out, "{found} unique observational cells, not 30")
+            }
+            Self::CellsUnmatchedToHistoricalGrid { cells } => write!(
+                out,
+                "cells with no match in sprint:19's published grid: {}",
+                list(cells)
+            ),
+        }
+    }
+}
+
+/// What a run says about itself, for the gate to check.
+///
+/// Everything derivable from the cells is derived from the cells rather than
+/// declared here — the null construction and the seed range in particular, which
+/// [`cell_from`] stamps from the path it actually took.
+pub struct RunDescriptor<'a> {
+    /// The significance level the budget was derived from.
+    pub alpha: f64,
+    /// The replicate budget the run spent.
+    pub budget: usize,
+    /// Opaque session prefixes of the projected specimens, in any order.
+    pub specimens: &'a [String],
+    /// The control cells, in the order they ran.
+    pub controls: &'a [Cell],
+    /// The observational cells, in the order they ran.
+    pub cells: &'a [Cell],
+}
+
+/// Whether a run established the frozen protocol, and whether it completed the
+/// frozen grid. Two gates, because they answer different questions.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+pub struct Envelope {
+    /// Why the run is not the frozen protocol. Empty means it is.
+    pub protocol: Vec<Ineligibility>,
+    /// Why the observational grid is not the frozen 30 cells. Empty means it is.
+    ///
+    /// Checked **only** for a run that reached the observational stage. A run
+    /// whose controls failed stops before it, by the frozen protocol, so an
+    /// empty grid there is obedience rather than a defect — see [`classify`].
+    pub grid: Vec<Ineligibility>,
+}
+
+impl Envelope {
+    /// The frozen protocol was established: alpha, budget, seeds, null, controls.
+    pub fn protocol_established(&self) -> bool {
+        self.protocol.is_empty()
+    }
+
+    /// The observational grid is exactly the frozen 30 cells.
+    pub fn grid_complete(&self) -> bool {
+        self.grid.is_empty()
+    }
+
+    /// Every reason, protocol first, for rendering.
+    pub fn reasons(&self) -> Vec<&Ineligibility> {
+        self.protocol.iter().chain(self.grid.iter()).collect()
+    }
+}
+
+/// A cell's identity, as one comparable string.
+fn cell_key(specimen: &str, k: usize) -> String {
+    format!("{specimen} k={k}")
+}
+
+/// Check a run against the frozen protocol and the frozen grid.
+///
+/// Compares **identities and sets**, never counts alone: a run with thirty cells
+/// carrying the wrong pairs, or the right pairs at the wrong span lengths, fails
+/// [`Envelope::grid_complete`] exactly as a run with twenty-nine does.
+pub fn envelope(run: &RunDescriptor<'_>) -> Envelope {
+    let mut protocol = Vec::new();
+    let mut grid = Vec::new();
+
+    if run.alpha != ALPHA {
+        protocol.push(Ineligibility::AlphaNotFrozen {
+            found: run.alpha,
+            expected: ALPHA,
+        });
+    }
+
+    let derived = fewrs_budget(run.alpha).unwrap_or(BUDGET);
+    if run.budget != BUDGET || run.budget != derived {
+        protocol.push(Ineligibility::BudgetNotDerived {
+            found: run.budget,
+            expected: BUDGET,
+        });
+    }
+
+    let every: Vec<&Cell> = run.controls.iter().chain(run.cells.iter()).collect();
+
+    let expected_seeds = seed_range(BUDGET);
+    let mut wrong_seeds: Vec<String> = every
+        .iter()
+        .filter(|cell| cell.seed_range != expected_seeds)
+        .map(|cell| cell.seed_range.clone())
+        .collect();
+    wrong_seeds.sort();
+    wrong_seeds.dedup();
+    if !wrong_seeds.is_empty() {
+        protocol.push(Ineligibility::SeedPrefixNotUsed {
+            expected: expected_seeds,
+            found: wrong_seeds,
+        });
+    }
+
+    let mut wrong_nulls: Vec<String> = every
+        .iter()
+        .filter(|cell| cell.null_mode != NULL_ORDER_PERMUTATION)
+        .map(|cell| cell.null_mode.to_owned())
+        .collect();
+    wrong_nulls.sort();
+    wrong_nulls.dedup();
+    if !wrong_nulls.is_empty() {
+        protocol.push(Ineligibility::NullModeNotOrderPermutation { found: wrong_nulls });
+    }
+
+    let mut missing_controls = Vec::new();
+    for label in EXPECTED_CONTROLS {
+        for k in calibration::LADDER {
+            if !run
+                .controls
+                .iter()
+                .any(|cell| cell.specimen == label && cell.k == k)
+            {
+                missing_controls.push(cell_key(label, k));
+            }
+        }
+    }
+    if !missing_controls.is_empty() {
+        protocol.push(Ineligibility::ControlsNotExecuted {
+            missing: missing_controls,
+        });
+    }
+
+    // --- the grid ---------------------------------------------------------
+
+    let mut seen: Vec<String> = Vec::new();
+    let mut duplicates: Vec<String> = Vec::new();
+    for cell in run.cells {
+        let key = cell_key(&cell.specimen, cell.k);
+        if seen.contains(&key) {
+            if !duplicates.contains(&key) {
+                duplicates.push(key);
+            }
+        } else {
+            seen.push(key);
+        }
+    }
+    if !duplicates.is_empty() {
+        grid.push(Ineligibility::DuplicateCells { duplicates });
+    }
+
+    let expected_keys: Vec<String> = SPRINT_19_ORDER_NULL_GRID
+        .iter()
+        .map(|row| cell_key(row.specimen, row.k))
+        .collect();
+    let missing: Vec<String> = expected_keys
+        .iter()
+        .filter(|key| !seen.contains(key))
+        .cloned()
+        .collect();
+    let unexpected: Vec<String> = seen
+        .iter()
+        .filter(|key| !expected_keys.contains(key))
+        .cloned()
+        .collect();
+    if !missing.is_empty() || !unexpected.is_empty() {
+        grid.push(Ineligibility::CellSetMismatch {
+            missing,
+            unexpected,
+        });
+    }
+    if seen.len() != SPRINT_19_ORDER_NULL_GRID.len() {
+        grid.push(Ineligibility::CellCountNotThirty { found: seen.len() });
+    }
+
+    let unmatched: Vec<String> = run
+        .cells
+        .iter()
+        .filter(|cell| cell.historical_tail.is_none())
+        .map(|cell| cell_key(&cell.specimen, cell.k))
+        .collect();
+    if !unmatched.is_empty() {
+        grid.push(Ineligibility::CellsUnmatchedToHistoricalGrid { cells: unmatched });
+    }
+
+    // Specimen identity, from the projected sequences rather than from the
+    // cell labels, so a run that projected the wrong recordings is caught even
+    // if it somehow produced right-looking pair labels.
+    let found: Vec<&str> = run.specimens.iter().map(String::as_str).collect();
+    let missing: Vec<String> = EXPECTED_SPECIMENS
+        .iter()
+        .filter(|name| !found.contains(name))
+        .map(|name| (*name).to_owned())
+        .collect();
+    let unexpected: Vec<String> = found
+        .iter()
+        .filter(|name| !EXPECTED_SPECIMENS.contains(name))
+        .map(|name| (*name).to_owned())
+        .collect();
+    if !missing.is_empty() || !unexpected.is_empty() || found.len() != EXPECTED_SPECIMENS.len() {
+        grid.push(Ineligibility::SpecimenSetMismatch {
+            missing,
+            unexpected,
+        });
+    }
+
+    Envelope { protocol, grid }
+}
 
 /// task:32 §PHASE 9's threshold: cells that must certify for a STRONG result.
 pub const STRONG_THRESHOLD: usize = 15;
 
-/// The preregistered classification.
+/// The preregistered classification, plus the outcome a run outside the frozen
+/// envelope gets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum Classification {
-    /// A control failed, or the assay yields nothing beyond a cheaper
-    /// non-rejection.
+    /// The run is not the frozen assay. It is **not** compared against
+    /// [`STRONG_THRESHOLD`], and its reasons say which conditions failed.
+    DiagnosticUnclassified,
+    /// A control failed its §PHASE 4 rule on a run that established the frozen
+    /// protocol.
     Falsification,
-    /// Both controls passed and at least [`STRONG_THRESHOLD`] cells certified.
+    /// Both controls passed, the grid is the frozen 30, and at least
+    /// [`STRONG_THRESHOLD`] cells certified.
     Strong,
-    /// Both controls passed and fewer than [`STRONG_THRESHOLD`] cells certified.
+    /// Both controls passed, the grid is the frozen 30, and fewer did.
     WeakMixed,
 }
 
@@ -466,20 +871,39 @@ impl Classification {
     /// The label a report prints.
     pub fn label(self) -> &'static str {
         match self {
+            Self::DiagnosticUnclassified => "DIAGNOSTIC / UNCLASSIFIED",
             Self::Falsification => "FALSIFICATION",
             Self::Strong => "STRONG",
             Self::WeakMixed => "WEAK / MIXED",
         }
     }
+
+    /// Whether this is one of task:32's preregistered outcomes.
+    pub fn is_preregistered(self) -> bool {
+        !matches!(self, Self::DiagnosticUnclassified)
+    }
 }
 
-/// Classify by §PHASE 9's precedence. Falsification is checked first.
+/// Classify by §PHASE 9's precedence, gated on the envelope.
 ///
-/// The two remaining branches are complementary on `certified`, so no outcome
-/// falls between them.
-pub fn classify(controls_passed: bool, certified: usize) -> Classification {
-    if !controls_passed {
+/// The order is load-bearing:
+///
+/// 1. **Protocol first.** A run that did not establish the frozen protocol gets
+///    `DIAGNOSTIC / UNCLASSIFIED` and is never compared against the threshold.
+/// 2. **Then the controls.** A run that *did* establish the protocol and whose
+///    control failed is `FALSIFICATION` — the preregistered outcome — and its
+///    empty grid is not held against it, because the frozen protocol stops the
+///    observational stage when a control fails.
+/// 3. **Then the grid.** Only a run whose controls passed *and* whose grid is
+///    exactly the frozen 30 cells reaches the threshold.
+/// 4. **Then the count**, whose two branches are complementary.
+pub fn classify(envelope: &Envelope, controls_passed: bool, certified: usize) -> Classification {
+    if !envelope.protocol_established() {
+        Classification::DiagnosticUnclassified
+    } else if !controls_passed {
         Classification::Falsification
+    } else if !envelope.grid_complete() {
+        Classification::DiagnosticUnclassified
     } else if certified >= STRONG_THRESHOLD {
         Classification::Strong
     } else {

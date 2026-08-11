@@ -18,6 +18,7 @@
 //! Output derived from a real recording is exactly as sensitive as that
 //! recording. Nothing here redacts anything.
 
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -2862,25 +2863,67 @@ fn dedupe_labels<'a>(labels: &[&'a str]) -> Vec<&'a str> {
 // The fixed-budget FewRS retrospective assay — sprint:22, task:32
 // ---------------------------------------------------------------------------
 
+/// Write one line of the human report to whichever stream the output contract
+/// chose.
+///
+/// A macro rather than a closure because the report is `format!`-shaped at forty
+/// call sites and a closure would force every one of them to build a `String`
+/// first. maintenance:3 introduced it so that `--json` could redirect the whole
+/// report to stderr by changing **one** binding instead of forty `println!`s —
+/// which is exactly the change that stops a stray `println!` re-contaminating
+/// stdout later.
+macro_rules! say {
+    ($out:expr, $($arg:tt)*) => {
+        writeln!($out, $($arg)*).map_err(|err| format!("could not write the report: {err}"))?
+    };
+}
+
 /// task:32's assay, in the order §PHASE 4 fixes: negative control, positive
 /// control, and — only if both pass — the 30 observational cells.
 ///
 /// Every number here comes from `calibration::calibrate`, which is sprint:19's
 /// frozen path. This mode changes no null, no search, no statistic and no seed.
+/// task:32's assay, in the order §PHASE 4 fixes: negative control, positive
+/// control, and — only if both pass — the 30 observational cells.
+///
+/// Every number here comes from `calibration::calibrate`, which is sprint:19's
+/// frozen path. This mode changes no null, no search, no statistic and no seed.
+///
+/// # Output contract, corrected by maintenance:3
+///
+/// With `--json`, **stdout carries exactly one JSON document and nothing else**;
+/// the human report goes to stderr, where it stays visible while the run is in
+/// flight without contaminating a redirected file. Without `--json`, the human
+/// report goes to stdout as before. The first implementation printed the report
+/// to stdout and appended JSON after it, so the documented
+/// `--json > fewrs.json` produced a file no parser accepts.
 fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
     let derived = fewrs::fewrs_budget(fewrs::ALPHA)
         .map_err(|err| format!("could not derive the FewRS budget: {err}"))?;
     let budget = options.replicates.unwrap_or(derived);
     let started = std::time::Instant::now();
 
-    println!("event-motif — the sprint:22 fixed-budget FewRS retrospective assay");
-    println!(
+    // The one decision the output contract turns on. Chosen once, up front, so
+    // no later line can pick the wrong stream by accident.
+    let mut report: Box<dyn std::io::Write> = if options.json {
+        Box::new(std::io::stderr())
+    } else {
+        Box::new(std::io::stdout())
+    };
+
+    say!(
+        report,
+        "event-motif — the sprint:22 fixed-budget FewRS retrospective assay"
+    );
+    say!(
+        report,
         "alpha = {alpha}   m = ceil(ln(1/alpha)/ln(1/(1-alpha))) = {derived}   running m = {budget}\n\
          Certification is strict: observed T > every null T. Ties do not certify. The complete\n\
-         search reruns inside every replicate; seeds are null_seed(0..{budget}, {{0,1}}), the first\n\
-         {budget} realizations of the existing schedule. Per-cell exact conditional level 1/(m+1);\n\
-         NO family-wise guarantee across cells is claimed — task:32 §PHASE 0 D11.\n",
+         search reruns inside every replicate; seeds are {seeds}. Per-cell the rule is an ordinary\n\
+         strict-maximum randomization test at level 1/(m+1); NO family-wise guarantee across cells\n\
+         is claimed — task:32 §PHASE 0 D11, as corrected by maintenance:3.\n",
         alpha = fewrs::ALPHA,
+        seeds = fewrs::seed_range(budget),
     );
 
     // PHASE 4 — controls, before any observational specimen is touched.
@@ -2892,14 +2935,20 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
         ("negative control", &negative),
         ("positive control", &positive),
     ] {
-        println!("  {label} — task:32 §PHASE 4:");
-        println!(
+        say!(report, "  {label} — task:32 §PHASE 4:");
+        say!(
+            report,
             "    {:<6} {:>10} {:>10} {:>9} {:>10}",
-            "k", "T obs", "null max", "refuting", "certified"
+            "k",
+            "T obs",
+            "null max",
+            "refuting",
+            "certified"
         );
         for k in calibration::LADDER {
             let cell = fewrs::assay(label, &control.first, &control.second, k, budget);
-            println!(
+            say!(
+                report,
                 "    {:<6} {:>10} {:>10.4} {:>9} {:>10}",
                 k,
                 cell.observed
@@ -2920,56 +2969,65 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
         .iter()
         .any(|cell| cell.specimen == "positive control" && cell.k == 12 && cell.certified);
     let controls_passed = negative_ok && positive_ok;
-    println!(
+    say!(
+        report,
         "\n  control rules — negative (no k certifies): {}   positive (k=12 certifies): {}",
         if negative_ok { "PASS" } else { "FAIL" },
         if positive_ok { "PASS" } else { "FAIL" },
     );
-    println!(
+    say!(
+        report,
         "    The positive rule is an IMPLEMENTATION CHECK, not an empirical test: task:32 §PHASE 0\n\
          \x20   D10 records that it cannot fail, because the 459 seeds are a prefix of sprint:19's 999."
     );
 
     let mut cells: Vec<fewrs::Cell> = Vec::new();
+    let mut specimens: Vec<String> = Vec::new();
+
     if !controls_passed {
-        println!(
+        say!(
+            report,
             "\n  STOPPING before the observational assay: a control failed its preregistered rule."
         );
     } else if options.corpus.len() >= 2 {
-        let mut replays = Vec::new();
-        for path in &options.corpus {
-            replays.push((
-                path.clone(),
-                replay_file(path)
-                    .map_err(|err| format!("could not replay {}: {err}", path.display()))?,
-            ));
-        }
-        let inspections: Vec<_> = replays
-            .iter()
-            .map(|(path, replay)| (path.clone(), inspect(replay)))
-            .collect();
+        let replays = corpus_replays(options)?;
+        let inspections: Vec<_> = replays.iter().map(inspect).collect();
         let mut sequences = Vec::new();
-        for (path, inspection) in &inspections {
+        for (path, inspection) in options.corpus.iter().zip(inspections.iter()) {
             if let Some(sequence) = project(inspection, options.scope) {
                 sequences.push(sequence);
             } else {
                 eprintln!("skipping {}: no records in scope", path.display());
             }
         }
+        specimens = sequences
+            .iter()
+            .map(|sequence| short(sequence.session_id))
+            .collect();
 
-        println!(
+        say!(
+            report,
             "\n  observational cells — task:32 §PHASE 5. Counts and scores only; no span is named."
         );
-        println!(
+        say!(
+            report,
             "    {:<22} {:>3} {:>9} {:>9} {:>5} {:>9} {:>8} {:>6}",
-            "specimen", "k", "T obs", "null max", "cert", "999 p-hat", "999 exc", "agree"
+            "specimen",
+            "k",
+            "T obs",
+            "null max",
+            "cert",
+            "999 p-hat",
+            "999 exc",
+            "agree"
         );
         for (index, left) in sequences.iter().enumerate() {
             for right in sequences.iter().skip(index + 1) {
                 let label = format!("{} x {}", short(left.session_id), short(right.session_id));
                 for k in calibration::LADDER {
                     let cell = fewrs::assay(&label, left, right, k, budget);
-                    println!(
+                    say!(
+                        report,
                         "    {:<22} {:>3} {:>9} {:>9.4} {:>5} {:>9} {:>8} {:>6}",
                         cell.specimen,
                         k,
@@ -2995,10 +3053,22 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
             }
         }
     } else {
-        println!("\n  observational cells not run: --fewrs needs at least two --corpus <PATH>.");
+        say!(
+            report,
+            "\n  observational cells not run: --fewrs needs at least two --corpus <PATH>."
+        );
     }
 
-    // PHASE 9 — classification, and the two agreement rates.
+    // The classification envelope — maintenance:3. One gate, asked once. The
+    // rendering below reads its answer and never re-derives one.
+    let descriptor = fewrs::RunDescriptor {
+        alpha: fewrs::ALPHA,
+        budget,
+        specimens: &specimens,
+        controls: &control_cells,
+        cells: &cells,
+    };
+    let envelope = fewrs::envelope(&descriptor);
     let certified = cells.iter().filter(|cell| cell.certified).count();
     let undefined = cells.iter().filter(|cell| cell.observed.is_none()).count();
     let agree_tail = cells
@@ -3013,29 +3083,50 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
         .iter()
         .filter(|cell| cell.historical_tail.is_some())
         .count();
-    let classification = fewrs::classify(controls_passed, certified);
+    let classification = fewrs::classify(&envelope, controls_passed, certified);
 
-    println!("\n  classification — task:32 §PHASE 9, by precedence:");
-    println!("    {}", classification.label());
-    println!(
-        "    {certified} of {} cells certified at m = {budget}; {undefined} with undefined T; \
-         STRONG needs >= {}",
-        cells.len(),
-        fewrs::STRONG_THRESHOLD,
+    say!(
+        report,
+        "\n  classification — task:32 §PHASE 9, by precedence:"
     );
+    say!(report, "    {}", classification.label());
+    if classification.is_preregistered() {
+        say!(
+            report,
+            "    {certified} of {} cells certified at m = {budget}; {undefined} with undefined T; \
+             STRONG needs >= {}",
+            cells.len(),
+            fewrs::STRONG_THRESHOLD,
+        );
+    } else {
+        say!(
+            report,
+            "    This run is NOT task:32's frozen assay, so it is not compared against the\n\
+             \x20   {}-of-30 threshold and carries no preregistered classification. It certified\n\
+             \x20   {certified} of {} cells at m = {budget}. Why it is unclassified:",
+            fewrs::STRONG_THRESHOLD,
+            cells.len(),
+        );
+        for reason in envelope.reasons() {
+            say!(report, "      - {reason}");
+        }
+    }
     if matched > 0 {
-        println!(
+        say!(
+            report,
             "    agreement with the frozen 999 grid — primary (p-hat <= {}): {agree_tail}/{matched} \
              = {:.4}",
             calibration::TAIL_THRESHOLD,
             agree_tail as f64 / matched as f64,
         );
-        println!(
+        say!(
+            report,
             "    agreement with the frozen 999 grid — rule-matched (exceedances == 0): \
              {agree_max}/{matched} = {:.4}",
             agree_max as f64 / matched as f64,
         );
-        println!(
+        say!(
+            report,
             "    the two grids differ because sprint:19's rule admits up to 9 exceedances and this\n\
              \x20   one admits none — task:32 §PHASE 0 D8. Neither rate substitutes for the other."
         );
@@ -3045,8 +3136,9 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
     let all: Vec<fewrs::Cell> = control_cells.iter().chain(cells.iter()).cloned().collect();
     let cost = fewrs::cost(&all);
     let elapsed = started.elapsed().as_secs_f64();
-    println!("\n  cost — task:32 §PHASE 7:");
-    println!(
+    say!(report, "\n  cost — task:32 §PHASE 7:");
+    say!(
+        report,
         "    complete null searches performed: {}   reference at B = {}: {}   avoided: {} ({:.3}x)",
         cost.null_searches,
         fewrs::HISTORICAL_REPLICATES,
@@ -3054,12 +3146,17 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
         cost.searches_avoided,
         cost.ratio,
     );
-    println!(
+    say!(
+        report,
         "    null sequence realizations generated: {}   window pairs enumerated inside null \
          searches: {}",
-        cost.null_datasets, cost.null_candidate_evaluations,
+        cost.null_datasets,
+        cost.null_candidate_evaluations,
     );
-    println!("    wall clock {elapsed:.1}s — MACHINE-SPECIFIC AND SECONDARY; it decides nothing.");
+    say!(
+        report,
+        "    wall clock {elapsed:.1}s — MACHINE-SPECIFIC AND SECONDARY; it decides nothing."
+    );
     let early: Vec<String> = cells
         .iter()
         .filter(|cell| !cell.certified)
@@ -3070,12 +3167,16 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
         .take(3)
         .collect();
     if !early.is_empty() {
-        println!(
+        say!(
+            report,
             "    early stopping was NOT implemented or run. Expected stop index under exchangeable\n\
              \x20   replicate ordering, first three non-certifying cells: {}",
             early.join("; ")
         );
     }
+    report
+        .flush()
+        .map_err(|err| format!("could not flush the report: {err}"))?;
 
     if options.json {
         let document = serde_json::json!({
@@ -3084,11 +3185,15 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
             "alpha": fewrs::ALPHA,
             "derived_budget": derived,
             "budget": budget,
-            "seed_range": format!("null_seed(0..{budget}, {{0,1}})"),
+            "seed_range": fewrs::seed_range(budget),
+            "null_mode": fewrs::NULL_ORDER_PERMUTATION,
             "historical_replicates": fewrs::HISTORICAL_REPLICATES,
             "rule": "certified iff observed_T > max(null_T); ties do not certify",
-            "guarantee": "per-cell exact conditional test at level 1/(m+1); NO family-wise \
-                          guarantee across cells is claimed",
+            "guarantee": "per-cell ordinary strict-maximum randomization test; null rejection \
+                          probability at most 1/(m+1) by exchangeability. NO family-wise guarantee \
+                          across cells is claimed. m = 459 is the cost of FewRS's own \
+                          high-probability upper-bound construction, not of pooling: the formula \
+                          reads alpha alone and applies to a single analysis too.",
             "adopted": serde_json::Value::Null,
             "controls": control_cells,
             "control_rules": {
@@ -3097,10 +3202,23 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
                 "positive_is_an_implementation_check": true,
             },
             "cells": cells,
+            "specimens": specimens,
             "certified": certified,
             "undefined": undefined,
             "strong_threshold": fewrs::STRONG_THRESHOLD,
+            "eligibility": {
+                "protocol_established": envelope.protocol_established(),
+                "grid_complete": envelope.grid_complete(),
+                "protocol_reasons": envelope.protocol,
+                "grid_reasons": envelope.grid,
+                "reasons_text": envelope
+                    .reasons()
+                    .iter()
+                    .map(|reason| reason.to_string())
+                    .collect::<Vec<_>>(),
+            },
             "classification": classification.label(),
+            "classification_is_preregistered": classification.is_preregistered(),
             "agreement": {
                 "matched_cells": matched,
                 "primary_tail_rule": agree_tail,
@@ -3110,6 +3228,7 @@ fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
             "cost": cost,
             "wall_clock_seconds": elapsed,
         });
+        // The only thing this mode ever writes to stdout under --json.
         println!(
             "{}",
             serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?
