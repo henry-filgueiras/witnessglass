@@ -2,8 +2,9 @@
 id: spr_01KZSCKFB7AFVM9XA9DA5HV6ZE
 sequence: 22
 kind: sprint
-status: active
+status: closed
 created: 2026-08-11
+closed: 2026-08-11
 ---
 
 # Shutter

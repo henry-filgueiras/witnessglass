@@ -2,9 +2,10 @@
 id: tsk_01KZSCQY1V194BXKA99T107KHA
 sequence: 32
 kind: task
-status: pending
+status: closed
 sprint: spr_01KZSCKFB7AFVM9XA9DA5HV6ZE
 created: 2026-08-11
+closed: 2026-08-11
 ---
 
 # Evaluate a fixed-budget FewRS assay against the frozen 999-replicate order-null grid
@@ -306,3 +307,369 @@ the modulo reduction, or the capped-rejection doublet sampler — those are reco
 worked on. No presentation of a non-certification as evidence that observed structure "collapsed" into
 the null. No fresh 999-replicate campaign. No adoption, no promotion to production, no threshold moved
 after seeing data. No recording content in any artifact. Nothing pushed.
+
+## Result
+
+**Classification: STRONG**, by the preregistered partition and without softening it. Both controls
+passed and **17 of 30** cells certified at `m = 459`, against a threshold of 15. Primary agreement with
+sprint:19's frozen 999-replicate grid **24/30 = 0.8000**; rule-matched agreement **26/30 = 0.8667**.
+
+**Recommendation: RETIRE the idea for this workflow.** The classification is STRONG and the
+recommendation is still to retire, and that is not a contradiction — it is the round doing what
+sprint:22 was built to do. §PHASE 9 makes the recommendation a separate output from the classification,
+and §10 below is why: a descriptive measurement no criterion reads shows the FewRS budget is
+**dominated** here. At `m = 99` — the smallest budget at which a strict-maximum rule is a valid
+level-0.01 test, and *identical* to sprint:19's own `p_hat <= 0.01` rule at `B = 99` — **22 of 30**
+cells certify at **4.6x lower cost than 459** and **10.1x lower than 999**, with better agreement
+against the frozen grid (27/30). FewRS's `m = 459` is calibrated for a family-wise pooled maximum this
+grid cannot form, and per cell it buys nothing that 99 replicates do not buy more cheaply.
+
+`T_k`, the complete search, the null generator, the seed schedule and decision:8's inventory were not
+changed. Nothing was adopted.
+
+### 1. Repository truth, and the five discrepancies
+
+All seven §PHASE 0 premises confirmed from the committed source. The five discrepancies recorded before
+any criterion was written all held up, and three of them decided the round:
+
+- **D8 confirmed.** sprint:19's grid is a tail grid; 23 of 30 cells clear `p_hat <= 0.01`, but only
+  **13** have zero exceedances. Both agreement rates are reported below and neither substitutes for the
+  other.
+- **D9 confirmed empirically, not just argued.** See §6: all 40 cells' refuting counts at 459 came in at
+  or below their frozen 999 exceedance counts, which is the prefix property measured rather than
+  assumed.
+- **D10 confirmed.** The positive control certified at `k = 12`, as it was guaranteed to. It is reported
+  as an implementation check and is **not** evidence of sensitivity.
+- **D11 confirmed and load-bearing.** See §10 and §11.
+- **D12 confirmed and load-bearing.** See §12.
+
+### 2. The budget, derived
+
+`m = ceil(ln(1/0.01) / ln(1/0.99)) = ceil(4.6051701860 / 0.0100503359) = ceil(458.2106) = 459`.
+
+Computed by `fewrs_budget`, which refuses any `alpha` outside the open unit interval; the module
+constant is pinned to the function's own output by a test, so a transcription cannot drift from the
+derivation. `alpha` is sprint:19's frozen `TAIL_THRESHOLD`, re-used and not re-chosen.
+
+### 3. Controls, run before any recording was replayed
+
+| control | k | `T` observed | null max (459) | refuting/459 | certified |
+|---|---|---|---|---|---|
+| negative | 3 | 6.4803 | 9.3790 | 295 | no |
+| negative | 4 | 7.4233 | 11.4657 | 383 | no |
+| negative | 6 | 9.9306 | 13.7242 | 178 | no |
+| negative | 8 | 13.5958 | 15.4712 | 14 | no |
+| negative | 12 | 13.3727 | 18.5008 | 163 | no |
+| positive | 3 | 7.2099 | 9.2920 | 181 | no |
+| positive | 4 | 9.4663 | 12.1924 | 50 | no |
+| positive | 6 | 13.8184 | 14.0917 | 1 | no |
+| positive | 8 | 18.2795 | 15.2047 | 0 | **YES** |
+| positive | 12 | 27.5715 | 19.6596 | 0 | **YES** |
+
+**Negative: PASS** — no `k` certifies. **Positive: PASS** at `k = 12` — and per D10 this rule could not
+have failed, so it establishes that the assay is calling the frozen machinery and nothing more.
+
+The observed `T` column reproduces sprint:19 §8 exactly: the positive control's climb of
+`13.8184 -> 18.2795 -> 27.5715` across `k = 6, 8, 12` is the `13.82 -> 18.28 -> 27.57` sprint:19
+published.
+
+### 4. The 30-cell FewRS grid
+
+`m = 459`, seeds `null_seed(0..459, {0,1})`, the complete search rerun inside every replicate. No cell
+was excluded and `T` was defined for all 30.
+
+| pair | k | `T` observed | null max (459) | certified | refuting/459 | 999 `p_hat` | 999 exceedances | primary agree |
+|---|---|---|---|---|---|---|---|---|
+| `8b68dece x 57f18ff9` | 3 | 7.7696 | 10.0722 | no | 69 | 0.157 | 156 | yes |
+| `8b68dece x 57f18ff9` | 4 | 11.3589 | 11.0736 | **YES** | 0 | 0.004 | 3 | yes |
+| `8b68dece x 57f18ff9` | 6 | 12.2136 | 13.8764 | no | 2 | 0.005 | 4 | **NO** |
+| `8b68dece x 57f18ff9` | 8 | 13.2656 | 14.4650 | no | 2 | 0.004 | 3 | **NO** |
+| `8b68dece x 57f18ff9` | 12 | 14.5523 | 16.8185 | no | 3 | 0.007 | 6 | **NO** |
+| `8b68dece x f5c18299` | 3 | 9.7022 | 9.3737 | **YES** | 0 | 0.004 | 3 | yes |
+| `8b68dece x f5c18299` | 4 | 11.3642 | 11.3398 | **YES** | 0 | 0.003 | 2 | yes |
+| `8b68dece x f5c18299` | 6 | 11.3642 | 15.5107 | no | 5 | 0.015 | 14 | yes |
+| `8b68dece x f5c18299` | 8 | 15.1985 | 14.5092 | **YES** | 0 | 0.002 | 1 | yes |
+| `8b68dece x f5c18299` | 12 | 11.6675 | 18.8730 | no | 35 | 0.075 | 74 | yes |
+| `8b68dece x 7d95c414` | 3 | 5.5266 | 7.9798 | no | 67 | 0.133 | 132 | yes |
+| `8b68dece x 7d95c414` | 4 | 8.8190 | 9.1078 | no | 14 | 0.031 | 30 | yes |
+| `8b68dece x 7d95c414` | 6 | 10.7862 | 13.3511 | no | 12 | 0.027 | 26 | yes |
+| `8b68dece x 7d95c414` | 8 | 13.0205 | 14.3239 | no | 2 | 0.003 | 2 | **NO** |
+| `8b68dece x 7d95c414` | 12 | 16.6878 | 17.7498 | no | 1 | 0.002 | 1 | **NO** |
+| `57f18ff9 x f5c18299` | 3 | 8.1411 | 9.7506 | no | 17 | 0.035 | 34 | yes |
+| `57f18ff9 x f5c18299` | 4 | 11.2169 | 11.0346 | **YES** | 0 | 0.001 | 0 | yes |
+| `57f18ff9 x f5c18299` | 6 | 16.6753 | 12.7241 | **YES** | 0 | 0.001 | 0 | yes |
+| `57f18ff9 x f5c18299` | 8 | 22.7215 | 14.4135 | **YES** | 0 | 0.001 | 0 | yes |
+| `57f18ff9 x f5c18299` | 12 | 31.6766 | 17.1639 | **YES** | 0 | 0.001 | 0 | yes |
+| `57f18ff9 x 7d95c414` | 3 | 10.2028 | 10.6728 | no | 1 | 0.002 | 1 | **NO** |
+| `57f18ff9 x 7d95c414` | 4 | 11.3388 | 10.9494 | **YES** | 0 | 0.001 | 0 | yes |
+| `57f18ff9 x 7d95c414` | 6 | 13.7322 | 12.7739 | **YES** | 0 | 0.001 | 0 | yes |
+| `57f18ff9 x 7d95c414` | 8 | 17.0373 | 14.8262 | **YES** | 0 | 0.001 | 0 | yes |
+| `57f18ff9 x 7d95c414` | 12 | 18.2946 | 15.5240 | **YES** | 0 | 0.001 | 0 | yes |
+| `f5c18299 x 7d95c414` | 3 | 10.9234 | 9.4963 | **YES** | 0 | 0.001 | 0 | yes |
+| `f5c18299 x 7d95c414` | 4 | 14.2376 | 10.4591 | **YES** | 0 | 0.001 | 0 | yes |
+| `f5c18299 x 7d95c414` | 6 | 16.6175 | 11.6042 | **YES** | 0 | 0.001 | 0 | yes |
+| `f5c18299 x 7d95c414` | 8 | 17.7626 | 12.7493 | **YES** | 0 | 0.001 | 0 | yes |
+| `f5c18299 x 7d95c414` | 12 | 20.1425 | 15.8224 | **YES** | 0 | 0.001 | 0 | yes |
+
+`57f18ff9 x f5c18299` at `k = 12` returns `T = 31.6766`, which is sprint:19's published `31.68`, against
+a 459-null maximum of `17.1639` — below the `18.18` sprint:19 measured over 999, exactly as a prefix
+must be.
+
+### 5. Comparison with the frozen 999-replicate grid, and the disagreements
+
+| comparison | rule compared against | agreement |
+|---|---|---|
+| **primary** | sprint:19's own `p_hat <= 0.01` (23 of 30) | **24/30 = 0.8000** |
+| **rule-matched** | strict maximum at 999, `exceedances == 0` (13 of 30) | **26/30 = 0.8667** |
+
+**Six cells sprint:19 called exceptional do not certify**, and the cause is the same in every one: the
+999-replicate tail rule tolerates up to nine exceedances and the strict-maximum rule tolerates none.
+
+| cell | 999 exceedances | refuting/459 |
+|---|---|---|
+| `8b68dece x 57f18ff9` k=6 | 4 | 2 |
+| `8b68dece x 57f18ff9` k=8 | 3 | 2 |
+| `8b68dece x 57f18ff9` k=12 | 6 | 3 |
+| `8b68dece x 7d95c414` k=8 | 2 | 2 |
+| `8b68dece x 7d95c414` k=12 | 1 | 1 |
+| `57f18ff9 x 7d95c414` k=3 | 1 | 1 |
+
+Every one had at least one refuting null inside the first 459. **This is a rule difference, not a budget
+difference**, and the rule-matched column separates the two: against the strict rule at 999 the same six
+cells are non-certifications there as well.
+
+**Four cells certify at 459 that the strict rule at 999 refuses**, which is the other direction and the
+more interesting one:
+
+| cell | 999 exceedances | refuting/459 |
+|---|---|---|
+| `8b68dece x 57f18ff9` k=4 | 3 | 0 |
+| `8b68dece x f5c18299` k=3 | 3 | 0 |
+| `8b68dece x f5c18299` k=4 | 2 | 0 |
+| `8b68dece x f5c18299` k=8 | 1 | 0 |
+
+All four had every one of their 999-exceedances land at replicate index 459 or later. **A FewRS
+certification at `m` can be overturned by a larger `m`** — the null maximum is monotone increasing in
+the budget, so certification is monotone *decreasing*. That is not a defect: the level guarantee holds
+at each `m`. But it means a certification is a statement made at a budget, and the budget is part of the
+claim. Nothing in the FewRS framing says otherwise; it is worth writing down because a binary "certified"
+column reads as if it were not.
+
+**No cell certified that sprint:19's tail rule called ordinary**, so the primary disagreement is
+one-directional at this budget: 24 = 30 − 6.
+
+### 6. The seed-prefix property, measured
+
+For all **40** cells — ten control, thirty observational — the refuting-null count at 459 was less than
+or equal to the frozen 999 exceedance count, without exception. Examples at both ends: the negative
+control at `k = 4` returned 383 of 459 against sprint:19's 824 of 999; the positive control at `k = 12`
+returned 0 against 0.
+
+This is D9's prefix claim measured rather than argued, and it is also the round's independent check that
+the machinery still reproduces sprint:19: forty separate counts, forty consistent, on a grid nothing in
+this round could tune.
+
+### 7. Classification, applied as fixed
+
+`certified = 17`, `undefined = 0`, both control rules PASS. §PHASE 9's precedence: falsification does
+not fire; `17 >= 15` gives **STRONG**. §PHASE 10 predicted 13 to 19, most likely 15 to 17, and predicted
+a primary agreement rate of 0.73 to 0.83. Both landed inside: 17 and 0.8000. The prediction is recorded
+in the preregistration commit `1c1330e` and was not adjusted.
+
+**The threshold was not moved and the classification is not softened.** It is also not the whole
+finding, and §PHASE 9 anticipated that by making the recommendation a separate output.
+
+### 8. Cost accounting
+
+| quantity | this round | sprint:19 reference | change |
+|---|---|---|---|
+| complete null searches | **18 360** | 39 960 | −21 600, **2.176x fewer** |
+| null sequence realizations generated | **36 720** | 79 920 | −43 200 |
+| window pairs enumerated inside null searches | **117 428 265** | — | existing instrumentation only |
+| wall clock, one release build, one machine | **72.9 s** | not comparable — see below | machine-specific and secondary |
+
+Coverage is ten control cells plus thirty observational cells at both budgets. **The wall clock has no
+honest reference figure**: sprint:20 measured a full `--calibrate` pass at 196 s, but that pass also runs
+the 400-search selection-effect demonstration and the 199-replicate adequacy summaries, so it is not
+like-for-like and is not used as a ratio here. The search counts are the comparison that means
+something. `null_candidate_
+evaluations` comes from `Calibration::null_considered_mean`, which already counted enumerated window
+pairs before this round; **no new counter was added and no per-candidate R1 count is claimed**, because
+none is instrumented.
+
+The theoretical ratio is `999/459 = 2.176`, and the measured search count reproduces it exactly because
+no cell stopped early. **This is not the 8-to-64-search figure FewRS's examples suggest** — those are at
+looser `alpha`, where the budget formula collapses quickly. At `alpha = 0.01` the formula returns 459.
+
+**Early stopping was not implemented and not run.** The Result reports, per non-certifying cell, the
+expected stop index under exchangeable replicate ordering, `(m+1)/(r+1)`. It is an expectation and is
+labelled as one: `calibrate` returns its samples sorted, so no measured first-refutation index exists in
+this run, and reading a position out of a sorted vector and calling it a replicate index would have been
+a fabricated saving. Where a cell has many refuting nulls the counterfactual saving is large — the
+negative control at `k = 4` would have stopped around replicate 1 — and where it has one, it is not
+(around 230). Since 13 of 30 cells certify and therefore spend the full budget regardless, early
+stopping would have reduced the observational pass by well under half.
+
+### 9. Binary certification is not distributional calibration
+
+This is the boundary the round exists to draw, and it is not a caveat but a structural fact about the
+instrument.
+
+A FewRS cell reports two numbers and one bit: `observed`, `null_max`, `certified`. From those, the
+following quantities **cannot** be recovered, at any budget:
+
+- the null **median** and every other quantile — sprint:19's `null_quantiles` at 0.05/0.25/0.50/0.75/
+  0.95/0.99;
+- the observed value's **percentile** within the null, `count(T_null < T_observed)/B`;
+- **percentile movement** between two nulls, which is sprint:20 §5's `Delta percentile` of `−0.6106`
+  median over cells;
+- the **median shift** between two null distributions, sprint:20's `+6.3399` nats;
+- the statement that **19 of 30 observed values sit at or below the first-order null's median** — a
+  statement about the body of a distribution, which a maximum cannot see;
+- the paired **two-nulls-on-one-axis** plot sprint:20 rendered, whose whole content is where the second
+  distribution sits relative to the observation.
+
+sprint:20's verdict — that the sprint:19 separation is fully explained by first-order transition
+structure — rests on exactly these. **A FewRS assay could not have produced sprint:20.** Under a binary
+maximum rule sprint:20 would have reported "0 of 30 certified" and stopped, with no way to say whether
+the observations had become *slightly* ordinary or *thoroughly* ordinary, and no way to show the
+monotone ordering across three nulls that was the round's result stated a second way.
+
+That is the trade in one sentence: **FewRS buys 2.18x on the decision and gives up the description.**
+
+### 10. The measurement no criterion reads, and why it decides the recommendation
+
+Descriptive, added after the preregistered assay completed, read by **no verdict branch**, and reported
+because §PHASE 9 makes the recommendation a separate output. The precedent is sprint:20 §6, which ran
+and reported a null its own criteria disqualified.
+
+The Monte Carlo tail `p_hat = (1 + exceedances)/(B + 1)` is a valid p-value under the null, so
+`p_hat <= alpha` is a level-`alpha` test at **any** `B`. At `B = 99` that rule reduces to *exactly* the
+FewRS rule — `p_hat <= 0.01` iff zero exceedances iff `observed > max(null)`. So the smallest budget at
+which a strict-maximum rule is a valid level-0.01 test is **99**, not 459.
+
+Rerunning the identical assay at `m = 99`:
+
+| budget | rule | certified | primary agreement with the frozen grid | null searches |
+|---|---|---|---|---|
+| 99 | strict max | **22 of 30** | **27/30 = 0.9000** | 3 960 |
+| 459 (FewRS) | strict max | 17 of 30 | 24/30 = 0.8000 | 18 360 |
+| 999 (sprint:19) | `p_hat <= 0.01` | 23 of 30 | — (the reference) | 39 960 |
+
+The `m = 99` certifications are a strict superset of the `m = 459` ones — all 17, plus
+`8b68dece x 57f18ff9` at `k = 6` and `k = 8`, `8b68dece x 7d95c414` at `k = 12`,
+`8b68dece x f5c18299` at `k = 6`, and `57f18ff9 x 7d95c414` at `k = 3` — which is the monotonicity of
+§5 running the other way.
+
+**`m = 459` is dominated per cell.** At the same nominal `alpha`, `m = 99` is 4.6x cheaper, certifies
+more cells, and agrees with the frozen grid more closely. FewRS's larger budget is not buying per-cell
+power; it is buying the pooled maximum that its family-wise guarantee requires, and §11 says why this
+grid cannot form one.
+
+**One honest complication in the other direction.** At `m = 99`, `8b68dece x f5c18299` at `k = 6`
+certifies although sprint:19's 999-replicate tail rule called it ordinary at `p_hat = 0.015`. A
+strict-maximum rule at a small budget is noisier in both directions, which is the same instability §5
+recorded and is the price of resolving a tail with fewer samples. It is stated here rather than left in
+the 0.9000 agreement figure where a reader would not see it.
+
+### 11. Caveats, recorded rather than worked on
+
+**The multiple-analysis caveat, and it is the central one.** FewRS's published guarantee is
+`FWER <= alpha` over a family of analyses, and it follows from comparing every analysis against the
+maximum statistic over **all analyses and all `m` resamples**. This round compares each cell against its
+own maximum, per the commission. Each certification is therefore a valid **exact conditional test at
+level `1/(m+1) = 1/460`** by exchangeability, and **no family-wise guarantee across the 30 cells is
+claimed or earned.** With 30 cells at that per-cell level the expected number of false certifications
+under a global null is about 0.065, which is a calculation and not a guarantee.
+
+The pooled variant is not merely unimplemented, it is **unavailable on this grid**: `T_k` at different
+`k` are R1 sums over different window lengths and are not on a common scale, and §PHASE 11 forbids
+normalizing them into one. That is why the budget is over-bought here — 459 is the price of a
+multiplicity guarantee that this grid's geometry cannot accept.
+
+**RNG and sampler caveats, unchanged and unexamined.** The order null draws from the existing LCG
+(`state * 6364136223846793005 + 1442695040888963407`, top 31 bits) with **modulo reduction** in
+`next_below`, which is biased for bounds that do not divide the range; and sprint:20's doublet sampler
+uses capped rejection on its arborescence nomination. Both were known before this round and both are
+untouched by it. **FewRS validates neither.** A maximum-null rule is, if anything, *more* sensitive to
+generator quality than a tail rule, since one atypical replicate decides the whole cell — but that is an
+observation about exposure, not a measurement, and this round made none.
+
+**The specimen envelope is unchanged.** Four observational recordings from two projects, 32 to 169
+events. decision:8's limit applies here as everywhere: an envelope, not a distribution.
+
+### 12. Recommendation: retire the idea for this workflow
+
+Three reasons, in order of weight:
+
+1. **Dominated per cell.** §10. At the same `alpha`, 99 replicates certify more cells for 4.6x less, and
+   the rule at 99 is sprint:19's own rule. The FewRS budget is right for a procedure this workflow does
+   not run.
+2. **The guarantee that justifies 459 cannot be taken here.** §11. The pooled maximum requires
+   commensurable statistics; `T_k` across the ladder are not commensurable and §PHASE 11 forbids making
+   them so.
+3. **The target quantity is already bounded.** D12: sprint:20 established that the order-null separation
+   this assay certifies is fully explained by first-order transition structure — 0 of 30 under the exact
+   doublet null. A 2.18x cheaper route to an order-null verdict is a cheaper route to a quantity this
+   project has already stopped treating as evidence of motif structure. No observational conclusion above
+   reads sprint:20's distributions; this is a statement about what the *recommendation* may be worth.
+
+**The one place the idea might still belong, named rather than built.** FewRS's pooled maximum wants a
+family of *commensurable* analyses. sprint:21's corpus-report calibration already has that shape — task:31
+specifies that it compares an observed family's session count against the distribution of the null
+corpus's **best** family, which is a pooled maximum over a family, family-wise by construction, on one
+scale. Whether the FewRS budget helps *there* is a different question with a different grid, and it needs
+its own round. It is recorded as a pointer and no measurement here supports it.
+
+### 13. What this round does not establish
+
+Not earned and not asserted: that FewRS is wrong, or that its guarantee fails — this round implements a
+per-cell reduction of it, not the procedure, and measures nothing about the published version. That the
+existing LCG, its modulo reduction, or the doublet sampler are sound; FewRS says nothing about any of
+them. Family-wise error control across the 30 cells. That any certified span is a motif, that the search
+is useful, or that a non-certification means observed structure "collapsed" into the null — a
+non-certification here means one of 459 null searches reached the observation, and nothing more. No
+discovered span was named, described or inspected, and no recording content appears in any artifact.
+
+R1 remains a proposal. Nothing was adopted and nothing was promoted to production.
+
+### 14. Gates, and one criterion defect caught by the suite
+
+`scripts/check.sh` green and unweakened. **456 tests**, up from 434; 22 new in `tests/fewrs.rs`.
+`scarp doctor` clean. Nothing pushed. Counts, scores and verdicts only, per decision:8.
+
+**One criterion defect, this round's own, caught by the suite before it reached a report.**
+`tests/fewrs.rs` first asserted the negative control does not certify at a 15-replicate budget, and it
+failed at `k = 8`. The machinery was correct: 15 replicates cannot resolve a cell whose sprint:19
+exceedance rate is `34/999 ~ 0.034`, where the chance no replicate reaches the observation is about 0.6.
+The assertion was a coin toss dressed as a rule — the same unreachable-criterion class sprint:18 recorded
+as its eleventh and `tests/calibration.rs` already carries a comment about. It was fixed by giving the
+test a budget that resolves the rule (60, where the measured refuting count at `k = 8` is 1), **never**
+by weakening the rule. The experiment's own `m = 459` was unaffected; the defect lived only in the test's
+replicate count.
+
+Nothing renders. No card was added to the evidence page: the round's output is a binary grid whose whole
+finding is that a binary grid is the wrong instrument for this workflow, and drawing it beside sprint:19
+and sprint:20's distribution plots would make the narrower instrument look like a peer of the wider ones.
+
+Commits: preregistration `1c1330e`, alone and before any FewRS code existed; the experiment below.
+
+### 15. Scarp desire paths
+
+**idea:1 recurred, as it has every round.** This Result was written into the task file with a shell
+append before `scarp close task:32`, because closing a task and recording its result are two writes and
+only one of them is a Scarp command.
+
+**One new piece of friction, and it is small.** `scarp new task --body-file` rejects a body whose
+headings include `## Result`, naming the sections a task does have. The rejection is correct — Scarp owns
+the template — and the error message is good enough that the fix took one edit. But the body file for a
+preregistered round is written knowing a Result will follow, and the natural draft carries an empty
+`## Result` heading as a placeholder. The affordance that would remove it is idea:2's: expose the
+collection's section template before the first artifact exists, so a body file can be drafted against the
+sections rather than against a rejection. Nothing new to add to the idea beyond that it now has a second
+shape.
+
+**idea:5 recurred, and this round is an unusually clean case for it.** §PHASE 10's prediction — 13 to 19
+cells, most likely 15 to 17, agreement 0.73 to 0.83 — landed on 17 and 0.8000, and the only evidence that
+it predated the run is that commit `1c1330e` contains the preregistration and no FewRS code. That works
+inside the repository and is worth nothing outside it.

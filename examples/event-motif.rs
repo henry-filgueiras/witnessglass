@@ -28,8 +28,8 @@ use witnessglass::experiment::event_sequence::{
     timing_null, top_pairs, top_pairs_where,
 };
 use witnessglass::experiment::{
-    adversarial, boundary_page, calibration, discriminating, envelope, gauntlet, identifiability,
-    repair, transition_null,
+    adversarial, boundary_page, calibration, discriminating, envelope, fewrs, gauntlet,
+    identifiability, repair, transition_null,
 };
 use witnessglass::inspection::inspect;
 use witnessglass::replay_file;
@@ -119,8 +119,16 @@ USAGE:
                          fidelity, degeneracy, and repeated n-grams. Runs no
                          search and reaches no verdict.
 
-    --replicates <N>     Null replicates for --calibrate. Defaults to the
-                         preregistered 999.
+    --fewrs              sprint:22. The fixed-budget FewRS retrospective assay
+                         over the same order null and the same 30 cells:
+                         m = ceil(ln(1/a)/ln(1/(1-a))) = 459 at a = 0.01, and
+                         certification iff observed T strictly exceeds every
+                         null T. Compared against sprint:19's frozen
+                         999-replicate grid. Adopts nothing.
+
+    --replicates <N>     Null replicates for --calibrate, --first-order and
+                         --fewrs. Defaults to the preregistered 999 for the
+                         first two and to the derived 459 for --fewrs.
 
     --discriminating     sprint:18. Commission R1 pooled sum against a
                          gauntlet built so that it and the frozen statistic
@@ -210,6 +218,7 @@ struct Options {
     repair: bool,
     discriminating: bool,
     calibrate: bool,
+    fewrs: bool,
     first_order: bool,
     first_order_adequacy: bool,
     replicates: Option<usize>,
@@ -240,6 +249,10 @@ fn run() -> Result<ExitCode, String> {
 
     if options.calibrate {
         return calibrate_mode(&options);
+    }
+
+    if options.fewrs {
+        return fewrs_mode(&options);
     }
 
     if options.first_order_adequacy {
@@ -465,6 +478,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
     let mut repair_on = false;
     let mut discriminating_on = false;
     let mut calibrate_on = false;
+    let mut fewrs_on = false;
     let mut first_order_on = false;
     let mut first_order_adequacy_on = false;
     let mut replicates = None;
@@ -523,6 +537,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
             "--repair" => repair_on = true,
             "--discriminating" => discriminating_on = true,
             "--calibrate" => calibrate_on = true,
+            "--fewrs" => fewrs_on = true,
             "--first-order" => first_order_on = true,
             "--first-order-adequacy" => first_order_adequacy_on = true,
             "--replicates" => {
@@ -574,6 +589,7 @@ fn parse(args: &[String]) -> Result<Options, String> {
         repair: repair_on,
         discriminating: discriminating_on,
         calibrate: calibrate_on,
+        fewrs: fewrs_on,
         first_order: first_order_on,
         first_order_adequacy: first_order_adequacy_on,
         replicates,
@@ -2840,6 +2856,267 @@ fn dedupe_labels<'a>(labels: &[&'a str]) -> Vec<&'a str> {
         }
     }
     seen
+}
+
+// ---------------------------------------------------------------------------
+// The fixed-budget FewRS retrospective assay — sprint:22, task:32
+// ---------------------------------------------------------------------------
+
+/// task:32's assay, in the order §PHASE 4 fixes: negative control, positive
+/// control, and — only if both pass — the 30 observational cells.
+///
+/// Every number here comes from `calibration::calibrate`, which is sprint:19's
+/// frozen path. This mode changes no null, no search, no statistic and no seed.
+fn fewrs_mode(options: &Options) -> Result<ExitCode, String> {
+    let derived = fewrs::fewrs_budget(fewrs::ALPHA)
+        .map_err(|err| format!("could not derive the FewRS budget: {err}"))?;
+    let budget = options.replicates.unwrap_or(derived);
+    let started = std::time::Instant::now();
+
+    println!("event-motif — the sprint:22 fixed-budget FewRS retrospective assay");
+    println!(
+        "alpha = {alpha}   m = ceil(ln(1/alpha)/ln(1/(1-alpha))) = {derived}   running m = {budget}\n\
+         Certification is strict: observed T > every null T. Ties do not certify. The complete\n\
+         search reruns inside every replicate; seeds are null_seed(0..{budget}, {{0,1}}), the first\n\
+         {budget} realizations of the existing schedule. Per-cell exact conditional level 1/(m+1);\n\
+         NO family-wise guarantee across cells is claimed — task:32 §PHASE 0 D11.\n",
+        alpha = fewrs::ALPHA,
+    );
+
+    // PHASE 4 — controls, before any observational specimen is touched.
+    let negative = calibration::negative_control();
+    let positive = calibration::positive_control();
+    let mut control_cells: Vec<fewrs::Cell> = Vec::new();
+
+    for (label, control) in [
+        ("negative control", &negative),
+        ("positive control", &positive),
+    ] {
+        println!("  {label} — task:32 §PHASE 4:");
+        println!(
+            "    {:<6} {:>10} {:>10} {:>9} {:>10}",
+            "k", "T obs", "null max", "refuting", "certified"
+        );
+        for k in calibration::LADDER {
+            let cell = fewrs::assay(label, &control.first, &control.second, k, budget);
+            println!(
+                "    {:<6} {:>10} {:>10.4} {:>9} {:>10}",
+                k,
+                cell.observed
+                    .map(|t| format!("{t:.4}"))
+                    .unwrap_or_else(|| "—".to_owned()),
+                cell.null_max,
+                cell.refuting_nulls,
+                if cell.certified { "YES" } else { "no" },
+            );
+            control_cells.push(cell);
+        }
+    }
+
+    let negative_ok = !control_cells
+        .iter()
+        .any(|cell| cell.specimen == "negative control" && cell.certified);
+    let positive_ok = control_cells
+        .iter()
+        .any(|cell| cell.specimen == "positive control" && cell.k == 12 && cell.certified);
+    let controls_passed = negative_ok && positive_ok;
+    println!(
+        "\n  control rules — negative (no k certifies): {}   positive (k=12 certifies): {}",
+        if negative_ok { "PASS" } else { "FAIL" },
+        if positive_ok { "PASS" } else { "FAIL" },
+    );
+    println!(
+        "    The positive rule is an IMPLEMENTATION CHECK, not an empirical test: task:32 §PHASE 0\n\
+         \x20   D10 records that it cannot fail, because the 459 seeds are a prefix of sprint:19's 999."
+    );
+
+    let mut cells: Vec<fewrs::Cell> = Vec::new();
+    if !controls_passed {
+        println!(
+            "\n  STOPPING before the observational assay: a control failed its preregistered rule."
+        );
+    } else if options.corpus.len() >= 2 {
+        let mut replays = Vec::new();
+        for path in &options.corpus {
+            replays.push((
+                path.clone(),
+                replay_file(path)
+                    .map_err(|err| format!("could not replay {}: {err}", path.display()))?,
+            ));
+        }
+        let inspections: Vec<_> = replays
+            .iter()
+            .map(|(path, replay)| (path.clone(), inspect(replay)))
+            .collect();
+        let mut sequences = Vec::new();
+        for (path, inspection) in &inspections {
+            if let Some(sequence) = project(inspection, options.scope) {
+                sequences.push(sequence);
+            } else {
+                eprintln!("skipping {}: no records in scope", path.display());
+            }
+        }
+
+        println!(
+            "\n  observational cells — task:32 §PHASE 5. Counts and scores only; no span is named."
+        );
+        println!(
+            "    {:<22} {:>3} {:>9} {:>9} {:>5} {:>9} {:>8} {:>6}",
+            "specimen", "k", "T obs", "null max", "cert", "999 p-hat", "999 exc", "agree"
+        );
+        for (index, left) in sequences.iter().enumerate() {
+            for right in sequences.iter().skip(index + 1) {
+                let label = format!("{} x {}", short(left.session_id), short(right.session_id));
+                for k in calibration::LADDER {
+                    let cell = fewrs::assay(&label, left, right, k, budget);
+                    println!(
+                        "    {:<22} {:>3} {:>9} {:>9.4} {:>5} {:>9} {:>8} {:>6}",
+                        cell.specimen,
+                        k,
+                        cell.observed
+                            .map(|t| format!("{t:.4}"))
+                            .unwrap_or_else(|| "—".to_owned()),
+                        cell.null_max,
+                        if cell.certified { "YES" } else { "no" },
+                        cell.historical_tail
+                            .map(|t| format!("{t:.3}"))
+                            .unwrap_or_else(|| "—".to_owned()),
+                        cell.historical_exceedances
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(|| "—".to_owned()),
+                        match cell.agrees_with_historical_tail_rule {
+                            Some(true) => "yes",
+                            Some(false) => "NO",
+                            None => "—",
+                        },
+                    );
+                    cells.push(cell);
+                }
+            }
+        }
+    } else {
+        println!("\n  observational cells not run: --fewrs needs at least two --corpus <PATH>.");
+    }
+
+    // PHASE 9 — classification, and the two agreement rates.
+    let certified = cells.iter().filter(|cell| cell.certified).count();
+    let undefined = cells.iter().filter(|cell| cell.observed.is_none()).count();
+    let agree_tail = cells
+        .iter()
+        .filter(|cell| cell.agrees_with_historical_tail_rule == Some(true))
+        .count();
+    let agree_max = cells
+        .iter()
+        .filter(|cell| cell.agrees_with_historical_max_rule == Some(true))
+        .count();
+    let matched = cells
+        .iter()
+        .filter(|cell| cell.historical_tail.is_some())
+        .count();
+    let classification = fewrs::classify(controls_passed, certified);
+
+    println!("\n  classification — task:32 §PHASE 9, by precedence:");
+    println!("    {}", classification.label());
+    println!(
+        "    {certified} of {} cells certified at m = {budget}; {undefined} with undefined T; \
+         STRONG needs >= {}",
+        cells.len(),
+        fewrs::STRONG_THRESHOLD,
+    );
+    if matched > 0 {
+        println!(
+            "    agreement with the frozen 999 grid — primary (p-hat <= {}): {agree_tail}/{matched} \
+             = {:.4}",
+            calibration::TAIL_THRESHOLD,
+            agree_tail as f64 / matched as f64,
+        );
+        println!(
+            "    agreement with the frozen 999 grid — rule-matched (exceedances == 0): \
+             {agree_max}/{matched} = {:.4}",
+            agree_max as f64 / matched as f64,
+        );
+        println!(
+            "    the two grids differ because sprint:19's rule admits up to 9 exceedances and this\n\
+             \x20   one admits none — task:32 §PHASE 0 D8. Neither rate substitutes for the other."
+        );
+    }
+
+    // PHASE 7 — cost.
+    let all: Vec<fewrs::Cell> = control_cells.iter().chain(cells.iter()).cloned().collect();
+    let cost = fewrs::cost(&all);
+    let elapsed = started.elapsed().as_secs_f64();
+    println!("\n  cost — task:32 §PHASE 7:");
+    println!(
+        "    complete null searches performed: {}   reference at B = {}: {}   avoided: {} ({:.3}x)",
+        cost.null_searches,
+        fewrs::HISTORICAL_REPLICATES,
+        cost.reference_null_searches,
+        cost.searches_avoided,
+        cost.ratio,
+    );
+    println!(
+        "    null sequence realizations generated: {}   window pairs enumerated inside null \
+         searches: {}",
+        cost.null_datasets, cost.null_candidate_evaluations,
+    );
+    println!("    wall clock {elapsed:.1}s — MACHINE-SPECIFIC AND SECONDARY; it decides nothing.");
+    let early: Vec<String> = cells
+        .iter()
+        .filter(|cell| !cell.certified)
+        .filter_map(|cell| {
+            cell.expected_early_stop
+                .map(|stop| format!("{} k={} ~{:.0}", cell.specimen, cell.k, stop))
+        })
+        .take(3)
+        .collect();
+    if !early.is_empty() {
+        println!(
+            "    early stopping was NOT implemented or run. Expected stop index under exchangeable\n\
+             \x20   replicate ordering, first three non-certifying cells: {}",
+            early.join("; ")
+        );
+    }
+
+    if options.json {
+        let document = serde_json::json!({
+            "label": "fewrs",
+            "role": "fixed-budget FewRS retrospective assay — sprint:22, task:32",
+            "alpha": fewrs::ALPHA,
+            "derived_budget": derived,
+            "budget": budget,
+            "seed_range": format!("null_seed(0..{budget}, {{0,1}})"),
+            "historical_replicates": fewrs::HISTORICAL_REPLICATES,
+            "rule": "certified iff observed_T > max(null_T); ties do not certify",
+            "guarantee": "per-cell exact conditional test at level 1/(m+1); NO family-wise \
+                          guarantee across cells is claimed",
+            "adopted": serde_json::Value::Null,
+            "controls": control_cells,
+            "control_rules": {
+                "negative": negative_ok,
+                "positive": positive_ok,
+                "positive_is_an_implementation_check": true,
+            },
+            "cells": cells,
+            "certified": certified,
+            "undefined": undefined,
+            "strong_threshold": fewrs::STRONG_THRESHOLD,
+            "classification": classification.label(),
+            "agreement": {
+                "matched_cells": matched,
+                "primary_tail_rule": agree_tail,
+                "rule_matched_max_rule": agree_max,
+            },
+            "frozen_grid": fewrs::SPRINT_19_ORDER_NULL_GRID,
+            "cost": cost,
+            "wall_clock_seconds": elapsed,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&document).map_err(|e| e.to_string())?
+        );
+    }
+
+    Ok(ExitCode::SUCCESS)
 }
 
 // ---------------------------------------------------------------------------

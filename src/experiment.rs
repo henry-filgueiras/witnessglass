@@ -64,6 +64,10 @@ pub mod discriminating;
 // the recordings this project actually has. Measures; repairs nothing.
 pub mod envelope;
 pub mod event_sequence;
+// sprint:22's fixed-budget FewRS assay. Two scalar functions, a row type, and a
+// transcription of sprint:19's published grid. It owns no null, no search and no
+// statistic: every number it reports comes from `calibration`.
+pub mod fewrs;
 // sprint:12's adversarial gauntlet against sprint:11's statistic. Calls the
 // machinery and changes none of it; deleting the attack is deleting this file.
 pub mod gauntlet;
